@@ -58,6 +58,10 @@ public struct ContentView: View {
                         NavigationStack { RemindersView() }
                     }
 
+                    Tab("Progress", systemImage: "chart.bar.fill", value: "progress") {
+                        NavigationStack { ProgressHubView() }
+                    }
+
                     Tab("Profile", systemImage: "person.fill", value: "profile") {
                         NavigationStack { SettingsView() }
                     }

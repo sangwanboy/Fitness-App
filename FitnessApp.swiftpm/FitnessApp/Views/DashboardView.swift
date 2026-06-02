@@ -10,7 +10,7 @@ public struct DashboardView: View {
     @AppStorage("theme_mode") private var themeMode = "dark"
     @AppStorage("accent_color") private var accentColorHex = "#30D158"
     @AppStorage("layout_density") private var layoutDensity = "regular"
-    @AppStorage("home_cards_list") private var homeCardsList = "coach,predictions,widgets,activity,upcoming,steps,heart,tracksleep,sleep,calories,distance,meals,recovery,hydration,workouts,streak"
+    @AppStorage("home_cards_list") private var homeCardsList = "coach,predictions,widgets,activity,upcoming,steps,heart,tracksleep,sleep,calories,distance,meals,recovery,hydration,workouts,streak,challenge"
 
     let onOpenWorkout: () -> Void
     let onOpenCalendar: () -> Void
@@ -29,6 +29,7 @@ public struct DashboardView: View {
     /// Workouts This Week checkmark row).
     @State private var workoutDates: Set<Date> = []
     @State private var showWorkoutAnalytics = false
+    @State private var showHRZones = false
 
     /// Tiles revealed by tapping "Show more". When the user has no Apple Watch
     /// (no HR samples in the last 7 days), the Watch-only home cards collapse
@@ -119,6 +120,9 @@ public struct DashboardView: View {
             return !AstraWidgetStore.shared.widgets.isEmpty
         }
         if id == "streak" {
+            return true
+        }
+        if id == "challenge" {
             return true
         }
         if let type = Self.cardIdToMetric[id] {
@@ -294,6 +298,9 @@ public struct DashboardView: View {
         .sheet(isPresented: $showBreathing) {
             GuidedBreathingView()
         }
+        .sheet(isPresented: $showHRZones) {
+            HeartRateZonesView()
+        }
         .fullScreenCover(item: $lastSleepReport) { s in
             SleepReportView(session: s, onClose: { lastSleepReport = nil })
         }
@@ -358,6 +365,18 @@ public struct DashboardView: View {
             HeartCard(summary: healthKitManager.metricSummaries[.heartRate]) {
                 selectedMetric = .heartRate
             }
+            .contextMenu {
+                Button {
+                    showHRZones = true
+                } label: {
+                    Label("View HR Zones", systemImage: "waveform.path.ecg")
+                }
+                Button {
+                    selectedMetric = .heartRate
+                } label: {
+                    Label("View Details", systemImage: "chart.xyaxis.line")
+                }
+            }
         case "sleep":
             SleepCard(summary: healthKitManager.metricSummaries[.sleep]) {
                 selectedMetric = .sleep
@@ -400,6 +419,8 @@ public struct DashboardView: View {
             )
         case "streak":
             StreakCard()
+        case "challenge":
+            DailyChallengeCard()
         default:
             // Promoted show-more metric: id is the HealthMetricType.rawValue.
             // Renders as a SimpleMetricCard tile (same as in Show More) so
