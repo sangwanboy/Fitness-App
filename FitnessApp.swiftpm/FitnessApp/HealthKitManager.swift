@@ -322,6 +322,12 @@ public final class HealthKitManager: ObservableObject {
         // on a cache miss. Updates `predictions` again when it lands.
         kickoffAIEnrichmentIfNeeded()
 
+        // HRV nudge — schedule a breathing reminder if HRV is below the
+        // 30-day rolling average by >15 % and no session was done today.
+        if let hrvHistory = metricSummaries[.hrv]?.history, !hrvHistory.isEmpty {
+            BreathingSessionManager.shared.scheduleHRVNudgeIfNeeded(hrv: hrvHistory)
+        }
+
         DispatchQueue.main.async {
             self.isLoading = false
         }

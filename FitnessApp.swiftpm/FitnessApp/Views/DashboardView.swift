@@ -10,7 +10,7 @@ public struct DashboardView: View {
     @AppStorage("theme_mode") private var themeMode = "dark"
     @AppStorage("accent_color") private var accentColorHex = "#30D158"
     @AppStorage("layout_density") private var layoutDensity = "regular"
-    @AppStorage("home_cards_list") private var homeCardsList = "coach,predictions,widgets,activity,upcoming,steps,heart,tracksleep,sleep,calories,distance,meals,recovery,hydration,workouts"
+    @AppStorage("home_cards_list") private var homeCardsList = "coach,predictions,widgets,activity,upcoming,steps,heart,tracksleep,sleep,calories,distance,meals,recovery,hydration,workouts,streak"
 
     let onOpenWorkout: () -> Void
     let onOpenCalendar: () -> Void
@@ -23,9 +23,12 @@ public struct DashboardView: View {
     @State private var animateWidgets = false
     @State private var showSearchSheet = false
     @State private var showMoreMetrics = false
+    @State private var showBreathing = false
+    @State private var showNutritionDashboard = false
     /// startOfDay for each day in last 7 that had a HK workout (drives the
     /// Workouts This Week checkmark row).
     @State private var workoutDates: Set<Date> = []
+    @State private var showWorkoutAnalytics = false
 
     /// Tiles revealed by tapping "Show more". When the user has no Apple Watch
     /// (no HR samples in the last 7 days), the Watch-only home cards collapse
@@ -114,6 +117,9 @@ public struct DashboardView: View {
         }
         if id == "widgets" {
             return !AstraWidgetStore.shared.widgets.isEmpty
+        }
+        if id == "streak" {
+            return true
         }
         if let type = Self.cardIdToMetric[id] {
             return Self.metricHasRecentData(type, manager: healthKitManager)
@@ -275,6 +281,7 @@ public struct DashboardView: View {
             }
         }
         .sheet(isPresented: $showSearchSheet) { HomeSearchSheet() }
+        .sheet(isPresented: $showNutritionDashboard) { NutritionDashboardView() }
         .onAppear {
             withAnimation(.easeOut(duration: 0.5)) { animateWidgets = true }
             Task { await refreshAllData() }
@@ -283,6 +290,9 @@ public struct DashboardView: View {
             if let summary = healthKitManager.metricSummaries[metricType] {
                 DetailedMetricView(summary: summary)
             }
+        }
+        .sheet(isPresented: $showBreathing) {
+            GuidedBreathingView()
         }
         .fullScreenCover(item: $lastSleepReport) { s in
             SleepReportView(session: s, onClose: { lastSleepReport = nil })
@@ -333,7 +343,8 @@ public struct DashboardView: View {
             PredictionsCard(
                 predictions: healthKitManager.predictions,
                 onOpenCoach: { switchToTab("chat") },
-                onTapActionChip: { switchToTab("chat") }
+                onTapActionChip: { switchToTab("chat") },
+                onOpenBreathe: { showBreathing = true }
             )
         case "activity":
             ActivityRingsCard(action: { ExternalLink.openHealth() })
@@ -375,6 +386,9 @@ public struct DashboardView: View {
                 onAddMeal: {
                     ChatPrefillBus.shared.queue("Help me log a meal — I want to record what I just ate.")
                     switchToTab("chat")
+                },
+                onViewDetails: {
+                    showNutritionDashboard = true
                 }
             )
         case "widgets":
@@ -384,6 +398,8 @@ public struct DashboardView: View {
                 onStartTracking: onOpenSleepMode,
                 onOpenLast: { lastSleepReport = $0 }
             )
+        case "streak":
+            StreakCard()
         default:
             // Promoted show-more metric: id is the HealthMetricType.rawValue.
             // Renders as a SimpleMetricCard tile (same as in Show More) so
@@ -492,6 +508,8 @@ public struct DashboardView: View {
         _ = await hk
         let cal = Calendar.current
         workoutDates = Set(await workouts.map { cal.startOfDay(for: $0.startDate) })
+        // Recompute streak after workout + step data is fresh.
+        StreakEngine.shared.refresh()
         if eventKit.calendarsGranted {
             eventKit.fetchEvents(from: Date(), to: Date().addingTimeInterval(24 * 3600))
         }
@@ -575,9 +593,26 @@ public struct DashboardView: View {
                     .frame(maxWidth: .infinity)
                 }
             }
+            Button(action: { showWorkoutAnalytics = true }) {
+                HStack {
+                    Image(systemName: "chart.line.uptrend.xyaxis")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text("View Training Analytics")
+                        .font(.system(size: 12, weight: .semibold))
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11))
+                }
+                .foregroundColor(accentColor)
+                .padding(.top, 4)
+            }
+            .buttonStyle(PlainButtonStyle())
         }
         .padding(paddingVal)
         .glassCard()
+        .sheet(isPresented: ) {
+            WorkoutAnalyticsView()
+        }
     }
     
     // MARK: - Helper Methods

@@ -9,6 +9,9 @@ public struct PredictionsCard: View {
     /// Fires after `ChatPrefillBus.shared.queue(...)` is set — parent uses
     /// it to switch to the Coach tab.
     public var onTapActionChip: (() -> Void)? = nil
+    /// Opens the Guided Breathing modal. Non-nil when the parent (DashboardView)
+    /// has wired up a showBreathing toggle.
+    public var onOpenBreathe: (() -> Void)? = nil
 
     @AppStorage("theme_mode") private var themeMode = "dark"
     private var isDark: Bool { themeMode == "dark" }
@@ -18,10 +21,12 @@ public struct PredictionsCard: View {
 
     public init(predictions: Predictions?,
                 onOpenCoach: (() -> Void)? = nil,
-                onTapActionChip: (() -> Void)? = nil) {
+                onTapActionChip: (() -> Void)? = nil,
+                onOpenBreathe: (() -> Void)? = nil) {
         self.predictions = predictions
         self.onOpenCoach = onOpenCoach
         self.onTapActionChip = onTapActionChip
+        self.onOpenBreathe = onOpenBreathe
     }
 
     public var body: some View {
@@ -61,6 +66,12 @@ public struct PredictionsCard: View {
                 }
             } else {
                 quietState
+            }
+
+            // Breathe chip — always visible when the parent wires onOpenBreathe
+            if let openBreathe = onOpenBreathe {
+                Divider().opacity(0.15)
+                breatheChip(action: openBreathe)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -165,6 +176,44 @@ public struct PredictionsCard: View {
                 .padding(.vertical, 6)
                 .glassEffect(.regular.interactive(), in: .capsule)
             }
+        }
+    }
+
+    // MARK: - Breathe chip
+
+    @ViewBuilder
+    private func breatheChip(action: @escaping () -> Void) -> some View {
+        HStack(spacing: 10) {
+            ZStack {
+                Circle()
+                    .fill(Color.teal.opacity(0.18))
+                    .frame(width: 28, height: 28)
+                Image(systemName: "waveform")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.teal)
+            }
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Guided Breathing")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(isDark ? .white : .black)
+                Text("Box · 4-7-8 · Coherent · Custom")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(isDark ? .white.opacity(0.5) : .black.opacity(0.5))
+            }
+            Spacer()
+            Button(action: action) {
+                HStack(spacing: 4) {
+                    Image(systemName: "lungs.fill")
+                        .font(.system(size: 10, weight: .semibold))
+                    Text("Breathe")
+                        .font(.system(size: 12, weight: .semibold))
+                }
+                .foregroundColor(.teal)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .glassEffect(.regular.interactive(), in: .capsule)
+            }
+            .buttonStyle(.plain)
         }
     }
 

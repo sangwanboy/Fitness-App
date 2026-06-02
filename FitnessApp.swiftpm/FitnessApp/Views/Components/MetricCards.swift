@@ -388,6 +388,7 @@ struct CaloriesCard: View {
 struct MealsCard: View {
     let entries: [FoodLogEntry]
     let onAddMeal: () -> Void
+    var onViewDetails: (() -> Void)? = nil
 
     @AppStorage("theme_mode") private var themeMode = "dark"
     private var isDark: Bool { themeMode == "dark" }
@@ -415,6 +416,16 @@ struct MealsCard: View {
                     .foregroundColor(isDark ? .white.opacity(0.5) : .black.opacity(0.5))
                     .tracking(0.5)
                 Spacer()
+                if let onViewDetails {
+                    Button(action: onViewDetails) {
+                        Image(systemName: "chart.bar.xaxis")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(.orange)
+                            .padding(6)
+                            .glassEffect(.regular.interactive(), in: .circle)
+                    }
+                    .accessibilityLabel("View nutrition details")
+                }
                 Button(action: onAddMeal) {
                     Image(systemName: "plus")
                         .font(.system(size: 12, weight: .semibold))

@@ -8,8 +8,9 @@ public struct DetailedMetricView: View {
     
     public let summary: MetricSummary
     
-    @State private var animateEntry = false
-    
+    @State private var animateEntry  = false
+    @State private var showHRZones   = false
+
     private var isDark: Bool { themeMode == "dark" }
     
     public init(summary: MetricSummary) {
@@ -100,9 +101,26 @@ public struct DetailedMetricView: View {
                             .background(isDark ? Color.white.opacity(0.04) : Color.black.opacity(0.04))
                             .clipShape(Capsule())
                         } else if summary.type == .heartRate {
-                            Text("Resting rate average: 64 bpm")
-                                .font(.caption)
-                                .foregroundColor(isDark ? .white.opacity(0.8) : .black.opacity(0.8))
+                            HStack(spacing: 10) {
+                                Text("Resting rate average: 64 bpm")
+                                    .font(.caption)
+                                    .foregroundColor(isDark ? .white.opacity(0.8) : .black.opacity(0.8))
+
+                                Button(action: { showHRZones = true }) {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "heart.fill")
+                                            .font(.system(size: 10, weight: .bold))
+                                        Text("Zones")
+                                            .font(.system(size: 11, weight: .semibold))
+                                    }
+                                    .foregroundColor(.red)
+                                    .padding(.horizontal, 9)
+                                    .padding(.vertical, 4)
+                                    .background(Color.red.opacity(0.12))
+                                    .clipShape(Capsule())
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                            }
                         } else {
                             Text("Typical range: 50 - 80 ms")
                                 .font(.caption)
@@ -165,6 +183,9 @@ public struct DetailedMetricView: View {
             withAnimation(.easeOut(duration: 0.5)) {
                 animateEntry = true
             }
+        }
+        .sheet(isPresented: $showHRZones) {
+            HeartRateZonesView()
         }
     }
     

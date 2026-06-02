@@ -21,7 +21,9 @@ public struct WorkoutTrackerView: View {
     @State private var showSaveAlert = false
     @State private var showSummary = false
     @State private var recentWorkouts: [HKWorkout] = []
-    
+    @State private var showHRZones  = false
+    @State private var showAnalytics = false
+
     // Timer publisher
     @State private var timer: Timer.TimerPublisher = Timer.publish(every: 1, on: .main, in: .common)
     @State private var cancellable: Any?
@@ -260,12 +262,46 @@ public struct WorkoutTrackerView: View {
                         
                         // History list
                         VStack(alignment: .leading, spacing: 14) {
-                            Text("Recent Activities")
-                                .font(.system(size: 16, weight: .bold))
-                                .foregroundColor(isDark ? .white : .black)
-                            
+                            HStack {
+                                Text("Recent Activities")
+                                    .font(.system(size: 16, weight: .bold))
+                                    .foregroundColor(isDark ? .white : .black)
+
+                                Spacer()
+
+                                Button(action: { showHRZones = true }) {
+                                    HStack(spacing: 5) {
+                                        Image(systemName: "heart.fill")
+                                            .font(.system(size: 11, weight: .bold))
+                                        Text("Zones")
+                                            .font(.system(size: 12, weight: .semibold))
+                                    }
+                                    .foregroundColor(.red)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 5)
+                                    .background(Color.red.opacity(0.12))
+                                    .clipShape(Capsule())
+                                }
+                                .buttonStyle(PlainButtonStyle())
+
+                                Button(action: { showAnalytics = true }) {
+                                    HStack(spacing: 5) {
+                                        Image(systemName: "chart.line.uptrend.xyaxis")
+                                            .font(.system(size: 11, weight: .bold))
+                                        Text("Analytics")
+                                            .font(.system(size: 12, weight: .semibold))
+                                    }
+                                    .foregroundColor(accentColor)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 5)
+                                    .background(accentColor.opacity(0.12))
+                                    .clipShape(Capsule())
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                            }
+
                             Divider().background(isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.08))
-                            
+
                             if recentWorkouts.isEmpty {
                                 Text("No workouts yet — start one above.")
                                     .font(.system(size: 13, weight: .medium))
@@ -304,6 +340,12 @@ public struct WorkoutTrackerView: View {
             Button("Save Workout") { saveWorkout() }
         } message: {
             Text("Do you want to save this workout details to Apple Health?")
+        }
+        .sheet(isPresented: $showAnalytics) {
+            WorkoutAnalyticsView()
+        }
+        .sheet(isPresented: $showHRZones) {
+            HeartRateZonesView()
         }
         .sheet(isPresented: $showSummary) {
             WorkoutSummaryView(
