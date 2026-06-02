@@ -322,8 +322,8 @@ public struct WorkoutAnalyticsView: View {
                     )
                     .foregroundStyle(
                         week.isCurrentWeek
-                            ? accentColor.gradient
-                            : Color.gray.opacity(0.4)
+                            ? AnyShapeStyle(accentColor.gradient)
+                            : AnyShapeStyle(Color.gray.opacity(0.4))
                     )
                     .cornerRadius(5)
                     .annotation(position: .top, alignment: .center) {

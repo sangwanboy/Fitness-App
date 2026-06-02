@@ -6,12 +6,19 @@ import HealthKit
 // MARK: - Breathing Phase
 
 public enum BreathPhase: String, CaseIterable {
-    case inhale  = "Inhale"
-    case hold1   = "Hold"
-    case exhale  = "Exhale"
-    case hold2   = "Hold"
+    case inhale  = "inhale"
+    case hold1   = "hold1"
+    case exhale  = "exhale"
+    case hold2   = "hold2"
 
-    public var label: String { rawValue }
+    public var label: String {
+        switch self {
+        case .inhale: return "Inhale"
+        case .hold1:  return "Hold"
+        case .exhale: return "Exhale"
+        case .hold2:  return "Hold"
+        }
+    }
 
     public var icon: String {
         switch self {

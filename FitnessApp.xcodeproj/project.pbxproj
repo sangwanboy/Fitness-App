@@ -66,7 +66,22 @@
 		F5B959C9C3882C8E0DDD5474 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40FEEDA56B628E11A1DF72E7 /* DashboardView.swift */; };
 		FA41E7488FA3E4A72F3519C4 /* UserNotifications.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2BD4EB1744F246031A0C99FB /* UserNotifications.framework */; };
 		FBF4FB965ABF1708FB8D2849 /* RemindersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD86BABB2BDF63D8BE40A78C /* RemindersView.swift */; };
-/* End PBXBuildFile section */
+		66F2C8CE3EF35C46E32FBD7A /* BreathingSessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84D3F895AD9C666885F374CB /* BreathingSessionManager.swift */; };
+		DCB1217E413AEB22FC86FA99 /* ChallengeEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DEBF34B6937CB281E0836D2 /* ChallengeEngine.swift */; };
+		99B2B36883441761E1558E5C /* HeartRateZoneCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED398597BCFC0D6BAC90425A /* HeartRateZoneCalculator.swift */; };
+		EADFDD3D16D1DDFB41F610F6 /* NutritionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 233A72203139E6ABFFA979C8 /* NutritionService.swift */; };
+		2876A9D5002BB6A0F44FA587 /* StreakEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7C5B4F52732710025E79A15 /* StreakEngine.swift */; };
+		64FCC7DCEBC08CE6FA6145EC /* TrainingLoadEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A19260F32037834A5C4AB0D /* TrainingLoadEngine.swift */; };
+		CDAF047B0F7599E555B6E57E /* DailyChallengeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54AB0C90AE856E41BF5BB228 /* DailyChallengeView.swift */; };
+		B3D2E33205DED3234B5A9653 /* GuidedBreathingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58C51A067B9D35D625B0BEBF /* GuidedBreathingView.swift */; };
+		B933F3DED3208B1AD5676DE6 /* HeartRateZonesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29AF466959E804E53C0AD0C8 /* HeartRateZonesView.swift */; };
+		7371CEE4B7936D5530595AEC /* NutritionDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3163517AD954620827BAEE18 /* NutritionDashboardView.swift */; };
+		BA8E5187DC3814A7A7102C00 /* ProgressHubView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD0AD2D78B45E2055FFEC786 /* ProgressHubView.swift */; };
+		CAD20776B61E997FAFCEA1C1 /* StreakView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B54B2B666716848F36ED37CC /* StreakView.swift */; };
+		4507FB949F266FB37F661B09 /* WorkoutAnalyticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B948D63ADE9D91E7248261E /* WorkoutAnalyticsView.swift */; };
+		1570E9462CF2FCB34DC89217 /* DailyChallengeCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF1785ADF16F5158CDFC008C /* DailyChallengeCard.swift */; };
+		574D8508D38E6EA65F34CCB6 /* StreakCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 296E6114F33AF0D457656B52 /* StreakCard.swift */; };
+		/* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		0CBC0D6E65E96D0D286864CB /* HealthTrendsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthTrendsView.swift; sourceTree = "<group>"; };
@@ -129,7 +144,22 @@
 		F49E7AA24285552E1C91AABC /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		F4E5D68E655E0F4C37A7BA80 /* PredictionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PredictionEngine.swift; sourceTree = "<group>"; };
 		FAD5F639B713B5614E8DECAB /* SleepReportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepReportView.swift; sourceTree = "<group>"; };
-/* End PBXFileReference section */
+		84D3F895AD9C666885F374CB /* BreathingSessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BreathingSessionManager.swift; sourceTree = "<group>"; };
+		0DEBF34B6937CB281E0836D2 /* ChallengeEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChallengeEngine.swift; sourceTree = "<group>"; };
+		ED398597BCFC0D6BAC90425A /* HeartRateZoneCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeartRateZoneCalculator.swift; sourceTree = "<group>"; };
+		233A72203139E6ABFFA979C8 /* NutritionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NutritionService.swift; sourceTree = "<group>"; };
+		F7C5B4F52732710025E79A15 /* StreakEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreakEngine.swift; sourceTree = "<group>"; };
+		7A19260F32037834A5C4AB0D /* TrainingLoadEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrainingLoadEngine.swift; sourceTree = "<group>"; };
+		54AB0C90AE856E41BF5BB228 /* DailyChallengeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyChallengeView.swift; sourceTree = "<group>"; };
+		58C51A067B9D35D625B0BEBF /* GuidedBreathingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuidedBreathingView.swift; sourceTree = "<group>"; };
+		29AF466959E804E53C0AD0C8 /* HeartRateZonesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeartRateZonesView.swift; sourceTree = "<group>"; };
+		3163517AD954620827BAEE18 /* NutritionDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NutritionDashboardView.swift; sourceTree = "<group>"; };
+		BD0AD2D78B45E2055FFEC786 /* ProgressHubView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressHubView.swift; sourceTree = "<group>"; };
+		B54B2B666716848F36ED37CC /* StreakView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreakView.swift; sourceTree = "<group>"; };
+		5B948D63ADE9D91E7248261E /* WorkoutAnalyticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutAnalyticsView.swift; sourceTree = "<group>"; };
+		CF1785ADF16F5158CDFC008C /* DailyChallengeCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyChallengeCard.swift; sourceTree = "<group>"; };
+		296E6114F33AF0D457656B52 /* StreakCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreakCard.swift; sourceTree = "<group>"; };
+		/* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		5E6CBACB277C370CC00B1ED2 /* Frameworks */ = {
@@ -158,6 +188,13 @@
 		490024E70D95093AB1951E48 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				5B948D63ADE9D91E7248261E /* WorkoutAnalyticsView.swift */,
+				B54B2B666716848F36ED37CC /* StreakView.swift */,
+				BD0AD2D78B45E2055FFEC786 /* ProgressHubView.swift */,
+				3163517AD954620827BAEE18 /* NutritionDashboardView.swift */,
+				29AF466959E804E53C0AD0C8 /* HeartRateZonesView.swift */,
+				58C51A067B9D35D625B0BEBF /* GuidedBreathingView.swift */,
+				54AB0C90AE856E41BF5BB228 /* DailyChallengeView.swift */,
 				6898FC4E5DC58AADAE0A1695 /* CalendarView.swift */,
 				C2E0798186938E6A78F8840C /* ChatView.swift */,
 				40FEEDA56B628E11A1DF72E7 /* DashboardView.swift */,
@@ -178,6 +215,8 @@
 		63276806301D09016BEA0BED /* Components */ = {
 			isa = PBXGroup;
 			children = (
+				296E6114F33AF0D457656B52 /* StreakCard.swift */,
+				CF1785ADF16F5158CDFC008C /* DailyChallengeCard.swift */,
 				F40EABE5D27FCF7823E1EE7F /* AnimatedButton.swift */,
 				CC69512B936CD5BF1517FD2F /* AppLoadingScreen.swift */,
 				C11DACF9D1AC1F925BFE2C2E /* CameraImagePicker.swift */,
@@ -235,6 +274,12 @@
 		8FFC23862DFFC84371A26B18 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				7A19260F32037834A5C4AB0D /* TrainingLoadEngine.swift */,
+				F7C5B4F52732710025E79A15 /* StreakEngine.swift */,
+				233A72203139E6ABFFA979C8 /* NutritionService.swift */,
+				ED398597BCFC0D6BAC90425A /* HeartRateZoneCalculator.swift */,
+				0DEBF34B6937CB281E0836D2 /* ChallengeEngine.swift */,
+				84D3F895AD9C666885F374CB /* BreathingSessionManager.swift */,
 				1AEE45FE10590AEB3752ABEE /* AstraWidgetStore.swift */,
 				E91ABDB6B97375D97C0A0737 /* EventKitManager.swift */,
 				1E202C43D8779CC3093A43BB /* NotificationManager.swift */,
@@ -358,6 +403,21 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				66F2C8CE3EF35C46E32FBD7A /* BreathingSessionManager.swift in Sources */,
+				DCB1217E413AEB22FC86FA99 /* ChallengeEngine.swift in Sources */,
+				99B2B36883441761E1558E5C /* HeartRateZoneCalculator.swift in Sources */,
+				EADFDD3D16D1DDFB41F610F6 /* NutritionService.swift in Sources */,
+				2876A9D5002BB6A0F44FA587 /* StreakEngine.swift in Sources */,
+				64FCC7DCEBC08CE6FA6145EC /* TrainingLoadEngine.swift in Sources */,
+				CDAF047B0F7599E555B6E57E /* DailyChallengeView.swift in Sources */,
+				B3D2E33205DED3234B5A9653 /* GuidedBreathingView.swift in Sources */,
+				B933F3DED3208B1AD5676DE6 /* HeartRateZonesView.swift in Sources */,
+				7371CEE4B7936D5530595AEC /* NutritionDashboardView.swift in Sources */,
+				BA8E5187DC3814A7A7102C00 /* ProgressHubView.swift in Sources */,
+				CAD20776B61E997FAFCEA1C1 /* StreakView.swift in Sources */,
+				4507FB949F266FB37F661B09 /* WorkoutAnalyticsView.swift in Sources */,
+				1570E9462CF2FCB34DC89217 /* DailyChallengeCard.swift in Sources */,
+				574D8508D38E6EA65F34CCB6 /* StreakCard.swift in Sources */,
 				B7BE27C04F41337BFB644B40 /* AnimatedButton.swift in Sources */,
 				93113AC6D6114D34754A3A1A /* AppLoadingScreen.swift in Sources */,
 				E12B100E893488D6A2DB69A3 /* AstraWidget.swift in Sources */,

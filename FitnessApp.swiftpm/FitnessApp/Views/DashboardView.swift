@@ -301,6 +301,9 @@ public struct DashboardView: View {
         .sheet(isPresented: $showHRZones) {
             HeartRateZonesView()
         }
+        .sheet(isPresented: $showWorkoutAnalytics) {
+            WorkoutAnalyticsView()
+        }
         .fullScreenCover(item: $lastSleepReport) { s in
             SleepReportView(session: s, onClose: { lastSleepReport = nil })
         }
@@ -631,9 +634,6 @@ public struct DashboardView: View {
         }
         .padding(paddingVal)
         .glassCard()
-        .sheet(isPresented: ) {
-            WorkoutAnalyticsView()
-        }
     }
     
     // MARK: - Helper Methods
