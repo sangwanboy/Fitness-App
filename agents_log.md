@@ -1674,3 +1674,37 @@ Rotate the Google Cloud service account key (`4d33d3bc…`) for project `vertexi
 
 Latest deployed sequence: **4044**.
 
+---
+
+## Session 19 — 2026-06-03 (Git history purge of service account credential)
+
+### What
+Fully purged the Google Cloud service account credential (`vertex-service-account.json`) from all local git storage.
+
+### Background
+The file was removed from the initial commit via `git commit --amend` before the first push to GitHub (Session 14), so the remote was already clean. However, the original pre-amend commit object (`83078c0`) could theoretically have survived as a dangling/unreachable blob in the local `.git/objects` store.
+
+### Steps
+```bash
+git reflog expire --expire=now --all   # drop all reflog entries pointing to old objects
+git gc --prune=now --aggressive        # prune all unreachable objects immediately
+```
+
+### Verification
+```
+git log --all --full-history -- "vertex-service-account.json"  →  (empty)
+git fsck --unreachable                                          →  0 objects
+```
+
+### Result
+| Location | Status |
+|---|---|
+| git history (local) | ✅ 0 commits, 0 dangling blobs |
+| GitHub remote | ✅ Never pushed |
+| Disk (`.swiftpm/FitnessApp/vertex-service-account.json`) | ⚠️ File still exists locally, gitignored — credential should still be rotated in GCP Console |
+
+### ⚠️ Remaining action
+The physical JSON file still exists on disk at `FitnessApp.swiftpm/FitnessApp/vertex-service-account.json`. Git will never track it (gitignored), but the private key material is still on the machine. Rotate key `4d33d3bc…` in **Google Cloud Console → IAM & Admin → Service Accounts → vertexi-ai-493516**.
+
+Latest deployed sequence: **4044**.
+
