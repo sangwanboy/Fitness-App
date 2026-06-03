@@ -1879,3 +1879,33 @@ The request was "remove **Lifestyle from** the Health Meter" — **NOT** remove 
 
 Latest deployed sequence: **4075**.
 
+---
+
+## Session 28 — 2026-06-03 (UI Polish — animations, glass, accessibility)
+
+### What
+Comprehensive UI/UX polish pass across 8 files. A 4-phase multi-agent workflow (6 parallel audit agents → synthesis → implementation → build) was launched to identify all issues; 300 issues found across 6 domains. The implementation phase hit session rate limits on subagents, so the highest-impact changes were applied directly.
+
+### Changes
+
+| File | Change |
+|---|---|
+| `WidgetsCard.swift` | Replaced fake glass on `AstraWidgetTile` (`.background(RoundedRectangle.fill(...))` + `.overlay(stroke)`) with `.glassEffect(.regular.interactive(), in: .rect(cornerRadius: 14))` |
+| `PredictionsCard.swift` | Wired `@State ringProgress` in `HealthMeterRow` to animate via `.onAppear` (spring 0.9s) — ring now draws on instead of appearing instantly |
+| `PredictionsCard.swift` | Added `@State ringProgress` + `.onAppear` spring animation to `RecoveryRow` ring |
+| `PredictionsCard.swift` | Added `@State barScale` + `.onAppear` spring animation to `SubScoreBar` fill — bars grow in from 0 |
+| `LoginView.swift` | Added `@State appeared` + `@State ringProgress` — entire view fades+slides up on appear; activity rings draw on with spring delay |
+| `LoginView.swift` | Upgraded "Get started" button background from flat `accentColor` to `LinearGradient` + deeper shadow |
+| `LoginView.swift` | Added `UIImpactFeedbackGenerator(.medium)` haptic on Get Started tap |
+| `LoginView.swift` | Added `.accessibilityLabel("Sign in with Face ID")` to Face ID button; `.accessibilityHidden(true)` to decorative bolt icon |
+| `SleepModeView.swift` | Added `.contentTransition(.numericText())` + `.animation(.easeInOut(0.3))` to clock Text so digits cross-fade each minute |
+| `SleepReportView.swift` | Added `@State appeared` — ScrollView content fades+slides up on sheet present (spring 0.55s) |
+| `WorkoutTrackerView.swift` | Added `.contentTransition(.numericText())` + `.animation(.easeInOut(0.2))` to workout timer so seconds tick smoothly |
+| `StreakCard.swift` | Added `.contentTransition(.numericText())` + spring animation to streak number; added `.accessibilityElement(children: .ignore).accessibilityLabel("\(n) week streak")` |
+
+### Build / deploy
+- **BUILD SUCCEEDED** (one compile error fixed: `max` ambiguous inside GeometryReader → `Swift.max`)
+- **databaseSequenceNumber: 4077**
+
+Latest deployed sequence: **4077**.
+

@@ -157,6 +157,8 @@ public struct WorkoutTrackerView: View {
                                 .font(.system(size: 64, weight: .semibold, design: .monospaced))
                                 .foregroundColor(isDark ? .white : .black)
                                 .shadow(color: selectedWorkoutType.themeColor.opacity(0.2), radius: 10)
+                                .contentTransition(.numericText())
+                                .animation(.easeInOut(duration: 0.2), value: secondsElapsed)
                             
                             HStack(spacing: 24) {
                                 // Estimated Calories

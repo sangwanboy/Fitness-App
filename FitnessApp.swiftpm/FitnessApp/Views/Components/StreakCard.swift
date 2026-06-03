@@ -73,10 +73,14 @@ public struct StreakCard: View {
                 .tracking(-1.2)
                 .foregroundColor(engine.currentStreak > 0 ? flameColor : (isDark ? .white.opacity(0.35) : .black.opacity(0.35)))
                 .monospacedDigit()
+                .contentTransition(.numericText())
+                .animation(.spring(response: 0.5, dampingFraction: 0.7), value: engine.currentStreak)
             Text("week\(engine.currentStreak == 1 ? "" : "s")")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundColor(isDark ? .white.opacity(0.6) : .black.opacity(0.6))
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(engine.currentStreak) week streak")
     }
 
     public var body: some View {

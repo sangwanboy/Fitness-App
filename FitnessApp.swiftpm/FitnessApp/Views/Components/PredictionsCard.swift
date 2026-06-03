@@ -335,6 +335,7 @@ private struct HealthMeterRow: View {
     let onWhy: () -> Void
     @AppStorage("theme_mode") private var themeMode = "dark"
     private var isDark: Bool { themeMode == "dark" }
+    @State private var ringProgress: CGFloat = 0
 
     private var labelColor: Color {
         switch meter.label {
@@ -353,7 +354,7 @@ private struct HealthMeterRow: View {
                         .stroke(labelColor.opacity(0.18), lineWidth: 7)
                         .frame(width: 64, height: 64)
                     Circle()
-                        .trim(from: 0, to: CGFloat(meter.score) / 100)
+                        .trim(from: 0, to: ringProgress * CGFloat(meter.score) / 100)
                         .stroke(labelColor, style: StrokeStyle(lineWidth: 7, lineCap: .round))
                         .frame(width: 64, height: 64)
                         .rotationEffect(.degrees(-90))
@@ -409,6 +410,11 @@ private struct HealthMeterRow: View {
             }
             .padding(.top, 2)
         }
+        .onAppear {
+            withAnimation(.spring(response: 0.9, dampingFraction: 0.75).delay(0.1)) {
+                ringProgress = 1
+            }
+        }
     }
 }
 
@@ -419,6 +425,7 @@ private struct SubScoreBar: View {
     let color: Color
     @AppStorage("theme_mode") private var themeMode = "dark"
     private var isDark: Bool { themeMode == "dark" }
+    @State private var barScale: CGFloat = 0
 
     var body: some View {
         HStack(spacing: 8) {
@@ -432,10 +439,15 @@ private struct SubScoreBar: View {
                         .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.08))
                     Capsule()
                         .fill(color)
-                        .frame(width: geo.size.width * CGFloat(value) / CGFloat(max))
+                        .frame(width: Swift.max(4, geo.size.width * CGFloat(value) / CGFloat(max) * barScale))
                 }
             }
             .frame(height: 5)
+            .onAppear {
+                withAnimation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.25)) {
+                    barScale = 1
+                }
+            }
             Text("\(value)/\(max)")
                 .font(.system(size: 10, weight: .semibold, design: .rounded))
                 .foregroundColor(isDark ? .white.opacity(0.55) : .black.opacity(0.55))
@@ -451,6 +463,7 @@ private struct RecoveryRow: View {
     let onWhy: () -> Void
     @AppStorage("theme_mode") private var themeMode = "dark"
     private var isDark: Bool { themeMode == "dark" }
+    @State private var ringProgress: CGFloat = 0
 
     private var labelColor: Color {
         switch reading.label {
@@ -468,7 +481,7 @@ private struct RecoveryRow: View {
                     .stroke(labelColor.opacity(0.18), lineWidth: 6)
                     .frame(width: 54, height: 54)
                 Circle()
-                    .trim(from: 0, to: CGFloat(reading.score) / 100)
+                    .trim(from: 0, to: ringProgress * CGFloat(reading.score) / 100)
                     .stroke(labelColor, style: StrokeStyle(lineWidth: 6, lineCap: .round))
                     .frame(width: 54, height: 54)
                     .rotationEffect(.degrees(-90))
@@ -503,6 +516,11 @@ private struct RecoveryRow: View {
                 }
             }
             Spacer(minLength: 0)
+        }
+        .onAppear {
+            withAnimation(.spring(response: 0.85, dampingFraction: 0.75).delay(0.15)) {
+                ringProgress = 1
+            }
         }
     }
 }

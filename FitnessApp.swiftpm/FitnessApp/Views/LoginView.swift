@@ -4,16 +4,18 @@ public struct LoginView: View {
     @AppStorage("is_logged_in") private var isLoggedIn = false
     @AppStorage("accent_color") private var accentColorHex = "#30D158"
     @AppStorage("theme_mode") private var themeMode = "dark"
-    
+    @State private var appeared = false
+    @State private var ringProgress: Double = 0
+
     public init() {}
-    
+
     private var isDark: Bool { themeMode == "dark" }
     private var accentColor: Color { ThemeHelper.color(from: accentColorHex) }
-    
+
     public var body: some View {
         ZStack {
             AdaptiveBackground()
-            
+
             VStack {
                 Spacer()
                 
@@ -53,27 +55,27 @@ public struct LoginView: View {
                                 .stroke(Color.white.opacity(0.18), lineWidth: 3.5)
                                 .frame(width: 44, height: 44)
                             Circle()
-                                .trim(from: 0, to: 0.78)
+                                .trim(from: 0, to: ringProgress * 0.78)
                                 .stroke(Color.white, style: StrokeStyle(lineWidth: 3.5, lineCap: .round))
                                 .frame(width: 44, height: 44)
                                 .rotationEffect(.degrees(-90))
-                            
+
                             // Exercise ring
                             Circle()
                                 .stroke(Color.white.opacity(0.14), lineWidth: 3.5)
                                 .frame(width: 31, height: 31)
                             Circle()
-                                .trim(from: 0, to: 0.62)
+                                .trim(from: 0, to: ringProgress * 0.62)
                                 .stroke(Color.white.opacity(0.78), style: StrokeStyle(lineWidth: 3.5, lineCap: .round))
                                 .frame(width: 31, height: 31)
                                 .rotationEffect(.degrees(-90))
-                            
+
                             // Stand ring
                             Circle()
                                 .stroke(Color.white.opacity(0.10), lineWidth: 3.5)
                                 .frame(width: 18, height: 18)
                             Circle()
-                                .trim(from: 0, to: 0.92)
+                                .trim(from: 0, to: ringProgress * 0.92)
                                 .stroke(Color.white.opacity(0.58), style: StrokeStyle(lineWidth: 3.5, lineCap: .round))
                                 .frame(width: 18, height: 18)
                                 .rotationEffect(.degrees(-90))
@@ -102,20 +104,28 @@ public struct LoginView: View {
                 VStack(spacing: 12) {
                     // Get started button
                     Button(action: {
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                         withAnimation { isLoggedIn = true }
                     }) {
                         HStack(spacing: 8) {
                             Image(systemName: "bolt.fill")
                                 .font(.system(size: 20))
+                                .accessibilityHidden(true)
                             Text("Get started — it's free")
                                 .fontWeight(.bold)
                         }
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .frame(height: 56)
-                        .background(accentColor)
+                        .background(
+                            LinearGradient(
+                                colors: [accentColor, accentColor.opacity(0.8)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
                         .cornerRadius(16)
-                        .shadow(color: accentColor.opacity(0.35), radius: 12, x: 0, y: 4)
+                        .shadow(color: accentColor.opacity(0.4), radius: 14, x: 0, y: 6)
                     }
                     .padding(.horizontal, 24)
                     
@@ -185,6 +195,7 @@ public struct LoginView: View {
                         .frame(height: 54)
                         .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 16))
                     }
+                    .accessibilityLabel("Sign in with Face ID")
                     .padding(.horizontal, 24)
                     
                     Text("By continuing you agree to our Terms and Privacy Policy. We never sell your health data.")
@@ -195,6 +206,16 @@ public struct LoginView: View {
                         .padding(.top, 8)
                 }
                 .padding(.bottom, 36)
+            }
+        }
+        .opacity(appeared ? 1 : 0)
+        .offset(y: appeared ? 0 : 28)
+        .onAppear {
+            withAnimation(.spring(response: 0.65, dampingFraction: 0.8).delay(0.1)) {
+                appeared = true
+            }
+            withAnimation(.spring(response: 1.1, dampingFraction: 0.7).delay(0.35)) {
+                ringProgress = 1
             }
         }
     }

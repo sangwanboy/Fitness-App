@@ -1,5 +1,13 @@
 import SwiftUI
 
+private struct TilePressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
+            .animation(.spring(response: 0.25, dampingFraction: 0.75), value: configuration.isPressed)
+    }
+}
+
 /// Home card that renders the user's pinned Astra widgets. Wide. Empty
 /// state hidden by the existing empty-card rule (`hasData("widgets")`).
 /// Tap a widget → bottom sheet with full body + "Remove" / "Ask Astra"
@@ -24,12 +32,32 @@ public struct WidgetsCard: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
-            VStack(spacing: 10) {
-                ForEach(store.widgets) { widget in
-                    Button(action: { selectedWidget = widget }) {
-                        AstraWidgetTile(widget: widget, hk: hk)
+            if store.widgets.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "square.grid.2x2")
+                        .font(.system(size: 28, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.25))
+                    Text("No widgets yet")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.4))
+                    Text("Ask Astra to pin a widget to your Home.")
+                        .font(.system(size: 12, weight: .regular))
+                        .foregroundColor(.white.opacity(0.28))
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 20)
+            } else {
+                VStack(spacing: 10) {
+                    ForEach(Array(store.widgets.enumerated()), id: \.element.id) { idx, widget in
+                        Button(action: { selectedWidget = widget }) {
+                            AstraWidgetTile(widget: widget, hk: hk)
+                        }
+                        .buttonStyle(TilePressStyle())
+                        .accessibilityLabel(widget.title)
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                        .animation(.spring(response: 0.38, dampingFraction: 0.82).delay(Double(idx) * 0.05), value: store.widgets.count)
                     }
-                    .buttonStyle(.plain)
                 }
             }
         }
@@ -59,7 +87,7 @@ public struct WidgetsCard: View {
                     .foregroundColor(.white)
             }
             Text("ASTRA STUDIO")
-                .font(.system(size: 11, weight: .bold))
+                .font(.system(size: 11, weight: .semibold))
                 .tracking(0.5)
                 .foregroundColor(isDark ? .white.opacity(0.5) : .black.opacity(0.5))
             Spacer()
@@ -120,14 +148,7 @@ struct AstraWidgetTile: View {
             Spacer(minLength: 0)
         }
         .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(isDark ? Color.white.opacity(0.04) : Color.black.opacity(0.04))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 14)
-                .stroke(color.opacity(0.20), lineWidth: 1)
-        )
+        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 14))
     }
 
     @ViewBuilder
@@ -843,7 +864,7 @@ private struct DeltaBlockView: View {
         .padding(.vertical, 4)
         .background(
             Capsule()
-                .fill((up ? Color.green : Color.red).opacity(0.15))
+                .fill((up ? Color.green : Color.red).opacity(0.12))
         )
     }
 }

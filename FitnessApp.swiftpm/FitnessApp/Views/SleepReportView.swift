@@ -9,6 +9,7 @@ public struct SleepReportView: View {
 
     @State private var saving = false
     @State private var saved = false
+    @State private var appeared = false
     @AppStorage("theme_mode") private var themeMode = "dark"
     @AppStorage("accent_color") private var accentColorHex = "#30D158"
 
@@ -46,6 +47,13 @@ public struct SleepReportView: View {
                 .padding(20)
                 .padding(.top, 24)
                 .padding(.bottom, 60)
+                .opacity(appeared ? 1 : 0)
+                .offset(y: appeared ? 0 : 18)
+                .onAppear {
+                    withAnimation(.spring(response: 0.55, dampingFraction: 0.8).delay(0.1)) {
+                        appeared = true
+                    }
+                }
             }
         }
         .preferredColorScheme(isDark ? .dark : .light)

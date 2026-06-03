@@ -50,6 +50,8 @@ public struct SleepModeView: View {
                     .foregroundColor(.white.opacity(0.85))
                     .monospacedDigit()
                     .tracking(-2)
+                    .contentTransition(.numericText())
+                    .animation(.easeInOut(duration: 0.3), value: now)
 
                 Text(now, format: .dateTime.weekday(.wide).month().day())
                     .font(.system(size: 14, weight: .medium, design: .rounded))
