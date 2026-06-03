@@ -8,7 +8,6 @@ public final class HealthKitManager: ObservableObject {
     
     private let healthStore = HKHealthStore()
     
-    @Published public var isLoading: Bool = false
     @Published public var metricSummaries: [HealthMetricType: MetricSummary] = [:]
 
     /// True when any source has written heart-rate samples in the last 7 days
@@ -239,11 +238,11 @@ public final class HealthKitManager: ObservableObject {
     // Fetch today's health metrics from HealthKit
     public func fetchTodayData() async {
         guard HKHealthStore.isHealthDataAvailable() else { return }
-        
-        DispatchQueue.main.async {
-            self.isLoading = true
-        }
-        
+
+        // Health-data sync is silent: no global loading flag is toggled here, so
+        // automatic / periodic fetches never flash a loading overlay on Home or
+        // Progress. Pull-to-refresh shows its own native spinner via `.refreshable`.
+
         // Fetch steps, calories, heart rate, sleep, distance, hrv, hydration in parallel
         await withTaskGroup(of: Void.self) { group in
             group.addTask { await self.fetchSteps() }
@@ -326,10 +325,6 @@ public final class HealthKitManager: ObservableObject {
         // 30-day rolling average by >15 % and no session was done today.
         if let hrvHistory = metricSummaries[.hrv]?.history, !hrvHistory.isEmpty {
             BreathingSessionManager.shared.scheduleHRVNudgeIfNeeded(hrv: hrvHistory)
-        }
-
-        DispatchQueue.main.async {
-            self.isLoading = false
         }
     }
 

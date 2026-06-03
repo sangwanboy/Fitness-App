@@ -12,6 +12,11 @@ public struct ContentView: View {
     @State private var activeModal: String? = nil
     @State private var didFinishInitialLoad = false
 
+    @Environment(\.scenePhase) private var scenePhase
+    /// Polls HealthKit every 15s while the app is on-screen. Silent — fetchTodayData
+    /// no longer toggles any loading overlay, so this never shows a spinner.
+    private let healthSyncTimer = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
+
     private var isDark: Bool { themeMode == "dark" }
 
     public init() {}
@@ -96,11 +101,6 @@ public struct ContentView: View {
                 }
             }
 
-            if healthKitManager.isLoading && didFinishInitialLoad {
-                GlassLoaderOverlay()
-                    .zIndex(100)
-            }
-
             if !didFinishInitialLoad {
                 AppLoadingScreen()
                     .transition(.opacity)
@@ -138,9 +138,9 @@ public struct ContentView: View {
                 if !UserDefaults.standard.bool(forKey: "hk_requested_once") {
                     _ = await healthKitManager.requestAuthorization()
                     UserDefaults.standard.set(true, forKey: "hk_requested_once")
-                } else {
-                    await healthKitManager.fetchTodayData()
                 }
+                // Sync health data once on open (silent — no overlay).
+                await healthKitManager.fetchTodayData()
                 await EventKitManager.shared.requestAccess()
                 if EventKitManager.shared.remindersGranted {
                     await EventKitManager.shared.fetchReminders()
@@ -164,6 +164,16 @@ public struct ContentView: View {
             withAnimation(.easeOut(duration: 0.55)) {
                 didFinishInitialLoad = true
             }
+        }
+        // Periodic silent health-data sync every 15s while the app is on-screen.
+        .onReceive(healthSyncTimer) { _ in
+            guard isOnboarded, isLoggedIn, didFinishInitialLoad, scenePhase == .active else { return }
+            Task { await healthKitManager.fetchTodayData() }
+        }
+        // Also sync the moment the app returns to the foreground.
+        .onChange(of: scenePhase) { phase in
+            guard phase == .active, isOnboarded, isLoggedIn, didFinishInitialLoad else { return }
+            Task { await healthKitManager.fetchTodayData() }
         }
     }
 }
