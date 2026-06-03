@@ -1779,3 +1779,27 @@ Latest deployed sequence: **4054**.
 
 Latest deployed sequence: **4056**.
 
+---
+
+## Session 23 — 2026-06-03 (Fix tangled metric chart + live camera panel)
+
+### A. Fixed the spaghetti "Weekly Analytics" chart (`MetricChart.swift`)
+Screenshot showed the Distance detail chart as a tangle of crossing green curves. Cause: line/area metrics passed their x with `unit: .day` binning to `LineMark`/`AreaMark` + `catmullRom`; any time the history had >1 sample mapping to the same day bin, the points collapsed onto one x and the smoothed line looped between them.
+- Rewrote `chartData` to ALWAYS return clean, sorted, one-point-per-bucket data (per-day for short ranges, per-month on the 1-year scale, intraday for heart rate) — same-day samples are averaged/de-duped, guaranteeing monotonic x so the line can't self-cross regardless of source data.
+- Removed `unit:` binning from the Distance + default `LineMark`/`AreaMark` (binning is only kept on `BarMark`s).
+- Switched Distance + default line interpolation from `.catmullRom` to `.monotone` (never overshoots/loops).
+- Scale decision now uses the history's **date span** (`isYearScale`) and `chartData.count`, not the raw row count.
+
+### B. Live camera panel for meal scanning (`FoodCameraView.swift` — NEW)
+User: tapping the scan button should open a real camera viewfinder directly, with an "upload from photos" button at the lower-left of the shutter.
+- New AVFoundation camera view: full-screen `AVCaptureSession` preview, centered shutter, **Upload (PhotosPicker) button at the lower-left of the shutter**, close button, permission/unavailable fallbacks (still offers Upload). Portrait-locked capture.
+- `FoodScanView` `.camera` phase now shows `FoodCameraView` directly (removed the old "Take Photo / Choose from Library" menu screen); nav bar hidden during the camera phase.
+- Both entry points present the flow as `.fullScreenCover` (was `.sheet`) for a true camera experience — `DashboardView` + `NutritionDashboardView`.
+- Registered `FoodCameraView.swift` in pbxproj via `/tmp/register_one.py` (adds one file to the existing FoodScan group).
+
+### Build / deploy
+- Simulator + device **BUILD SUCCEEDED**, zero errors. Installed AND launched via `xcrun devicectl`.
+- **databaseSequenceNumber: 4058**.
+
+Latest deployed sequence: **4058**.
+
