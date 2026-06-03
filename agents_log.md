@@ -1836,3 +1836,21 @@ Latest deployed sequence: **4060**.
 
 Latest deployed sequence: **4062**.
 
+---
+
+## Session 26 — 2026-06-03 (Silent background health sync + 15s on-screen poll)
+
+### Goal
+Health-data syncing should be invisible on Home/Progress — no loading overlay during automatic syncs; the only sync indicator is the native pull-to-refresh spinner when the user swipes down. Sync once on open, then every 15s while the app is on-screen.
+
+### Changes
+- **`HealthKitManager.fetchTodayData()` is now silent**: removed the `isLoading = true/false` toggling and deleted the `@Published var isLoading` property entirely. Automatic/periodic fetches no longer drive any overlay.
+- **`ContentView`**: removed the mid-session `GlassLoaderOverlay` (it was shown on every `isLoading` flip — i.e., every sync). The cold-launch `AppLoadingScreen` splash is unchanged. Pull-to-refresh keeps its native `.refreshable` spinner (the only swipe-down indicator), and `DashboardView`/`ProgressHubView` `.onAppear` fetches are now silent too.
+- **Sync cadence**: `.task` now always calls `fetchTodayData()` once on open (in both first-launch and returning cases). Added a `Timer.publish(every: 15s).autoconnect()` `.onReceive` that silently calls `fetchTodayData()` while `scenePhase == .active` (gated on onboarded + logged-in + past initial load), plus an `.onChange(of: scenePhase)` that syncs the moment the app returns to the foreground. AI enrichment stays cached per-day (status≠.pending after first run) so the 15s poll does local recompute only — no repeated Vertex calls / token burn.
+
+### Build / deploy
+- Simulator + device **BUILD SUCCEEDED**, zero errors. Installed AND launched via `xcrun devicectl`.
+- **databaseSequenceNumber: 4073**.
+
+Latest deployed sequence: **4073**.
+
