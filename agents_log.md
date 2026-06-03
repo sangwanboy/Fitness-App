@@ -1803,3 +1803,21 @@ User: tapping the scan button should open a real camera viewfinder directly, wit
 
 Latest deployed sequence: **4058**.
 
+---
+
+## Session 24 — 2026-06-03 (Token cost estimates in the AI token counter)
+
+### Research finding
+Gemini/Vertex `usageMetadata` returns token **counts only — never a dollar cost**. So cost must be computed client-side = counts × the model's published per-token rates. Confirmed gemini-3.5-flash list pricing (launched 2026-05-19): **$1.50 / 1M input, $9.00 / 1M output**; thinking ("thoughts") tokens bill at the output rate; cached input $0.15/1M.
+
+### Changes
+- **`TokenMeter.swift`**: new `GeminiPricing` enum (rate constants + `inputCost`/`outputCost`/`thinkingCost`/`cost(...)` + `formatUSD`). Extended the meter to also track per-source prompt/output/thoughts (`promptBySource`/`outputBySource`/`thoughtsBySource`) so per-feature cost is accurate. Added `inputCost`/`outputCost`/`thinkingCost`/`totalCost` + `cost(for:)`. Snapshot's new per-source dicts are optional → old saved blobs still decode (no reset for existing users).
+- **`TokenUsageView.swift`**: total card shows an **estimated-cost pill** under the token total; the Input/Output/Thinking breakdown rows each show their **$ cost** (with the rate in the subtitle); per-feature rows show **tokens · $cost · calls**; footer discloses the cost is an on-device ESTIMATE from list pricing, not the actual bill.
+- **`SettingsView.swift`**: the "AI token usage" row detail now reads e.g. `12.3K · $0.01`.
+
+### Build / deploy
+- Simulator + device **BUILD SUCCEEDED**, zero errors. Installed AND launched via `xcrun devicectl`.
+- **databaseSequenceNumber: 4060**.
+
+Latest deployed sequence: **4060**.
+
