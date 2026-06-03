@@ -195,7 +195,7 @@ public struct DashboardView: View {
         }
     }
     
-    private var wideCardIds: Set<String> { ["coach", "predictions", "activity", "upcoming", "workouts", "meals", "widgets", "tracksleep"] }
+    private var wideCardIds: Set<String> { ["coach", "predictions", "activity", "upcoming", "workouts", "meals", "widgets", "tracksleep", "challenge"] }
 
     // Pairs narrow cards into rows, emits wide cards on their own row.
     // Mirrors CSS grid auto-flow with grid-column: span 2 for wide cards.
@@ -227,6 +227,7 @@ public struct DashboardView: View {
                                 .offset(y: animateWidgets ? 0.0 : 15.0)
                         }
                     }
+                    .frame(maxWidth: .infinity)
                 }
 
                 // Show more / Show less expandable grid of extra HealthKit tiles.
