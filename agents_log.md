@@ -1821,3 +1821,18 @@ Gemini/Vertex `usageMetadata` returns token **counts only — never a dollar cos
 
 Latest deployed sequence: **4060**.
 
+---
+
+## Session 25 — 2026-06-03 (Astra correction chat + per-dish delete in food review)
+
+### Changes
+- **`FoodVisionService.refineFood(imageData:currentItemsJSON:instruction:)`** — NEW. Sends the original photo + the items currently shown (as JSON) + the user's natural-language correction back to gemini-3.5-flash and returns the corrected full `FoodRecognitionResult`. Astra's short reply is returned in `plate_note`. Reuses the same endpoint/schema; records tokens to `.foodVision`. Does not throw on empty result (user may remove everything).
+- **`FoodReviewSheet` — Astra correction chat (`astraBox`)**: a chat box below the totals where the user types corrections in plain language ("the chicken is skinless", "potatoes are 2 cups", "remove the tacos"). On send it calls `refineFood` with the photo + current items as context, replaces the item list with Astra's corrected version (animated), and shows the conversation thread (user + Astra reply). Astra has FULL context — the image and every detected item.
+- **`FoodReviewSheet` — per-dish delete**: each item row now has a red **trash** button below the edit pencil that removes that dish from the list (`deleteItem`).
+
+### Build / deploy
+- Simulator + device **BUILD SUCCEEDED**, zero errors. Installed via `xcrun devicectl` (**seq 4062**). Auto-launch was blocked (device locked) — installs fine, opens on unlock.
+- **databaseSequenceNumber: 4062**.
+
+Latest deployed sequence: **4062**.
+
