@@ -1854,3 +1854,25 @@ Health-data syncing should be invisible on Home/Progress — no loading overlay 
 
 Latest deployed sequence: **4073**.
 
+---
+
+## Session 27 — 2026-06-03 (Remove Lifestyle from the Health Meter)
+
+### Change
+Dropped the **Lifestyle** sub-score (was 0–15: mindfulness + VO₂max + walking pace/asymmetry) from the Health Meter. The other four dimensions keep their internal scoring and are scaled to new caps so the meter still totals **0–100**: **Activity 30 / Nutrition 30 / Body 18 / Vitals 22** (the freed 15 points redistributed proportionally). Label thresholds (85/65/45) unchanged.
+
+### Files
+- `Services/PredictionEngine.swift` `computeHealthMeter`: removed the Lifestyle block + the mindfulness bullet; scales activity/nutrition/body/vitals to 30/30/18/22; `total` = sum of the four; sub-score breakdown array updated.
+- `Models/Prediction.swift` `HealthMeterScore`: removed `lifestyleScore` field + init param; updated cap comments to 30/30/18/22.
+- `Views/Components/PredictionsCard.swift`: removed the Lifestyle `SubScoreBar`; updated the four bar caps.
+- `Views/Components/PredictionWhySheet.swift`: removed the Lifestyle quick-action entry; updated caps.
+- `ViewModels/ChatViewModel.swift` `predictionsFullBlock`: dropped the Lifestyle line; updated caps in the inline system-prompt block.
+- `Services/PredictionAIService.swift`: dropped Lifestyle from `predictionsSummary` + the Why-sheet detail block; "Cover ALL four sub-scores" (was five).
+- Snapshot still populates mindful/VO₂max/gait fields (used by other surfaces); they're just no longer part of the meter.
+
+### Build / deploy
+- Simulator + device **BUILD SUCCEEDED**, zero errors. Installed via `xcrun devicectl` (**seq 4075**); auto-launch blocked (device locked) — opens on unlock.
+- **databaseSequenceNumber: 4075**.
+
+Latest deployed sequence: **4075**.
+
