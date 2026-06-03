@@ -1600,3 +1600,77 @@ Sequence **4042**.
 
 Latest deployed sequence: **4042**.
 
+---
+
+## Session 18 — 2026-06-03 (HealthKit sync throttle)
+
+### Bug
+`.onAppear` on both `DashboardView` and `ProgressHubView` called `fetchTodayData()` / `refreshAllData()` unconditionally. SwiftUI fires `.onAppear` every time a tab becomes visible — even a simple tab switch — so every press of the Home or Progress button triggered a full HealthKit round-trip, causing visible loading and unnecessary battery/CPU use.
+
+### Root cause
+```swift
+// DashboardView.swift — fired on every tab visit
+.onAppear {
+    Task { await refreshAllData() }   // ← no staleness check
+}
+
+// ProgressHubView.swift — same problem
+.onAppear {
+    Task { try? await hk.fetchTodayData() }   // ← no staleness check
+}
+```
+
+### Fix
+Added `@State private var lastRefreshed: Date?` to both views. `.onAppear` now skips the fetch if data is less than 5 minutes old:
+
+```swift
+let isStale = lastRefreshed.map { Date().timeIntervalSince($0) > 300 } ?? true
+guard isStale else { return }
+lastRefreshed = Date()
+Task { await refreshAllData() }
+```
+
+`@State` persists across tab switches (views stay alive in memory in a TabView), so the timestamp survives repeated tab presses. Pull-to-refresh still calls `refreshAllData()` directly — always forces a full sync regardless of staleness.
+
+### Behaviour after fix
+| Scenario | Before | After |
+|---|---|---|
+| First app launch | Fetch ✓ | Fetch ✓ |
+| Switch Home → Progress → Home (within 5 min) | Fetch every time | No fetch (skipped) |
+| Switch Home → Progress → Home (after 5 min) | Fetch every time | Fetch ✓ |
+| Pull-to-refresh on Home | Fetch ✓ | Fetch ✓ (always) |
+
+### Files changed
+- `Views/DashboardView.swift` — added `lastRefreshed` state + staleness guard in `.onAppear`
+- `Views/ProgressHubView.swift` — same pattern
+
+### Deployed
+Sequence **4044** (estimated — install confirmed, sequence not captured).
+
+### Commit
+- `62a853d` — perf: skip HealthKit sync on tab re-visit if data is <5 min old
+- Pushed to https://github.com/sangwanboy/Fitness-App
+
+---
+
+## Session Summary — 2026-06-02 / 2026-06-03
+
+### Total work across sessions 14–18
+| Item | Detail |
+|---|---|
+| GitHub repo | https://github.com/sangwanboy/Fitness-App (public) |
+| New features | 6 (Streaks, HR Zones, Nutrition Macros, Workout Analytics, Daily Challenges, Guided Breathing) |
+| New Swift files | 15 created, 6 modified |
+| Total new lines | ~6,800 insertions |
+| Workflow agents | 17 (8 Opus research + 1 Opus synthesis + 6 Sonnet impl + 1 Sonnet integration + 1 Opus commit) |
+| Compiler errors fixed | 4 (xcodeproj registration, BreathPhase raw values, sheet placement, AnyShapeStyle mismatch) |
+| UI bugs fixed | 3 (portrait lock, DailyChallengeCard width, horizontal scroll clamp) |
+| Perf fix | HealthKit sync throttle (5-min staleness gate on tab re-visit) |
+| Final deployed sequence | 4042–4044 |
+| Final git HEAD | `62a853d` |
+
+### ⚠️ Outstanding action
+Rotate the Google Cloud service account key (`4d33d3bc…`) for project `vertexi-ai-493516` — it existed in a local git commit (never pushed to GitHub, but treat as potentially exposed).
+
+Latest deployed sequence: **4044**.
+
