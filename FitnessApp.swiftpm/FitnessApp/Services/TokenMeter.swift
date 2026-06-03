@@ -37,16 +37,38 @@ public enum TokenSource: String, Codable, CaseIterable, Sendable {
     }
 }
 
+/// Published per-1M-token pricing for **gemini-3.5-flash** (USD). The Gemini /
+/// Vertex API only returns token *counts* in `usageMetadata` — never a dollar
+/// cost — so cost is computed here from counts × these rates.
+/// Source: Google pricing, gemini-3.5-flash (May 2026): input $1.50, output
+/// $9.00 per 1M tokens. Thinking ("thoughts") tokens bill at the output rate.
+/// These are list-price ESTIMATES — actual billing (caching, batch, taxes) can
+/// differ. Update here if the model or rates change.
+public enum GeminiPricing {
+    public static let inputPerMillion: Double = 1.50
+    public static let outputPerMillion: Double = 9.00
+    public static let thinkingPerMillion: Double = 9.00   // thoughts billed as output
+
+    public static func inputCost(_ t: Int) -> Double { Double(t) / 1_000_000 * inputPerMillion }
+    public static func outputCost(_ t: Int) -> Double { Double(t) / 1_000_000 * outputPerMillion }
+    public static func thinkingCost(_ t: Int) -> Double { Double(t) / 1_000_000 * thinkingPerMillion }
+    public static func cost(prompt: Int, output: Int, thoughts: Int) -> Double {
+        inputCost(prompt) + outputCost(output) + thinkingCost(thoughts)
+    }
+
+    /// "$0.00" / "$0.0042" / "$0.013" / "$1.27" — more precision for tiny sums.
+    public static func formatUSD(_ v: Double) -> String {
+        if v <= 0 { return "$0.00" }
+        if v < 0.01 { return String(format: "$%.4f", v) }
+        if v < 1    { return String(format: "$%.3f", v) }
+        return String(format: "$%.2f", v)
+    }
+}
+
 /// Lifetime accounting of every Gemini API call the app makes, summed from the
 /// `usageMetadata` block Vertex returns on each response (Gemini's own built-in
 /// token report). Persisted across launches in UserDefaults. Single instance:
 /// `TokenMeter.shared`.
-///
-/// Recording happens at the three points the app parses `usageMetadata`:
-///   - `VertexGeminiClient` stream tail  → `.coach`
-///   - `PredictionAIService` why-sheet + `callGeminiJSON` → `.insights`
-///   - the food-vision recognizer → `.foodVision`
-/// so coverage is total regardless of which UI consumes the result.
 @MainActor
 public final class TokenMeter: ObservableObject {
     public static let shared = TokenMeter()
@@ -56,10 +78,12 @@ public final class TokenMeter: ObservableObject {
     @Published public private(set) var thoughts: Int = 0
     @Published public private(set) var total: Int = 0
     @Published public private(set) var calls: Int = 0
-    /// source.rawValue → total tokens spent through that source.
+    /// source.rawValue → totals spent through that source.
     @Published public private(set) var bySource: [String: Int] = [:]
-    /// source.rawValue → number of calls through that source.
     @Published public private(set) var callsBySource: [String: Int] = [:]
+    @Published public private(set) var promptBySource: [String: Int] = [:]
+    @Published public private(set) var outputBySource: [String: Int] = [:]
+    @Published public private(set) var thoughtsBySource: [String: Int] = [:]
     /// When counting began (first record after install, or last reset).
     @Published public private(set) var since: Date?
 
@@ -76,8 +100,12 @@ public final class TokenMeter: ObservableObject {
         thoughts += usage.thoughts
         total    += usage.total
         calls    += 1
-        bySource[source.rawValue, default: 0]      += usage.total
-        callsBySource[source.rawValue, default: 0] += 1
+        let k = source.rawValue
+        bySource[k, default: 0]         += usage.total
+        callsBySource[k, default: 0]    += 1
+        promptBySource[k, default: 0]   += usage.prompt
+        outputBySource[k, default: 0]   += usage.output
+        thoughtsBySource[k, default: 0] += usage.thoughts
         if since == nil { since = Date() }
         save()
     }
@@ -85,20 +113,39 @@ public final class TokenMeter: ObservableObject {
     public func reset() {
         prompt = 0; output = 0; thoughts = 0; total = 0; calls = 0
         bySource = [:]; callsBySource = [:]
+        promptBySource = [:]; outputBySource = [:]; thoughtsBySource = [:]
         since = Date()
         save()
     }
 
-    /// Tokens spent through one source (0 if none).
+    // MARK: - Token accessors
+
     public func tokens(for source: TokenSource) -> Int { bySource[source.rawValue] ?? 0 }
-    /// Calls made through one source (0 if none).
     public func callCount(for source: TokenSource) -> Int { callsBySource[source.rawValue] ?? 0 }
+
+    // MARK: - Cost (estimated, computed from GeminiPricing — not billed)
+
+    public var inputCost: Double { GeminiPricing.inputCost(prompt) }
+    public var outputCost: Double { GeminiPricing.outputCost(output) }
+    public var thinkingCost: Double { GeminiPricing.thinkingCost(thoughts) }
+    public var totalCost: Double { inputCost + outputCost + thinkingCost }
+
+    public func cost(for source: TokenSource) -> Double {
+        let k = source.rawValue
+        return GeminiPricing.cost(prompt: promptBySource[k] ?? 0,
+                                  output: outputBySource[k] ?? 0,
+                                  thoughts: thoughtsBySource[k] ?? 0)
+    }
 
     // MARK: - Persistence
 
     private struct Snapshot: Codable {
         var prompt: Int; var output: Int; var thoughts: Int; var total: Int
         var calls: Int; var bySource: [String: Int]; var callsBySource: [String: Int]
+        // Added later — optional so older saved blobs still decode.
+        var promptBySource: [String: Int]?
+        var outputBySource: [String: Int]?
+        var thoughtsBySource: [String: Int]?
         var since: Date?
     }
 
@@ -106,12 +153,18 @@ public final class TokenMeter: ObservableObject {
         guard let data = UserDefaults.standard.data(forKey: key),
               let s = try? JSONDecoder().decode(Snapshot.self, from: data) else { return }
         prompt = s.prompt; output = s.output; thoughts = s.thoughts; total = s.total
-        calls = s.calls; bySource = s.bySource; callsBySource = s.callsBySource; since = s.since
+        calls = s.calls; bySource = s.bySource; callsBySource = s.callsBySource
+        promptBySource = s.promptBySource ?? [:]
+        outputBySource = s.outputBySource ?? [:]
+        thoughtsBySource = s.thoughtsBySource ?? [:]
+        since = s.since
     }
 
     private func save() {
         let s = Snapshot(prompt: prompt, output: output, thoughts: thoughts, total: total,
-                         calls: calls, bySource: bySource, callsBySource: callsBySource, since: since)
+                         calls: calls, bySource: bySource, callsBySource: callsBySource,
+                         promptBySource: promptBySource, outputBySource: outputBySource,
+                         thoughtsBySource: thoughtsBySource, since: since)
         if let data = try? JSONEncoder().encode(s) {
             UserDefaults.standard.set(data, forKey: key)
         }

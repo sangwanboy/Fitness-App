@@ -1,8 +1,9 @@
 import SwiftUI
 
 /// Settings → AI token usage. Lifetime Gemini token totals (input / output /
-/// thinking) summed from each response's built-in `usageMetadata`, broken down
-/// by feature, with a reset.
+/// thinking) summed from each response's built-in `usageMetadata`, with an
+/// estimated dollar cost (computed from published gemini-3.5-flash rates — the
+/// API returns counts only, never cost), broken down by feature, with a reset.
 public struct TokenUsageView: View {
     @ObservedObject private var meter = TokenMeter.shared
     @Environment(\.dismiss) private var dismiss
@@ -71,14 +72,28 @@ public struct TokenUsageView: View {
                 .font(.system(size: 12, weight: .bold))
                 .tracking(0.8)
                 .foregroundColor(secondary)
+
+            // Estimated cost pill
+            HStack(spacing: 5) {
+                Image(systemName: "dollarsign.circle.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                Text("\(GeminiPricing.formatUSD(meter.totalCost)) est. cost")
+                    .font(.system(size: 13, weight: .semibold))
+            }
+            .foregroundColor(.green)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .glassEffect(.regular.interactive(), in: .capsule)
+            .padding(.top, 4)
+
             Text(subtitleLine)
                 .font(.system(size: 13))
                 .foregroundColor(secondary)
                 .multilineTextAlignment(.center)
-                .padding(.top, 2)
+                .padding(.top, 4)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 26)
+        .padding(.vertical, 24)
         .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 24))
     }
 
@@ -91,23 +106,26 @@ public struct TokenUsageView: View {
         return "\(callLabel) · since \(f.string(from: since))"
     }
 
-    // MARK: - Input / output / thinking breakdown
+    // MARK: - Input / output / thinking breakdown (count + cost)
 
     private var breakdownCard: some View {
         VStack(spacing: 0) {
             meterRow(icon: "arrow.up.circle.fill", color: .blue,
-                     title: "Input", subtitle: "Prompt tokens sent", value: meter.prompt)
+                     title: "Input", subtitle: "Prompt tokens · $1.50 / 1M",
+                     value: meter.prompt, cost: meter.inputCost)
             divider
             meterRow(icon: "arrow.down.circle.fill", color: .green,
-                     title: "Output", subtitle: "Visible model replies", value: meter.output)
+                     title: "Output", subtitle: "Visible replies · $9.00 / 1M",
+                     value: meter.output, cost: meter.outputCost)
             divider
             meterRow(icon: "brain", color: .purple,
-                     title: "Thinking", subtitle: "gemini-3.5-flash reasoning", value: meter.thoughts)
+                     title: "Thinking", subtitle: "Reasoning · billed as output",
+                     value: meter.thoughts, cost: meter.thinkingCost)
         }
         .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 20))
     }
 
-    private func meterRow(icon: String, color: Color, title: String, subtitle: String, value: Int) -> some View {
+    private func meterRow(icon: String, color: Color, title: String, subtitle: String, value: Int, cost: Double) -> some View {
         HStack(spacing: 12) {
             ZStack {
                 RoundedRectangle(cornerRadius: 8)
@@ -126,10 +144,15 @@ public struct TokenUsageView: View {
                     .foregroundColor(secondary)
             }
             Spacer()
-            Text(value.formatted())
-                .font(.system(size: 15, weight: .semibold, design: .rounded))
-                .foregroundColor(isDark ? .white : .black)
-                .contentTransition(.numericText())
+            VStack(alignment: .trailing, spacing: 1) {
+                Text(value.formatted())
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .foregroundColor(isDark ? .white : .black)
+                    .contentTransition(.numericText())
+                Text(GeminiPricing.formatUSD(cost))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.green.opacity(0.9))
+            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
@@ -142,7 +165,7 @@ public struct TokenUsageView: View {
             .padding(.leading, 56)
     }
 
-    // MARK: - By-feature breakdown
+    // MARK: - By-feature breakdown (tokens + cost)
 
     private var activeSources: [TokenSource] {
         TokenSource.allCases.filter { meter.tokens(for: $0) > 0 }
@@ -174,6 +197,7 @@ public struct TokenUsageView: View {
     private func sourceRow(_ src: TokenSource) -> some View {
         let tokens = meter.tokens(for: src)
         let calls = meter.callCount(for: src)
+        let cost = meter.cost(for: src)
         let fraction = meter.total > 0 ? Double(tokens) / Double(meter.total) : 0
         return VStack(spacing: 6) {
             HStack(spacing: 10) {
@@ -185,27 +209,33 @@ public struct TokenUsageView: View {
                     .font(.system(size: 14, weight: .medium))
                     .foregroundColor(isDark ? .white : .black)
                 Spacer()
-                Text("\(TokenFormat.compact(tokens)) · \(calls == 1 ? "1 call" : "\(calls) calls")")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(secondary)
+                Text("\(TokenFormat.compact(tokens)) · \(GeminiPricing.formatUSD(cost))")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(isDark ? .white.opacity(0.85) : .black.opacity(0.85))
             }
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.06))
-                    Capsule()
-                        .fill(src.tint.opacity(0.85))
-                        .frame(width: max(4, geo.size.width * fraction))
+            HStack(spacing: 8) {
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule()
+                            .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.06))
+                        Capsule()
+                            .fill(src.tint.opacity(0.85))
+                            .frame(width: max(4, geo.size.width * fraction))
+                    }
                 }
+                .frame(height: 6)
+                Text(calls == 1 ? "1 call" : "\(calls) calls")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(secondary)
+                    .fixedSize()
             }
-            .frame(height: 6)
         }
     }
 
     // MARK: - Footer
 
     private var footerNote: some View {
-        Text("Counts every Gemini API call the app makes — coach chat, predictions, “Why?” explanations, and food photo scans — summed from each response's built-in usage report. Stored on-device only.")
+        Text("Counts every Gemini API call the app makes — coach chat, predictions, “Why?” explanations, and food photo scans — summed from each response's built-in usage report. Cost is ESTIMATED on-device from gemini-3.5-flash list pricing ($1.50 / 1M input, $9.00 / 1M output; thinking billed as output) — the API returns token counts only, so actual Google Cloud billing may differ. Stored on-device.")
             .font(.system(size: 12))
             .foregroundColor(secondary)
             .multilineTextAlignment(.center)

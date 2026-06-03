@@ -223,9 +223,11 @@ public struct SettingsView: View {
         }
     }
 
-    /// Compact lifetime Gemini token total for the AI token usage row.
+    /// Compact lifetime Gemini token total + estimated cost for the row detail.
     private var tokenUsageSummary: String {
-        tokenMeter.total == 0 ? "No usage yet" : "\(TokenFormat.compact(tokenMeter.total)) tokens"
+        tokenMeter.total == 0
+            ? "No usage yet"
+            : "\(TokenFormat.compact(tokenMeter.total)) · \(GeminiPricing.formatUSD(tokenMeter.totalCost))"
     }
 
     /// One-line summary for the Daily goals row — shows the user's three most
