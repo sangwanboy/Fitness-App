@@ -612,6 +612,7 @@ public actor VertexGeminiClient {
         if let usage = obj["usageMetadata"] as? [String: Any],
            let parsed = TokenUsage(usageMetadata: usage) {
             continuation.yield(.usage(parsed))
+            Task { @MainActor in TokenMeter.shared.record(parsed, source: .coach) }
         }
     }
 }

@@ -172,10 +172,81 @@ struct BigNum: View {
     }
 }
 
+/// Adaptive header + value block shared by the metric cards.
+/// - Narrow (half-width tile): title row on top, big value below (the classic look).
+/// - Wide (card is alone on its row): title on the left, value pushed to the
+///   right so the card fills the width on purpose instead of looking stretched.
+/// Any chart / progress bar the card draws goes *below* this block and spans the
+/// full width in both modes.
+struct MetricHeaderValue: View {
+    let isWide: Bool
+    let icon: String
+    let title: String
+    let color: Color
+    let value: String
+    var unit: String? = nil
+    var caption: String? = nil
+    var valueColor: Color? = nil
+
+    @AppStorage("theme_mode") private var themeMode = "dark"
+    private var isDark: Bool { themeMode == "dark" }
+
+    private var titleLabel: some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(color)
+            Text(title)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(color)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+    }
+
+    private func valueBlock(_ alignment: HorizontalAlignment) -> some View {
+        VStack(alignment: alignment, spacing: 4) {
+            HStack(alignment: .lastTextBaseline, spacing: 4) {
+                Text(value)
+                    .font(.system(size: 30, weight: .bold, design: .rounded))
+                    .tracking(-1.2)
+                    .foregroundColor(valueColor ?? (isDark ? .white : .black))
+                    .monospacedDigit()
+                if let unit {
+                    Text(unit)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(isDark ? .white.opacity(0.6) : .black.opacity(0.6))
+                }
+            }
+            if let caption {
+                Text(caption)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(isDark ? .white.opacity(0.55) : .black.opacity(0.55))
+            }
+        }
+    }
+
+    var body: some View {
+        if isWide {
+            HStack(alignment: .center, spacing: 12) {
+                titleLabel
+                Spacer(minLength: 8)
+                valueBlock(.trailing)
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 6) { titleLabel; Spacer(minLength: 0) }
+                valueBlock(.leading)
+            }
+        }
+    }
+}
+
 // MARK: - Steps
 
 struct StepsCard: View {
     let summary: MetricSummary?
+    var isWide: Bool = false
     let action: () -> Void
 
     var body: some View {
@@ -184,17 +255,15 @@ struct StepsCard: View {
         let series = MetricCardHelpers.last7(summary)
         return Button(action: action) {
             VStack(alignment: .leading, spacing: 10) {
-                CardHead(icon: "figure.walk", title: "Steps", color: .orange)
-                BigNum(
-                    value: formatSteps(value),
-                    caption: value > 0 ? "\(pct)% of goal" : "No data yet"
-                )
+                MetricHeaderValue(isWide: isWide, icon: "figure.walk", title: "Steps", color: .orange,
+                                  value: formatSteps(value),
+                                  caption: value > 0 ? "\(pct)% of goal" : "No data yet")
                 // Reserve the chart's vertical footprint either way so the tile
                 // height matches its 2-col grid partner even before data lands.
                 if !series.isEmpty {
                     BarsChart(values: series, labels: MetricCardHelpers.weekLabels(series.count),
                               color: .orange).frame(height: 42)
-                } else {
+                } else if !isWide {
                     Color.clear.frame(height: 42)
                 }
             }
@@ -216,6 +285,7 @@ struct StepsCard: View {
 
 struct HeartCard: View {
     let summary: MetricSummary?
+    var isWide: Bool = false
     let action: () -> Void
 
     var body: some View {
@@ -223,16 +293,14 @@ struct HeartCard: View {
         let series = MetricCardHelpers.last7(summary)
         return Button(action: action) {
             VStack(alignment: .leading, spacing: 10) {
-                CardHead(icon: "heart.fill", title: "Heart", color: .red)
-                BigNum(
-                    value: v > 0 ? String(format: "%.0f", v) : "—",
-                    unit: v > 0 ? "BPM" : nil,
-                    caption: v > 0 ? "Latest reading" : "No data yet",
-                    color: .red
-                )
+                MetricHeaderValue(isWide: isWide, icon: "heart.fill", title: "Heart", color: .red,
+                                  value: v > 0 ? String(format: "%.0f", v) : "—",
+                                  unit: v > 0 ? "BPM" : nil,
+                                  caption: v > 0 ? "Latest reading" : "No data yet",
+                                  valueColor: .red)
                 if !series.isEmpty {
                     SparkChart(values: series, color: .red).frame(height: 42)
-                } else {
+                } else if !isWide {
                     Color.clear.frame(height: 42)
                 }
             }
@@ -248,6 +316,7 @@ struct HeartCard: View {
 
 struct SleepCard: View {
     let summary: MetricSummary?
+    var isWide: Bool = false
     let action: () -> Void
 
     @AppStorage("theme_mode") private var themeMode = "dark"
@@ -295,6 +364,7 @@ struct SleepCard: View {
             VStack(alignment: .leading, spacing: 10) {
                 CardHead(icon: "moon.fill", title: "Sleep", color: .purple)
                 HStack(spacing: 12) {
+                    if isWide { Spacer(minLength: 0) }
                     ZStack {
                         Circle()
                             .stroke(Color.purple.opacity(0.18), lineWidth: 7)
@@ -343,6 +413,7 @@ struct SleepCard: View {
 
 struct CaloriesCard: View {
     let summary: MetricSummary?
+    var isWide: Bool = false
     let action: () -> Void
 
     @AppStorage("theme_mode") private var themeMode = "dark"
@@ -354,13 +425,11 @@ struct CaloriesCard: View {
         let pct = goal > 0 ? min(v / goal, 1.0) : 0
         return Button(action: action) {
             VStack(alignment: .leading, spacing: 10) {
-                CardHead(icon: "bolt.fill", title: "Active Energy", color: .orange)
-                BigNum(
-                    value: v > 0 ? String(format: "%.0f", v) : "—",
-                    unit: v > 0 ? "KCAL" : nil,
-                    caption: v > 0 ? "Goal \(Int(goal)) kcal" : "No data yet",
-                    color: .orange
-                )
+                MetricHeaderValue(isWide: isWide, icon: "bolt.fill", title: "Active Energy", color: .orange,
+                                  value: v > 0 ? String(format: "%.0f", v) : "—",
+                                  unit: v > 0 ? "KCAL" : nil,
+                                  caption: v > 0 ? "Goal \(Int(goal)) kcal" : "No data yet",
+                                  valueColor: .orange)
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
                         Capsule()
@@ -532,6 +601,7 @@ private struct MealRow: View {
 
 struct DistanceCard: View {
     let summary: MetricSummary?
+    var isWide: Bool = false
     let action: () -> Void
 
     @AppStorage("theme_mode") private var themeMode = "dark"
@@ -543,13 +613,11 @@ struct DistanceCard: View {
         let pct = goal > 0 ? min(v / goal, 1.0) : 0
         return Button(action: action) {
             VStack(alignment: .leading, spacing: 10) {
-                CardHead(icon: "arrow.triangle.turn.up.right.diamond.fill", title: "Distance", color: .green)
-                BigNum(
-                    value: v > 0 ? String(format: "%.2f", v) : "—",
-                    unit: v > 0 ? "MI" : nil,
-                    caption: v > 0 ? "Goal \(String(format: "%.1f", goal)) mi" : "Walk + run combined",
-                    color: .green
-                )
+                MetricHeaderValue(isWide: isWide, icon: "arrow.triangle.turn.up.right.diamond.fill", title: "Distance", color: .green,
+                                  value: v > 0 ? String(format: "%.2f", v) : "—",
+                                  unit: v > 0 ? "MI" : nil,
+                                  caption: v > 0 ? "Goal \(String(format: "%.1f", goal)) mi" : "Walk + run combined",
+                                  valueColor: .green)
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
                         Capsule()
@@ -576,6 +644,7 @@ struct DistanceCard: View {
 
 struct HydrationCard: View {
     let summary: MetricSummary?
+    var isWide: Bool = false
     let action: () -> Void
 
     @AppStorage("theme_mode") private var themeMode = "dark"
@@ -595,13 +664,11 @@ struct HydrationCard: View {
         return ZStack(alignment: .topTrailing) {
             Button(action: action) {
                 VStack(alignment: .leading, spacing: 10) {
-                    CardHead(icon: "drop.fill", title: "Hydration", color: .cyan)
-                    BigNum(
-                        value: liters > 0 ? String(format: "%.1f", liters) : "—",
-                        unit: liters > 0 ? "L" : nil,
-                        caption: liters > 0 ? "\(cups) of \(total) glasses" : "No data yet",
-                        color: .cyan
-                    )
+                    MetricHeaderValue(isWide: isWide, icon: "drop.fill", title: "Hydration", color: .cyan,
+                                      value: liters > 0 ? String(format: "%.1f", liters) : "—",
+                                      unit: liters > 0 ? "L" : nil,
+                                      caption: liters > 0 ? "\(cups) of \(total) glasses" : "No data yet",
+                                      valueColor: .cyan)
                     HStack(spacing: 4) {
                         ForEach(0..<total, id: \.self) { i in
                             RoundedRectangle(cornerRadius: 4)
@@ -644,6 +711,7 @@ struct HydrationCard: View {
 
 struct RecoveryCard: View {
     let summary: MetricSummary?
+    var isWide: Bool = false
     let action: () -> Void
 
     @AppStorage("theme_mode") private var themeMode = "dark"
@@ -664,6 +732,7 @@ struct RecoveryCard: View {
             VStack(alignment: .leading, spacing: 10) {
                 CardHead(icon: "arrow.clockwise.heart", title: "Recovery", color: .green)
                 HStack(spacing: 12) {
+                    if isWide { Spacer(minLength: 0) }
                     ZStack {
                         Circle()
                             .stroke(Color.green.opacity(0.18), lineWidth: 7)
@@ -709,6 +778,7 @@ struct RecoveryCard: View {
 struct SimpleMetricCard: View {
     let type: HealthMetricType
     let summary: MetricSummary?
+    var isWide: Bool = false
     let action: () -> Void
 
     @AppStorage("theme_mode") private var themeMode = "dark"
@@ -755,14 +825,10 @@ struct SimpleMetricCard: View {
     var body: some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 10) {
-                CardHead(icon: type.icon, title: type.displayName, color: type.themeColor)
-                BigNum(
-                    value: displayValue,
-                    unit: hasData ? type.unit : nil,
-                    caption: caption,
-                    color: type.themeColor
-                )
-                Spacer(minLength: 0)
+                MetricHeaderValue(isWide: isWide, icon: type.icon, title: type.displayName, color: type.themeColor,
+                                  value: displayValue, unit: hasData ? type.unit : nil,
+                                  caption: caption, valueColor: type.themeColor)
+                if !isWide { Spacer(minLength: 0) }
             }
             .padding(14)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

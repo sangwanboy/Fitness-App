@@ -14,6 +14,7 @@ public struct NutritionDashboardView: View {
     @State private var showGoalsEditor = false
     @State private var animateRings    = false
     @State private var selectedTab: Int = 0    // 0 = Today, 1 = Week
+    @State private var showFoodPhotoFlow = false
 
     private var isDark: Bool { themeMode == "dark" }
     private var accentColor: Color { ThemeHelper.color(from: accentColorHex) }
@@ -53,6 +54,7 @@ public struct NutritionDashboardView: View {
         .sheet(isPresented: $showGoalsEditor) {
             MacroGoalsEditorSheet()
         }
+        .sheet(isPresented: $showFoodPhotoFlow) { FoodScanView() }
         .sheet(item: $detailSummary) { summary in
             DetailedMetricView(summary: summary)
         }
@@ -319,27 +321,51 @@ public struct NutritionDashboardView: View {
             Divider()
                 .background(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.1))
 
-            Button {
-                ChatPrefillBus.shared.queueComposerSeed("Log food: ")
-                dismiss()
-            } label: {
-                HStack(spacing: 10) {
-                    Image(systemName: "brain.head.profile")
-                        .font(.system(size: 16, weight: .semibold))
-                    Text("Log Food with AI")
-                        .font(.system(size: 16, weight: .semibold))
+            HStack(spacing: 12) {
+                // Camera scan button
+                Button {
+                    showFoodPhotoFlow = true
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "camera.fill")
+                            .font(.system(size: 16, weight: .semibold))
+                        Text("Scan Meal")
+                            .font(.system(size: 16, weight: .semibold))
+                    }
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 15)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(LinearGradient(colors: [.orange, .pink],
+                                                 startPoint: .leading, endPoint: .trailing))
+                    )
                 }
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 15)
-                .background(
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(accentColor.gradient)
-                )
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .buttonStyle(.plain)
+
+                // Text/AI log button
+                Button {
+                    ChatPrefillBus.shared.queueComposerSeed("Log food: ")
+                    dismiss()
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "brain.head.profile")
+                            .font(.system(size: 16, weight: .semibold))
+                        Text("Log with AI")
+                            .font(.system(size: 16, weight: .semibold))
+                    }
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 15)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(accentColor.gradient)
+                    )
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
         }
         .background(
             (isDark ? Color.black : Color(red: 0.97, green: 0.97, blue: 0.97))

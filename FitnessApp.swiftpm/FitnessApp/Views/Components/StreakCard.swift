@@ -29,49 +29,75 @@ public struct StreakCard: View {
         return Array(sorted.suffix(7))
     }
 
-    public init() {}
+    public let isWide: Bool
+
+    public init(isWide: Bool = false) { self.isWide = isWide }
+
+    // MARK: - Pieces (composed differently per width)
+
+    private var flameTitle: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "flame.fill")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(flameColor)
+                .scaleEffect(flameScale)
+                .animation(
+                    engine.currentStreak > 0
+                        ? .easeInOut(duration: 1.1).repeatForever(autoreverses: true)
+                        : .default,
+                    value: flameScale
+                )
+            Text("Streak")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(flameColor)
+        }
+    }
+
+    @ViewBuilder private var trophyBadge: some View {
+        if engine.longestStreak > 0 {
+            HStack(spacing: 3) {
+                Image(systemName: "trophy.fill")
+                    .font(.system(size: 10))
+                    .foregroundColor(.yellow)
+                Text("\(engine.longestStreak)")
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundColor(isDark ? .white.opacity(0.7) : .black.opacity(0.7))
+            }
+        }
+    }
+
+    private var streakNumber: some View {
+        HStack(alignment: .lastTextBaseline, spacing: 4) {
+            Text("\(engine.currentStreak)")
+                .font(.system(size: 30, weight: .bold, design: .rounded))
+                .tracking(-1.2)
+                .foregroundColor(engine.currentStreak > 0 ? flameColor : (isDark ? .white.opacity(0.35) : .black.opacity(0.35)))
+                .monospacedDigit()
+            Text("week\(engine.currentStreak == 1 ? "" : "s")")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(isDark ? .white.opacity(0.6) : .black.opacity(0.6))
+        }
+    }
 
     public var body: some View {
         Button { showStreak = true } label: {
             VStack(alignment: .leading, spacing: 10) {
-                // Header
-                HStack(spacing: 6) {
-                    Image(systemName: "flame.fill")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(flameColor)
-                        .scaleEffect(flameScale)
-                        .animation(
-                            engine.currentStreak > 0
-                                ? .easeInOut(duration: 1.1).repeatForever(autoreverses: true)
-                                : .default,
-                            value: flameScale
-                        )
-                    Text("Streak")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(flameColor)
-                    Spacer()
-                    if engine.longestStreak > 0 {
-                        HStack(spacing: 3) {
-                            Image(systemName: "trophy.fill")
-                                .font(.system(size: 10))
-                                .foregroundColor(.yellow)
-                            Text("\(engine.longestStreak)")
-                                .font(.system(size: 11, weight: .bold, design: .rounded))
-                                .foregroundColor(isDark ? .white.opacity(0.7) : .black.opacity(0.7))
-                        }
+                if isWide {
+                    // Wide: title left, streak number + trophy on the right.
+                    HStack(spacing: 8) {
+                        flameTitle
+                        Spacer(minLength: 8)
+                        streakNumber
+                        trophyBadge
                     }
-                }
-
-                // Big streak number
-                HStack(alignment: .lastTextBaseline, spacing: 4) {
-                    Text("\(engine.currentStreak)")
-                        .font(.system(size: 30, weight: .bold, design: .rounded))
-                        .tracking(-1.2)
-                        .foregroundColor(engine.currentStreak > 0 ? flameColor : (isDark ? .white.opacity(0.35) : .black.opacity(0.35)))
-                        .monospacedDigit()
-                    Text("week\(engine.currentStreak == 1 ? "" : "s")")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(isDark ? .white.opacity(0.6) : .black.opacity(0.6))
+                } else {
+                    // Narrow: title row (trophy trailing), number below.
+                    HStack(spacing: 6) {
+                        flameTitle
+                        Spacer()
+                        trophyBadge
+                    }
+                    streakNumber
                 }
 
                 // 7-week mini dot row
@@ -114,7 +140,7 @@ public struct StreakCard: View {
             return cal.date(from: c) ?? Date()
         }()
 
-        return HStack(spacing: 6) {
+        return HStack(spacing: isWide ? 0 : 6) {
             ForEach(0..<7, id: \.self) { i in
                 let week: WeekActivity? = (i < weeks.count) ? weeks[max(0, weeks.count - 7 + i)] : nil
                 let isThisWeek = week.map { cal.startOfDay(for: $0.weekStart) == cal.startOfDay(for: todayMonday) } ?? false
@@ -140,8 +166,12 @@ public struct StreakCard: View {
                             .foregroundColor(.white)
                     }
                 }
+
+                // Full-width card: distribute the 7 markers evenly across the
+                // row instead of packing them on the left with an empty right.
+                if isWide && i < 6 { Spacer(minLength: 0) }
             }
-            Spacer(minLength: 0)
+            if !isWide { Spacer(minLength: 0) }
         }
     }
 }

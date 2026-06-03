@@ -12,6 +12,8 @@ public struct SettingsView: View {
 
     @State private var showSignOutConfirm = false
     @State private var isRequestingClinical = false
+    @State private var showTokenUsage = false
+    @ObservedObject private var tokenMeter = TokenMeter.shared
 
     // Sub-sheet state for previously dead rows
     @State private var showEditProfile = false
@@ -104,6 +106,9 @@ public struct SettingsView: View {
         }
         .sheet(isPresented: $showDailyGoalsSheet) {
             GoalsEditorSheet()
+        }
+        .sheet(isPresented: $showTokenUsage) {
+            TokenUsageView()
         }
         .alert("Sign out?", isPresented: $showSignOutConfirm) {
             Button("Cancel", role: .cancel) {}
@@ -212,7 +217,15 @@ public struct SettingsView: View {
             ProfileListDivider()
             ProfileListRow(icon: "scope", iconColor: .indigo, title: "Daily goals", detail: dailyGoalsSummary,
                            action: { showDailyGoalsSheet = true })
+            ProfileListDivider()
+            ProfileListRow(icon: "number", iconColor: .teal, title: "AI token usage", detail: tokenUsageSummary,
+                           action: { showTokenUsage = true })
         }
+    }
+
+    /// Compact lifetime Gemini token total for the AI token usage row.
+    private var tokenUsageSummary: String {
+        tokenMeter.total == 0 ? "No usage yet" : "\(TokenFormat.compact(tokenMeter.total)) tokens"
     }
 
     /// One-line summary for the Daily goals row — shows the user's three most

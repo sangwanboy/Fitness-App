@@ -31,6 +31,7 @@ public struct DashboardView: View {
     @State private var showWorkoutAnalytics = false
     @State private var showHRZones = false
     @State private var lastRefreshed: Date? = nil
+    @State private var showFoodPhotoFlow = false
 
     /// Tiles revealed by tapping "Show more". When the user has no Apple Watch
     /// (no HR samples in the last 7 days), the Watch-only home cards collapse
@@ -222,7 +223,9 @@ public struct DashboardView: View {
                 ForEach(Array(packedRows.enumerated()), id: \.offset) { _, row in
                     HStack(alignment: .top, spacing: gridSpacing) {
                         ForEach(row, id: \.self) { cardId in
-                            cardView(for: cardId)
+                            // A narrow card alone on its row renders in its wide
+                            // layout so it fills the width instead of stretching.
+                            cardView(for: cardId, isWide: row.count == 1 && !wideCardIds.contains(cardId))
                                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                                 .opacity(animateWidgets ? 1.0 : 0.0)
                                 .offset(y: animateWidgets ? 0.0 : 15.0)
@@ -239,18 +242,15 @@ public struct DashboardView: View {
                     ForEach(Array(pairs.enumerated()), id: \.offset) { _, pair in
                         HStack(alignment: .top, spacing: gridSpacing) {
                             ForEach(pair, id: \.self) { metric in
+                                // An odd last tile renders in its wide layout so
+                                // it fills the row instead of being half-empty.
                                 SimpleMetricCard(
                                     type: metric,
                                     summary: healthKitManager.metricSummaries[metric],
+                                    isWide: pair.count == 1,
                                     action: { selectedMetric = metric }
                                 )
                                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                            }
-                            // Pad an odd last row with a clear spacer so the
-                            // single card stays half-width like the others.
-                            if pair.count == 1 {
-                                Color.clear
-                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                             }
                         }
                     }
@@ -275,6 +275,10 @@ public struct DashboardView: View {
         .toolbarTitleDisplayMode(.inlineLarge)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
+                Button { showFoodPhotoFlow = true } label: {
+                    Image(systemName: "camera.viewfinder")
+                }
+                .accessibilityLabel("Scan a meal")
                 Button { showSearchSheet = true } label: {
                     Image(systemName: "magnifyingglass")
                 }
@@ -288,6 +292,7 @@ public struct DashboardView: View {
         }
         .sheet(isPresented: $showSearchSheet) { HomeSearchSheet() }
         .sheet(isPresented: $showNutritionDashboard) { NutritionDashboardView() }
+        .sheet(isPresented: $showFoodPhotoFlow) { FoodScanView() }
         .onAppear {
             withAnimation(.easeOut(duration: 0.5)) { animateWidgets = true }
             let isStale = lastRefreshed.map { Date().timeIntervalSince($0) > 300 } ?? true
@@ -347,7 +352,7 @@ public struct DashboardView: View {
     
     // MARK: - Card Router
     @ViewBuilder
-    private func cardView(for id: String) -> some View {
+    private func cardView(for id: String, isWide: Bool = false) -> some View {
         switch id {
         case "coach":
             Button(action: { switchToTab("chat") }) {
@@ -366,11 +371,11 @@ public struct DashboardView: View {
         case "upcoming":
             upcomingWorkoutCardView
         case "steps":
-            StepsCard(summary: healthKitManager.metricSummaries[.steps]) {
+            StepsCard(summary: healthKitManager.metricSummaries[.steps], isWide: isWide) {
                 selectedMetric = .steps
             }
         case "heart":
-            HeartCard(summary: healthKitManager.metricSummaries[.heartRate]) {
+            HeartCard(summary: healthKitManager.metricSummaries[.heartRate], isWide: isWide) {
                 selectedMetric = .heartRate
             }
             .contextMenu {
@@ -386,23 +391,23 @@ public struct DashboardView: View {
                 }
             }
         case "sleep":
-            SleepCard(summary: healthKitManager.metricSummaries[.sleep]) {
+            SleepCard(summary: healthKitManager.metricSummaries[.sleep], isWide: isWide) {
                 selectedMetric = .sleep
             }
         case "calories":
-            CaloriesCard(summary: healthKitManager.metricSummaries[.activeEnergy]) {
+            CaloriesCard(summary: healthKitManager.metricSummaries[.activeEnergy], isWide: isWide) {
                 selectedMetric = .activeEnergy
             }
         case "distance":
-            DistanceCard(summary: healthKitManager.metricSummaries[.distance]) {
+            DistanceCard(summary: healthKitManager.metricSummaries[.distance], isWide: isWide) {
                 selectedMetric = .distance
             }
         case "recovery":
-            RecoveryCard(summary: healthKitManager.metricSummaries[.hrv]) {
+            RecoveryCard(summary: healthKitManager.metricSummaries[.hrv], isWide: isWide) {
                 selectedMetric = .hrv
             }
         case "hydration":
-            HydrationCard(summary: healthKitManager.metricSummaries[.hydration]) {
+            HydrationCard(summary: healthKitManager.metricSummaries[.hydration], isWide: isWide) {
                 selectedMetric = .hydration
             }
         case "workouts":
@@ -411,8 +416,7 @@ public struct DashboardView: View {
             MealsCard(
                 entries: healthKitManager.todayFoodLog,
                 onAddMeal: {
-                    ChatPrefillBus.shared.queue("Help me log a meal — I want to record what I just ate.")
-                    switchToTab("chat")
+                    showFoodPhotoFlow = true
                 },
                 onViewDetails: {
                     showNutritionDashboard = true
@@ -426,7 +430,7 @@ public struct DashboardView: View {
                 onOpenLast: { lastSleepReport = $0 }
             )
         case "streak":
-            StreakCard()
+            StreakCard(isWide: isWide)
         case "challenge":
             DailyChallengeCard()
         default:
@@ -437,6 +441,7 @@ public struct DashboardView: View {
                 SimpleMetricCard(
                     type: type,
                     summary: healthKitManager.metricSummaries[type],
+                    isWide: isWide,
                     action: { selectedMetric = type }
                 )
             } else {

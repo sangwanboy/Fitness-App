@@ -240,6 +240,7 @@ public actor PredictionAIService {
         if let usage = obj["usageMetadata"] as? [String: Any],
            let parsed = TokenUsage(usageMetadata: usage) {
             continuation.yield(.usage(parsed))
+            Task { @MainActor in TokenMeter.shared.record(parsed, source: .insights) }
         }
     }
 
@@ -396,6 +397,10 @@ public actor PredictionAIService {
               let parts = content["parts"] as? [[String: Any]],
               let text = parts.first?["text"] as? String else {
             throw AIError.parseError
+        }
+        if let usageMeta = obj["usageMetadata"] as? [String: Any],
+           let usage = TokenUsage(usageMetadata: usageMeta) {
+            Task { @MainActor in TokenMeter.shared.record(usage, source: .insights) }
         }
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }

@@ -7,6 +7,13 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		63788247D8524E7F8E0037FF /* FoodVisionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4C9FE3743A0443E8282E381 /* FoodVisionModels.swift */; };
+		333F468222CE40C8834EF7BA /* FoodVisionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12B32B22C5E34D62B51EB9A9 /* FoodVisionService.swift */; };
+		92B0C941ED834A5692CFC10C /* TokenMeter.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3CB93F8918C421FA0CE4A02 /* TokenMeter.swift */; };
+		A0C20702AC4A4452A60E64CD /* TokenUsageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 265C535A505340CE90CCE1E6 /* TokenUsageView.swift */; };
+		56F21CE53DED44839022521D /* FoodAnalyzingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33FE4C74A57547C7AAC825EB /* FoodAnalyzingView.swift */; };
+		D66072560AFB4D98B8DE65CD /* FoodReviewSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5778486A318D4C1FBF5744CA /* FoodReviewSheet.swift */; };
+		9EDE76B8E9B94878ACEF1FD7 /* FoodScanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C7B11EAE4F3466CB62502A2 /* FoodScanView.swift */; };
 		0280342002A6A3E49543D30C /* HealthMetric.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7802CDFCE3540E5AA2ADE385 /* HealthMetric.swift */; };
 		0990ECD147C4208E93D37F52 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5FEE996D58F1544E857CBCC /* SettingsView.swift */; };
 		0A990029E8D5EEA3296A41A7 /* PredictionsCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF2EBA586C0847235F75EA7A /* PredictionsCard.swift */; };
@@ -84,6 +91,13 @@
 		/* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		B4C9FE3743A0443E8282E381 /* FoodVisionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoodVisionModels.swift; sourceTree = "<group>"; };
+		12B32B22C5E34D62B51EB9A9 /* FoodVisionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoodVisionService.swift; sourceTree = "<group>"; };
+		D3CB93F8918C421FA0CE4A02 /* TokenMeter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TokenMeter.swift; sourceTree = "<group>"; };
+		265C535A505340CE90CCE1E6 /* TokenUsageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TokenUsageView.swift; sourceTree = "<group>"; };
+		33FE4C74A57547C7AAC825EB /* FoodAnalyzingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoodAnalyzingView.swift; sourceTree = "<group>"; };
+		5778486A318D4C1FBF5744CA /* FoodReviewSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoodReviewSheet.swift; sourceTree = "<group>"; };
+		5C7B11EAE4F3466CB62502A2 /* FoodScanView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoodScanView.swift; sourceTree = "<group>"; };
 		0CBC0D6E65E96D0D286864CB /* HealthTrendsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthTrendsView.swift; sourceTree = "<group>"; };
 		0D16F52FDB992EAAAC0702BB /* EventKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = EventKit.framework; path = System/Library/Frameworks/EventKit.framework; sourceTree = SDKROOT; };
 		137344F9E4AB5492F9013B18 /* GlassLoaderOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassLoaderOverlay.swift; sourceTree = "<group>"; };
@@ -188,6 +202,8 @@
 		490024E70D95093AB1951E48 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				E53C39FB45CB4DBB9A5B2B8B /* FoodScan */,
+				265C535A505340CE90CCE1E6 /* TokenUsageView.swift */,
 				5B948D63ADE9D91E7248261E /* WorkoutAnalyticsView.swift */,
 				B54B2B666716848F36ED37CC /* StreakView.swift */,
 				BD0AD2D78B45E2055FFEC786 /* ProgressHubView.swift */,
@@ -274,6 +290,8 @@
 		8FFC23862DFFC84371A26B18 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				12B32B22C5E34D62B51EB9A9 /* FoodVisionService.swift */,
+				D3CB93F8918C421FA0CE4A02 /* TokenMeter.swift */,
 				7A19260F32037834A5C4AB0D /* TrainingLoadEngine.swift */,
 				F7C5B4F52732710025E79A15 /* StreakEngine.swift */,
 				233A72203139E6ABFFA979C8 /* NutritionService.swift */,
@@ -299,6 +317,7 @@
 		B3C6C47C211B441287027A4E /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				B4C9FE3743A0443E8282E381 /* FoodVisionModels.swift */,
 				4C270D683DF4981F05B54550 /* AstraWidget.swift */,
 				48E26CE3BC0A02FCF8F0937F /* ChatMessage.swift */,
 				7802CDFCE3540E5AA2ADE385 /* HealthMetric.swift */,
@@ -328,6 +347,16 @@
 				17E1E2C6490F31EE347BF51F /* FitnessApp.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		E53C39FB45CB4DBB9A5B2B8B /* FoodScan */ = {
+			isa = PBXGroup;
+			children = (
+				33FE4C74A57547C7AAC825EB /* FoodAnalyzingView.swift */,
+				5778486A318D4C1FBF5744CA /* FoodReviewSheet.swift */,
+				5C7B11EAE4F3466CB62502A2 /* FoodScanView.swift */,
+			);
+			path = FoodScan;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -403,6 +432,13 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				63788247D8524E7F8E0037FF /* FoodVisionModels.swift in Sources */,
+				333F468222CE40C8834EF7BA /* FoodVisionService.swift in Sources */,
+				92B0C941ED834A5692CFC10C /* TokenMeter.swift in Sources */,
+				A0C20702AC4A4452A60E64CD /* TokenUsageView.swift in Sources */,
+				56F21CE53DED44839022521D /* FoodAnalyzingView.swift in Sources */,
+				D66072560AFB4D98B8DE65CD /* FoodReviewSheet.swift in Sources */,
+				9EDE76B8E9B94878ACEF1FD7 /* FoodScanView.swift in Sources */,
 				66F2C8CE3EF35C46E32FBD7A /* BreathingSessionManager.swift in Sources */,
 				DCB1217E413AEB22FC86FA99 /* ChallengeEngine.swift in Sources */,
 				99B2B36883441761E1558E5C /* HeartRateZoneCalculator.swift in Sources */,
