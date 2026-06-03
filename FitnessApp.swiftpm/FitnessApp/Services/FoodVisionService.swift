@@ -111,6 +111,91 @@ public actor FoodVisionService {
         guard result.foodDetected else { throw FoodVisionError.noFoodDetected }
         return result
     }
+
+    /// Conversational correction. Given the original photo, the items currently
+    /// shown to the user (as JSON), and a natural-language instruction, re-analyze
+    /// and return the corrected full item list. Astra's short reply to the user is
+    /// returned in `plateNote`. Does NOT throw on empty/no-food (the user may have
+    /// asked to remove everything) — the caller decides what to do.
+    public func refineFood(imageData: Data,
+                           currentItemsJSON: String,
+                           instruction: String) async throws -> FoodRecognitionResult {
+        guard let ui = UIImage(data: imageData) else { throw FoodVisionError.invalidImage }
+        let resized = ui.resizedForVision(maxDimension: 1024)
+        guard let jpeg = resized.jpegData(compressionQuality: 0.7) else { throw FoodVisionError.invalidImage }
+        let base64 = jpeg.base64EncodedString()
+
+        let (sa, _) = try VertexConfig.current()
+        let token = try await VertexAuth.shared.getAccessToken()
+        let urlStr = "https://aiplatform.googleapis.com/v1/projects/\(sa.projectId)/locations/\(location)/publishers/google/models/\(model):generateContent"
+        guard let url = URL(string: urlStr) else { throw FoodVisionError.badURL }
+
+        let refinePrompt = """
+        You previously identified these food items from the attached photo:
+        \(currentItemsJSON)
+
+        The user is correcting you. They said:
+        "\(instruction)"
+
+        Re-examine the photo with their correction in mind and return the COMPLETE \
+        corrected item list (every item that should be logged) with updated names, \
+        portions, and macros. Apply the user's change precisely. Keep the other items \
+        unless the user asked to remove them; if they say an item is wrong or not in \
+        the photo, drop it; if they add detail (e.g. "skinless", "no oil added", \
+        "2 cups"), adjust that item's macros to match.
+
+        Put a short (≤25 word) friendly reply to the user in plate_note describing what \
+        you changed. Return JSON conforming exactly to the schema. No other output.
+        """
+
+        let thinkingBudget = VertexGeminiClient.thinkingBudgetTokens()
+        let body: [String: Any] = [
+            "systemInstruction": ["parts": [["text": Self.systemInstruction]]],
+            "contents": [[
+                "role": "user",
+                "parts": [
+                    ["inlineData": ["mimeType": "image/jpeg", "data": base64]],
+                    ["text": refinePrompt]
+                ]
+            ]],
+            "generationConfig": [
+                "responseMimeType": "application/json",
+                "responseSchema": Self.responseSchema,
+                "temperature": 0.2,
+                "maxOutputTokens": 1024 + thinkingBudget,
+                "thinkingConfig": ["thinkingBudget": thinkingBudget]
+            ]
+        ]
+
+        var req = URLRequest(url: url, timeoutInterval: timeout)
+        req.httpMethod = "POST"
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: req)
+        guard let http = response as? HTTPURLResponse else { throw FoodVisionError.badResponse }
+        guard (200..<300).contains(http.statusCode) else { throw FoodVisionError.httpError(http.statusCode) }
+
+        if let meta = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["usageMetadata"] as? [String: Any],
+           let usage = TokenUsage(usageMetadata: meta) {
+            Task { @MainActor in TokenMeter.shared.record(usage, source: .foodVision) }
+        }
+
+        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let candidates = obj["candidates"] as? [[String: Any]],
+              let first = candidates.first,
+              let content = first["content"] as? [String: Any],
+              let parts = content["parts"] as? [[String: Any]],
+              let jsonText = parts.first(where: { $0["text"] is String })?["text"] as? String,
+              let jsonData = jsonText.data(using: .utf8)
+        else { throw FoodVisionError.parseError }
+
+        guard let result = try? JSONDecoder().decode(FoodRecognitionResult.self, from: jsonData) else {
+            throw FoodVisionError.parseError
+        }
+        return result
+    }
 }
 
 // MARK: - Prompts (private static, not recomputed per call)

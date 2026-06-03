@@ -17,6 +17,13 @@ struct FoodReviewSheet: View {
     @State private var logError: String? = nil
     @State private var editingItemID: UUID? = nil
 
+    // Astra correction chat
+    @State private var astraInput: String = ""
+    @State private var isRefining = false
+    @State private var astraMessages: [AstraMsg] = []
+
+    struct AstraMsg: Identifiable { let id = UUID(); let isUser: Bool; let text: String }
+
     struct EditableItem: Identifiable {
         var id: UUID
         var included: Bool = true
@@ -88,6 +95,11 @@ struct FoodReviewSheet: View {
 
                 // Totals card
                 totalsCard
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 12)
+
+                // Astra correction chat
+                astraBox
                     .padding(.horizontal, 16)
                     .padding(.bottom, 12)
 
@@ -195,17 +207,31 @@ struct FoodReviewSheet: View {
                     .lineLimit(2)
             }
 
-            // Edit button
-            Button {
-                editingItemID = i.id
-            } label: {
-                Image(systemName: "pencil")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(isDark ? .white.opacity(0.6) : .black.opacity(0.6))
-                    .padding(8)
-                    .glassEffect(.regular.interactive(), in: .circle)
+            // Edit + delete
+            VStack(spacing: 8) {
+                Button {
+                    editingItemID = i.id
+                } label: {
+                    Image(systemName: "pencil")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(isDark ? .white.opacity(0.6) : .black.opacity(0.6))
+                        .padding(8)
+                        .glassEffect(.regular.interactive(), in: .circle)
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    deleteItem(i.id)
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.red.opacity(0.9))
+                        .padding(8)
+                        .glassEffect(.regular.interactive(), in: .circle)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Remove \(i.name)")
             }
-            .buttonStyle(.plain)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
@@ -311,6 +337,121 @@ struct FoodReviewSheet: View {
                 logError = "Some items could not be saved to Health. Check HealthKit permissions in Settings."
             }
         }
+    }
+
+    // MARK: - Astra correction chat
+
+    private var canSend: Bool { !astraInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    private var secondaryColor: Color { isDark ? .white.opacity(0.55) : .black.opacity(0.55) }
+
+    private var astraBox: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(accentColor)
+                Text("Ask Astra to fix it")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(isDark ? .white : .black)
+            }
+            Text("Tell Astra what's wrong in plain words — e.g. “the chicken is skinless”, “potatoes are 2 cups”, or “remove the tacos”. It sees your photo and these items.")
+                .font(.system(size: 12))
+                .foregroundColor(secondaryColor)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if !astraMessages.isEmpty {
+                VStack(spacing: 8) {
+                    ForEach(astraMessages) { m in
+                        HStack {
+                            if m.isUser { Spacer(minLength: 36) }
+                            Text(m.text)
+                                .font(.system(size: 13))
+                                .foregroundColor(isDark ? .white : .black)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .background(
+                                    m.isUser
+                                        ? accentColor.opacity(0.22)
+                                        : (isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.06)),
+                                    in: RoundedRectangle(cornerRadius: 12)
+                                )
+                            if !m.isUser { Spacer(minLength: 36) }
+                        }
+                    }
+                }
+            }
+
+            HStack(spacing: 8) {
+                TextField("Tell Astra what to change…", text: $astraInput, axis: .vertical)
+                    .font(.system(size: 14))
+                    .lineLimit(1...3)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 9)
+                    .background(isDark ? Color.white.opacity(0.06) : Color.black.opacity(0.05),
+                                in: RoundedRectangle(cornerRadius: 14))
+
+                Button {
+                    Task { await askAstra() }
+                } label: {
+                    if isRefining {
+                        ProgressView().tint(accentColor).frame(width: 30, height: 30)
+                    } else {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(.system(size: 28))
+                            .foregroundColor(canSend ? accentColor : (isDark ? .white.opacity(0.25) : .black.opacity(0.25)))
+                    }
+                }
+                .buttonStyle(.plain)
+                .disabled(!canSend || isRefining)
+            }
+        }
+        .padding(16)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private func askAstra() async {
+        let text = astraInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, !isRefining else { return }
+        guard let jpeg = image.jpegData(compressionQuality: 0.8) else { return }
+        astraMessages.append(AstraMsg(isUser: true, text: text))
+        astraInput = ""
+        isRefining = true
+        let json = currentItemsJSON()
+        do {
+            let updated = try await FoodVisionService.shared.refineFood(
+                imageData: jpeg, currentItemsJSON: json, instruction: text)
+            await MainActor.run {
+                withAnimation {
+                    editableItems = updated.items.map { EditableItem(from: $0) }
+                }
+                let reply = (updated.plateNote?.isEmpty == false)
+                    ? updated.plateNote!
+                    : "Updated — review the items above."
+                astraMessages.append(AstraMsg(isUser: false, text: reply))
+                isRefining = false
+            }
+        } catch {
+            await MainActor.run {
+                astraMessages.append(AstraMsg(isUser: false, text: "Sorry, I couldn't update that — try rephrasing."))
+                isRefining = false
+            }
+        }
+    }
+
+    /// Compact JSON of the items currently shown, sent to Astra as context.
+    private func currentItemsJSON() -> String {
+        let arr: [[String: Any]] = editableItems.map { i in
+            ["name": i.name, "portion": i.portionDescription,
+             "calories_kcal": i.calories, "protein_g": i.protein,
+             "carbs_g": i.carbs, "fat_g": i.fat, "confidence": i.confidence]
+        }
+        if let data = try? JSONSerialization.data(withJSONObject: arr),
+           let s = String(data: data, encoding: .utf8) { return s }
+        return "[]"
+    }
+
+    private func deleteItem(_ id: UUID) {
+        withAnimation { editableItems.removeAll { $0.id == id } }
     }
 
     // MARK: - Helpers
