@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		27DAF6A37BEE4CC58CEF3E6B /* FoodCameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5789D9B726C54541BAC17502 /* FoodCameraView.swift */; };
 		63788247D8524E7F8E0037FF /* FoodVisionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4C9FE3743A0443E8282E381 /* FoodVisionModels.swift */; };
 		333F468222CE40C8834EF7BA /* FoodVisionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12B32B22C5E34D62B51EB9A9 /* FoodVisionService.swift */; };
 		92B0C941ED834A5692CFC10C /* TokenMeter.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3CB93F8918C421FA0CE4A02 /* TokenMeter.swift */; };
@@ -91,6 +92,7 @@
 		/* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		5789D9B726C54541BAC17502 /* FoodCameraView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoodCameraView.swift; sourceTree = "<group>"; };
 		B4C9FE3743A0443E8282E381 /* FoodVisionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoodVisionModels.swift; sourceTree = "<group>"; };
 		12B32B22C5E34D62B51EB9A9 /* FoodVisionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoodVisionService.swift; sourceTree = "<group>"; };
 		D3CB93F8918C421FA0CE4A02 /* TokenMeter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TokenMeter.swift; sourceTree = "<group>"; };
@@ -352,6 +354,7 @@
 		E53C39FB45CB4DBB9A5B2B8B /* FoodScan */ = {
 			isa = PBXGroup;
 			children = (
+				5789D9B726C54541BAC17502 /* FoodCameraView.swift */,
 				33FE4C74A57547C7AAC825EB /* FoodAnalyzingView.swift */,
 				5778486A318D4C1FBF5744CA /* FoodReviewSheet.swift */,
 				5C7B11EAE4F3466CB62502A2 /* FoodScanView.swift */,
@@ -432,6 +435,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				27DAF6A37BEE4CC58CEF3E6B /* FoodCameraView.swift in Sources */,
 				63788247D8524E7F8E0037FF /* FoodVisionModels.swift in Sources */,
 				333F468222CE40C8834EF7BA /* FoodVisionService.swift in Sources */,
 				92B0C941ED834A5692CFC10C /* TokenMeter.swift in Sources */,

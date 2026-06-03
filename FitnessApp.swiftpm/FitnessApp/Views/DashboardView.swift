@@ -292,7 +292,7 @@ public struct DashboardView: View {
         }
         .sheet(isPresented: $showSearchSheet) { HomeSearchSheet() }
         .sheet(isPresented: $showNutritionDashboard) { NutritionDashboardView() }
-        .sheet(isPresented: $showFoodPhotoFlow) { FoodScanView() }
+        .fullScreenCover(isPresented: $showFoodPhotoFlow) { FoodScanView() }
         .onAppear {
             withAnimation(.easeOut(duration: 0.5)) { animateWidgets = true }
             let isStale = lastRefreshed.map { Date().timeIntervalSince($0) > 300 } ?? true

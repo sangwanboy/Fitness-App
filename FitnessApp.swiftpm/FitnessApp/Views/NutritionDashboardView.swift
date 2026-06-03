@@ -54,7 +54,7 @@ public struct NutritionDashboardView: View {
         .sheet(isPresented: $showGoalsEditor) {
             MacroGoalsEditorSheet()
         }
-        .sheet(isPresented: $showFoodPhotoFlow) { FoodScanView() }
+        .fullScreenCover(isPresented: $showFoodPhotoFlow) { FoodScanView() }
         .sheet(item: $detailSummary) { summary in
             DetailedMetricView(summary: summary)
         }
