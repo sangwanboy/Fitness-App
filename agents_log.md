@@ -1708,3 +1708,74 @@ The physical JSON file still exists on disk at `FitnessApp.swiftpm/FitnessApp/ve
 
 Latest deployed sequence: **4044**.
 
+---
+
+## Session 20 — 2026-06-03 (Photo food logging + global AI token counter)
+
+### Two features shipped this session
+
+**A. Photo-based food logging** — built via a multi-agent workflow (`photo-food-logging`): 3 Sonnet research agents (codebase audit / Gemini Vision approach + UX / integration map) → 1 Sonnet synthesis (froze a shared Swift contract + a 3-way disjoint file partition) → 3 Opus implementation agents on non-overlapping file sets. Workflow stats: 7 agents, ~339K tokens, 154 tool uses, ~13 min.
+
+Flow: user taps the MealsCard **"+"** on Home (or the **+** on the Nutrition dashboard) → `FoodScanView` (camera via `CameraImagePicker` or `PhotosPicker`, ≤1200px JPEG q0.7) → `FoodAnalyzingView` loading state → `FoodVisionService.recognizeFood(imageData:)` one-shot `generateContent` against **gemini-3.5-flash** (global endpoint, reuses `VertexAuth`/`VertexConfig`, `responseSchema` strict JSON) → `FoodReviewSheet` (per-item include/exclude, editable name/portion/macros, confidence badges, totals footer) → writes each checked item via existing `HealthKitManager.logFood(... isEstimate: true, confidence:)` + `refreshDietaryNow()`. Honest failure states (no-food / blurry / non-food / error) surface as typed errors, never mock data.
+
+New files:
+- `Models/FoodVisionModels.swift` — `RecognizedFoodItem`, `FoodRecognitionResult` (snake_case CodingKeys matching the Gemini schema).
+- `Services/FoodVisionService.swift` — actor; the vision call + strict-JSON decode + typed errors.
+- `Views/FoodScan/FoodScanView.swift` — capture + state machine (entry point, `init()`).
+- `Views/FoodScan/FoodAnalyzingView.swift` — analyzing animation.
+- `Views/FoodScan/FoodReviewSheet.swift` — editable per-item review + HealthKit write.
+
+Shared files edited (Agent 3 only, disjoint from the new-file agents): `Views/DashboardView.swift` (MealsCard `onAddMeal` → `showFoodPhotoFlow` sheet), `Views/NutritionDashboardView.swift` (+ sheet). Camera/Photo permission strings already present in `project.yml` from Session 4.
+
+**B. Global AI token counter** (Settings → AI Coach → "AI token usage") — counts **every** Gemini call in the app using Gemini's built-in `usageMetadata` (input / output / thinking / total), persisted across launches, broken down by feature, with a reset.
+- New `Services/TokenMeter.swift` — `@MainActor` singleton, UserDefaults-persisted (`token_meter_v1`), `record(_:source:)` + `reset()`, `TokenSource` enum (`coach` / `insights` / `foodVision` / `other`), `TokenFormat.compact`.
+- New `Views/TokenUsageView.swift` — total card + input/output/thinking breakdown + per-feature bars + "since" date + reset.
+- `Views/SettingsView.swift` — new row showing a live compact total.
+- Recording hooks added at the only places the app reads `usageMetadata` (+ the new vision call): `VertexGeminiClient` stream tail → `.coach`; `PredictionAIService` why-sheet stream + `callGeminiJSON` (insights/actions/anomalies — previously uncounted) → `.insights`; `FoodVisionService` → `.foodVision`. All via `Task { @MainActor in TokenMeter.shared.record(...) }`. Recorded once per call at the source, so coverage is total regardless of which UI consumes it; no double-counting.
+
+### Build / deploy notes
+- **xcodegen was missing** (`/tmp` cleared since Session 16). Re-downloaded the prebuilt binary, but the auto-mode classifier (correctly) blocked executing a freshly-downloaded binary. Fell back to registering the 7 new files directly in `FitnessApp.xcodeproj/project.pbxproj` via a Python script (`/tmp/register_pbx.py`) — PBXBuildFile + PBXFileReference + group children + Sources phase, plus a new `FoodScan` PBXGroup under Views. Validated with `plutil -lint` (OK).
+- Simulator build (iPhone 17 Pro sim) **BUILD SUCCEEDED**, zero errors — the contract-based parallel implementation + token wiring integrated on the first try.
+- Device build (iphoneos, signed Team `RM42FV53FU`) **BUILD SUCCEEDED**; installed via `xcrun devicectl`.
+- **databaseSequenceNumber: 4046**.
+
+### Note for next agent
+If you add/remove Swift files and xcodegen still isn't installed, reuse `/tmp/register_pbx.py` (idempotent — skips already-present files) or reinstall xcodegen and run `xcodegen --spec project.yml` (cleaner, since `project.yml` globs the source dir).
+
+Latest deployed sequence: **4046**.
+
+---
+
+## Session 21 — 2026-06-03 (Adaptive metric-card widths — fix stretched cards)
+
+### Problem
+User screenshots showed lone "odd-one-out" narrow cards (e.g. Headphone Level, Streak) stretched to full width with their half-width content jammed left + empty right. Root cause: the grid packer ([DashboardView.packedRows]) pairs narrow cards 2-per-row and gives each `.frame(maxWidth: .infinity)`; a lone narrow card balloons to full width but kept its half-width vertical layout. (Promoted data-bearing tiles on the main grid hit this; the Show-More grid had been side-stepping it with a `Color.clear` half-width spacer.)
+
+### Fix — every metric card now supports BOTH widths and picks automatically
+User chose "adapt to full width" (vs. "stay half width with a gap").
+- **New `MetricHeaderValue`** shared component in `MetricCards.swift`: narrow → title row on top, big value below (classic look); wide → title on the left, value pushed right. Any chart/progress bar the card draws sits below and spans full width in both modes.
+- Added `var isWide: Bool = false` to every narrow card and routed layout through `MetricHeaderValue` (Steps, Heart, Active Energy, Distance, Hydration, SimpleMetricCard) or a centered ring layout (Sleep, Recovery center the ring+text when wide). `StreakCard` extracted into `flameTitle`/`streakNumber`/`trophyBadge` pieces — wide puts the number+trophy beside the title; narrow keeps number below.
+- **Grid threading** (`DashboardView`): `cardView(for:isWide:)` now takes `isWide`. Main grid computes `isWide = row.count == 1 && !wideCardIds.contains(id)` (true only for a lone narrow card). Show-More grid passes `isWide: pair.count == 1` for an odd last tile and drops the old `Color.clear` spacer.
+- Genuinely-wide cards (coach/predictions/widgets/etc.) ignore `isWide` — they have their own full layouts.
+
+### Build / deploy
+- Simulator + device (iphoneos, Team `RM42FV53FU`) both **BUILD SUCCEEDED**, zero errors. Installed via `xcrun devicectl`.
+- **databaseSequenceNumber: 4054**.
+
+Latest deployed sequence: **4054**.
+
+---
+
+## Session 22 — 2026-06-03 (Home scan-meal button + Streak week-dots spread)
+
+### Changes
+- **Home toolbar scan-meal button** (`DashboardView` `.toolbar` → `.topBarTrailing`): added a `camera.viewfinder` button (accessibility "Scan a meal") as the first trailing item; opens the existing `FoodScanView` via `showFoodPhotoFlow`. Fixes the discoverability gap where the only meal-scan entry (MealsCard "+") is hidden until a meal is logged that day. The scan screen already offers BOTH "Take Photo" (camera) and "Choose from Library" (upload), so image upload is available from this entry too.
+- **Streak week-dots spread** (`StreakCard.weekDotRow`): the 7 weekly markers were left-packed with a trailing `Spacer`, so on a full-width (odd-one-out) Streak card the right side stayed empty/stretched. Now when `isWide`, inter-dot `Spacer`s distribute the 7 markers evenly across the row; narrow keeps the packed-left layout. This was the "streak full week still hasn't been fixed" report.
+
+### Build / deploy
+- Device build initially failed once ("iPhone may need to be unlocked"); retried after it became available. Simulator + device **BUILD SUCCEEDED**, zero errors.
+- Installed AND launched via `xcrun devicectl` so the running instance reflects the latest UI.
+- **databaseSequenceNumber: 4056**.
+
+Latest deployed sequence: **4056**.
+
