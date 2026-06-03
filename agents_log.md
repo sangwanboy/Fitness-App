@@ -1467,3 +1467,136 @@ Sequence **3368**.
 
 Latest deployed sequence: **3368**.
 
+---
+
+## Session 14 — 2026-06-02 (GitHub repo init + secret scrub)
+
+### What
+Initialised a public GitHub repository for the project and pushed all source code.
+
+### Secret intercept
+GitHub push-protection blocked the first push because `vertex-service-account.json` (a real Google Cloud service account with a private key for project `vertexi-ai-493516`) was present in the initial commit. The file was removed from git history before anything reached GitHub via `git commit --amend`. The credential was **never pushed**. `.gitignore` was updated with patterns covering all credential file types:
+```
+vertex-service-account.json
+*service-account*.json
+*.pem  *.p12  .env  .env.*
+```
+**Action required**: rotate the GCP service account key (`4d33d3bc…`) in Google Cloud Console → IAM & Admin → Service Accounts since it existed in a local git object.
+
+### gh CLI
+Homebrew was broken (`/opt/homebrew` permissions + unsupported macOS version `26.5`). Installed `gh` 2.93.0 via official binary to `~/.local/bin/gh`. Added `export PATH="$HOME/.local/bin:$PATH"` to `~/.zshrc` (requires manual sourcing).
+
+### Repo
+- **URL**: https://github.com/sangwanboy/Fitness-App (public)
+- **Branch**: `main`
+- **Commit**: `3939784` — Initial commit (98 tracked files, `.gitignore`, no secrets)
+
+---
+
+## Session 15 — 2026-06-02/03 (17-agent research + feature implementation workflow)
+
+### Overview
+Launched a 4-phase multi-agent workflow (`fitness-app-enhance`) to research competitors, synthesise a feature plan, and implement the top 6 features in parallel.
+
+| Metric | Value |
+|---|---|
+| Total agents | 17 |
+| Subagent tokens | 932,473 |
+| Tool uses | 596 |
+| Wall-clock time | ~21.7 min |
+
+### Agent model breakdown
+| Phase | Agents | Model |
+|---|---|---|
+| Research (8 parallel) | Apple Health, Whoop/recovery, MyFitnessPal/nutrition, Strava/gamification, AI/ML fitness, sleep/mindfulness, iOS 26/HealthKit APIs, App Store trends | **Opus 4.8** (session default) |
+| Synthesis (1) | Competitor research → prioritised feature plan | **Opus 4.8** (session default) |
+| Implementation (6 parallel) | One agent per feature, each writing complete Swift files | **Sonnet 4.6** (explicit `model: 'sonnet'`) |
+| Integration (1) | Wire new views into ContentView + DashboardView | **Sonnet 4.6** (explicit `model: 'sonnet'`) |
+| Git commit (1) | Stage + commit | **Opus 4.8** (session default) |
+
+### Features implemented
+
+#### 1. Weekly Activity Streak System (Priority 1)
+- **Competitive rationale**: Strava/Duolingo weekly streak mechanics — most replicated engagement driver in consumer health apps
+- **Files**: `Services/StreakEngine.swift`, `Views/StreakView.swift`, `Views/Components/StreakCard.swift`
+- **What it does**: Tracks current + longest weekly streaks (≥3 workout days OR ≥4 step-goal days = active week). Trophy shelf with milestone badges at 1/4/8/13/26/52 weeks. Local push notifications on streak increment. Dashboard glass card with 7-week mini-calendar.
+
+#### 2. Heart Rate Zones Breakdown (Priority 2)
+- **Competitive rationale**: Whoop Strain + Garmin Body Battery are both built on zone accumulation. Apple Watch surfaces HR during workouts but never breaks into named zones.
+- **Files**: `Services/HeartRateZoneCalculator.swift`, `Views/HeartRateZonesView.swift`
+- **What it does**: Five zones (Recovery → VO₂ Max) via Karvonen formula using resting HR from HealthKit + age-estimated max HR. Time-in-zone per workout. Weekly zone distribution ring. Zone threshold editor with max-HR override (`AppStorage("max_hr_override")`).
+
+#### 3. Detailed Macro Nutrition Dashboard (Priority 3)
+- **Competitive rationale**: MyFitnessPal's primary revenue driver. App already fetches `dietaryCaloriesToday` + `dietaryProteinToday` — this surfaces that data.
+- **Files**: `Services/NutritionService.swift`, `Views/NutritionDashboardView.swift`
+- **What it does**: Protein/carbs/fat macro breakdown with donut chart. 7-day calorie trend. Macro goal tracking. "View Details" tap from meals card on Dashboard opens the sheet.
+
+#### 4. Workout History & Training Load Analytics (Priority 4)
+- **Competitive rationale**: Hevy/Fitbod progressive-overload intelligence. Converts `recentWorkouts28` into actionable data.
+- **Files**: `Services/TrainingLoadEngine.swift`, `Views/WorkoutAnalyticsView.swift`
+- **What it does**: Acute (7-day) vs chronic (28-day) training load. Per-workout type volume chart. Weekly load bar chart with current-week accent highlight. Accessible from WorkoutTrackerView history list.
+
+#### 5. Daily Challenges (Priority 5)
+- **Competitive rationale**: Strava/Peloton episodic motivation spikes — purely local, no social backend required.
+- **Files**: `Services/ChallengeEngine.swift`, `Views/Components/DailyChallengeCard.swift`, `Views/DailyChallengeView.swift`
+- **What it does**: Generates a daily challenge targeting the user's weakest metric (steps, exercise minutes, hydration, etc.). Progress bar with confetti animation on completion. 24-hour expiry with countdown timer. Dashboard card (full-width).
+
+#### 6. Guided Breathing Protocols (Priority 6)
+- **Competitive rationale**: Largest gap in Apple's own Mindfulness app — box/4-7-8/coherent breathing not offered natively.
+- **Files**: `Services/BreathingSessionManager.swift`, `Views/GuidedBreathingView.swift`
+- **What it does**: Box (4-4-4-4), 4-7-8 relaxation, coherent (5-5), and custom protocols. Animated circle with haptic feedback. Writes mindful-minutes back to HealthKit. HRV-nudge notification if HRV drops >15% below 30-day average and no session was done that day.
+
+#### Integration
+- **Files created**: `Views/ProgressHubView.swift`
+- **Files modified**: `ContentView.swift` (added 5th "Progress" tab), `DashboardView.swift` (streak + challenge cards, sheet presentations for all 6 features), `Views/Components/MetricCards.swift`, `Views/Components/PredictionsCard.swift`, `Views/WorkoutTrackerView.swift`, `Views/DetailedMetricView.swift`, `HealthKitManager.swift` (HRV nudge hook, StreakEngine refresh after data load)
+
+### Commits
+- `82a70af` — feat: add 6 new features (6,159 insertions across 20 files)
+- `6347d55` — feat: add ProgressHubView + Progress tab in ContentView
+
+---
+
+## Session 16 — 2026-06-03 (Build fixes + deploy)
+
+### Errors fixed (3 compiler errors → BUILD SUCCEEDED)
+
+| Error | File | Fix |
+|---|---|---|
+| `cannot find 'BreathingSessionManager' in scope` | `HealthKitManager.swift:328` | Root cause: 15 new Swift files not registered in `FitnessApp.xcodeproj/project.pbxproj` (explicit refs, not auto-discovered). Wrote Python script to generate deterministic UUIDs and add `PBXFileReference`, `PBXBuildFile`, group children, and `PBXSourcesBuildPhase` entries for all 15 files. |
+| `raw value for enum case is not unique` | `BreathingSessionManager.swift:12` | `BreathPhase` had `hold1 = "Hold"` and `hold2 = "Hold"` — duplicate `String` raw values. Changed raw values to `"hold1"` / `"hold2"` and added computed `label` property returning `"Hold"` for both. |
+| `value of type 'some View' has no member 'sheet(isPresented:)'` | `DashboardView.swift:634` | Integration agent placed `.sheet(isPresented: )` (with empty binding) inside a card-builder `@ViewBuilder` method instead of at the top-level `body`. Removed misplaced modifier; added proper `.sheet(isPresented: $showWorkoutAnalytics) { WorkoutAnalyticsView() }` alongside the other sheets in `body`. Also fixed an `AnyGradient`/`Color` type mismatch in `WorkoutAnalyticsView.swift` ternary by wrapping both sides in `AnyShapeStyle(...)`. |
+
+### Deployed
+Sequence **4040** (databaseSequenceNumber). App launched on iPhone 17 Pro (UDID: `6EBFD630-1768-512E-95E3-EC7D76AA8CDD`).
+
+### Commits
+- `7dee252` — fix: register new Swift files in xcodeproj, fix BreathPhase rawValues, DashboardView sheet placement
+- Pushed to https://github.com/sangwanboy/Fitness-App
+
+---
+
+## Session 17 — 2026-06-03 (UI fixes: portrait lock, card layout, horizontal scroll)
+
+### Bugs fixed (from screenshot review)
+
+#### 1. Landscape orientation enabled
+- **Symptom**: App rotated to landscape when phone tilted.
+- **Fix**: Removed `.landscapeRight, .landscapeLeft` from `supportedInterfaceOrientations` in `Package.swift`. Added `UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]` to `AppInfo.plist` as the definitive OS-level lock.
+
+#### 2. "DAILY CHALLENGE" text rendering vertically
+- **Symptom**: Card was placed in a half-width column alongside the Streak card → text too narrow → wrapping character by character.
+- **Fix**: Added `"challenge"` to `wideCardIds` in `DashboardView.swift`. Card now spans the full row width.
+
+#### 3. Cards swipeable left/right
+- **Symptom**: User could scroll the dashboard horizontally.
+- **Fix**: Added `.frame(maxWidth: .infinity)` to each `HStack` row in the packed grid — constrains every row to the parent's width and prevents overflow from allowing horizontal drag.
+
+### Deployed
+Sequence **4042**.
+
+### Commit
+- `a26f48b` — fix: portrait-only orientation, DailyChallengeCard full-width, prevent horizontal scroll overflow
+- Pushed to https://github.com/sangwanboy/Fitness-App
+
+Latest deployed sequence: **4042**.
+
