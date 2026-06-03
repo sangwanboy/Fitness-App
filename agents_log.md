@@ -1874,5 +1874,8 @@ Dropped the **Lifestyle** sub-score (was 0–15: mindfulness + VO₂max + walkin
 - Simulator + device **BUILD SUCCEEDED**, zero errors. Installed via `xcrun devicectl` (**seq 4075**); auto-launch blocked (device locked) — opens on unlock.
 - **databaseSequenceNumber: 4075**.
 
+### Scope clarification (confirmed with user)
+The request was "remove **Lifestyle from** the Health Meter" — **NOT** remove the Health Meter. The Health Meter stays as the 0–100 composite; only the Lifestyle sub-score was dropped (its 15 points redistributed → Activity 30 / Nutrition 30 / Body 18 / Vitals 22). Do not delete `HealthMeterScore` / the meter card.
+
 Latest deployed sequence: **4075**.
 
