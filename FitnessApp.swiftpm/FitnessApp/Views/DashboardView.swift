@@ -30,6 +30,7 @@ public struct DashboardView: View {
     @State private var workoutDates: Set<Date> = []
     @State private var showWorkoutAnalytics = false
     @State private var showHRZones = false
+    @State private var lastRefreshed: Date? = nil
 
     /// Tiles revealed by tapping "Show more". When the user has no Apple Watch
     /// (no HR samples in the last 7 days), the Watch-only home cards collapse
@@ -289,6 +290,9 @@ public struct DashboardView: View {
         .sheet(isPresented: $showNutritionDashboard) { NutritionDashboardView() }
         .onAppear {
             withAnimation(.easeOut(duration: 0.5)) { animateWidgets = true }
+            let isStale = lastRefreshed.map { Date().timeIntervalSince($0) > 300 } ?? true
+            guard isStale else { return }
+            lastRefreshed = Date()
             Task { await refreshAllData() }
         }
         .sheet(item: $selectedMetric) { metricType in

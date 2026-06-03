@@ -21,6 +21,7 @@ public struct ProgressHubView: View {
     @State private var showWorkoutAnalytics = false
     @State private var showBreathing     = false
     @State private var animateCards      = false
+    @State private var lastRefreshed: Date? = nil
 
     private var isDark: Bool    { themeMode == "dark" }
     private var accentColor: Color { ThemeHelper.color(from: accentColorHex) }
@@ -86,6 +87,9 @@ public struct ProgressHubView: View {
             withAnimation(.spring(response: 0.5, dampingFraction: 0.82).delay(0.08)) {
                 animateCards = true
             }
+            let isStale = lastRefreshed.map { Date().timeIntervalSince($0) > 300 } ?? true
+            guard isStale else { return }
+            lastRefreshed = Date()
             Task { try? await hk.fetchTodayData() }
         }
         // --- Sheets ---
