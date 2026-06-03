@@ -209,20 +209,19 @@ public enum HealthMeterLabel: String, Codable {
     }
 }
 
-/// 0–100 composite score blending activity, nutrition, body composition,
-/// vitals, and lifestyle signals. Computed deterministically by the engine
-/// from already-fetched HK data — no AI involvement in the number itself.
+/// 0–100 composite score blending activity, nutrition, body composition, and
+/// vitals signals. Computed deterministically by the engine from already-fetched
+/// HK data — no AI involvement in the number itself.
 public struct HealthMeterScore: Codable, Equatable {
     public let score: Int              // 0...100
     public let label: HealthMeterLabel
     public let confidence: PredictionConfidence
 
     // Sub-scores (max in parens). Sum equals `score`.
-    public let activityScore: Int      // 0...25
-    public let nutritionScore: Int     // 0...25
-    public let bodyScore: Int          // 0...15
-    public let vitalsScore: Int        // 0...20
-    public let lifestyleScore: Int     // 0...15
+    public let activityScore: Int      // 0...30
+    public let nutritionScore: Int     // 0...30
+    public let bodyScore: Int          // 0...18
+    public let vitalsScore: Int        // 0...22
 
     public let explanation: PredictionExplanation
 
@@ -235,7 +234,7 @@ public struct HealthMeterScore: Codable, Equatable {
 
     public init(score: Int, label: HealthMeterLabel, confidence: PredictionConfidence,
                 activityScore: Int, nutritionScore: Int, bodyScore: Int,
-                vitalsScore: Int, lifestyleScore: Int,
+                vitalsScore: Int,
                 explanation: PredictionExplanation,
                 usedNutrition: Bool, usedBMI: Bool) {
         self.score = score
@@ -245,7 +244,6 @@ public struct HealthMeterScore: Codable, Equatable {
         self.nutritionScore = nutritionScore
         self.bodyScore = bodyScore
         self.vitalsScore = vitalsScore
-        self.lifestyleScore = lifestyleScore
         self.explanation = explanation
         self.usedNutrition = usedNutrition
         self.usedBMI = usedBMI
@@ -381,8 +379,8 @@ public struct Predictions: Codable, Equatable {
     public let trajectories: [GoalTrajectory]
     public let sedentary: SedentaryAlert?
 
-    /// Composite wellness score from activity + nutrition + body + vitals
-    /// + lifestyle. Always computed when the user has at least 5 days of
+    /// Composite wellness score from activity + nutrition + body + vitals.
+    /// Always computed when the user has at least 5 days of
     /// step history; otherwise nil (baseline state).
     public let healthMeter: HealthMeterScore?
 

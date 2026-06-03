@@ -344,13 +344,12 @@ public final class ChatViewModel: ObservableObject {
         // Health Meter (most important — shows first)
         if let m = p.healthMeter {
             lines.append("• Health Meter: \(m.score)/100 (\(m.label.headline), \(m.confidence.rawValue) confidence)")
-            lines.append("    Activity:    \(m.activityScore)/25")
+            lines.append("    Activity:    \(m.activityScore)/30")
             let nutritionNote = m.usedNutrition ? "" : "   (no meals logged — neutral estimate)"
-            lines.append("    Nutrition:   \(m.nutritionScore)/25\(nutritionNote)")
+            lines.append("    Nutrition:   \(m.nutritionScore)/30\(nutritionNote)")
             let bmiNote = m.usedBMI ? "" : "   (no height/weight — neutral estimate)"
-            lines.append("    Body comp:   \(m.bodyScore)/15\(bmiNote)")
-            lines.append("    Vitals:      \(m.vitalsScore)/20")
-            lines.append("    Lifestyle:   \(m.lifestyleScore)/15")
+            lines.append("    Body comp:   \(m.bodyScore)/18\(bmiNote)")
+            lines.append("    Vitals:      \(m.vitalsScore)/22")
             for b in m.explanation.bullets {
                 lines.append("    – \(b)")
             }

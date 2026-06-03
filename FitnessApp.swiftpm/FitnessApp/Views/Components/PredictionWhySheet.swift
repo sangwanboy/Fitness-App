@@ -242,13 +242,13 @@ public struct PredictionWhySheet: View {
             guard let m = predictions.healthMeter else { return [] }
             // Surface 1-2 actions targeted at the WEAKEST sub-score.
             let subscores: [(String, Int, Int, [QuickAction])] = [
-                ("Activity", m.activityScore, 25, [
+                ("Activity", m.activityScore, 30, [
                     QuickAction(icon: "figure.run", color: .orange,
                                 title: "Plan today's workout",
                                 subtitle: "Activity is your lowest sub-score",
                                 prompt: "Plan a workout for me today that fits my current recovery and goals.")
                 ]),
-                ("Nutrition", m.nutritionScore, 25, [
+                ("Nutrition", m.nutritionScore, 30, [
                     QuickAction(icon: "fork.knife", color: .green,
                                 title: "Log my last meal",
                                 subtitle: "Logging meals raises this score",
@@ -258,7 +258,7 @@ public struct PredictionWhySheet: View {
                                 subtitle: "Quick hydration win",
                                 prompt: "Log 250 ml of water for hydration.")
                 ]),
-                ("Body", m.bodyScore, 15, [
+                ("Body", m.bodyScore, 18, [
                     QuickAction(icon: "person.crop.circle", color: .purple,
                                 title: m.usedBMI ? "Plan body comp changes" : "Add height + weight",
                                 subtitle: m.usedBMI ? "Within range matters most" : "Profile → Personal details",
@@ -266,17 +266,11 @@ public struct PredictionWhySheet: View {
                                     ? "Help me plan a 4-week routine to improve my body composition."
                                     : "How do I add my height and weight to the app?")
                 ]),
-                ("Vitals", m.vitalsScore, 20, [
+                ("Vitals", m.vitalsScore, 22, [
                     QuickAction(icon: "bed.double.fill", color: .indigo,
                                 title: "Set bedtime reminder",
                                 subtitle: "Sleep is the biggest vitals lever",
                                 prompt: "Add a reminder for me to start winding down at 10:30 PM tonight.")
-                ]),
-                ("Lifestyle", m.lifestyleScore, 15, [
-                    QuickAction(icon: "brain.head.profile", color: .pink,
-                                title: "10-min mindful session",
-                                subtitle: "Add to today's plan",
-                                prompt: "Add a 10-minute mindfulness session to my calendar for this evening.")
                 ])
             ]
             // Pick the weakest non-perfect sub-score; surface its actions.

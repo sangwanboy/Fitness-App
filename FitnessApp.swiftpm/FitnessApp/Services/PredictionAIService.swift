@@ -410,7 +410,7 @@ public actor PredictionAIService {
     nonisolated static func predictionsSummary(_ p: Predictions) -> String {
         var lines: [String] = []
         if let m = p.healthMeter {
-            lines.append("Health Meter: \(m.score)/100 (\(m.label.headline)) confidence=\(m.confidence.rawValue) — Activity \(m.activityScore)/25, Nutrition \(m.nutritionScore)/25 (logged=\(m.usedNutrition)), Body \(m.bodyScore)/15 (BMI=\(m.usedBMI)), Vitals \(m.vitalsScore)/20, Lifestyle \(m.lifestyleScore)/15")
+            lines.append("Health Meter: \(m.score)/100 (\(m.label.headline)) confidence=\(m.confidence.rawValue) — Activity \(m.activityScore)/30, Nutrition \(m.nutritionScore)/30 (logged=\(m.usedNutrition)), Body \(m.bodyScore)/18 (BMI=\(m.usedBMI)), Vitals \(m.vitalsScore)/22")
         }
         if let r = p.recovery {
             lines.append("Recovery: \(r.score)/100 (\(r.label.headline)) confidence=\(r.confidence.rawValue) usedHRV=\(r.usedHRV) usedRHR=\(r.usedRHR)")
@@ -465,11 +465,10 @@ public actor PredictionAIService {
             if let m = p.healthMeter {
                 detail = """
                 Total score: \(m.score)/100 (\(m.label.headline), \(m.confidence.rawValue) confidence)
-                Activity: \(m.activityScore)/25
-                Nutrition: \(m.nutritionScore)/25 (usedNutrition=\(m.usedNutrition))
-                Body composition: \(m.bodyScore)/15 (usedBMI=\(m.usedBMI))
-                Vitals: \(m.vitalsScore)/20
-                Lifestyle: \(m.lifestyleScore)/15
+                Activity: \(m.activityScore)/30
+                Nutrition: \(m.nutritionScore)/30 (usedNutrition=\(m.usedNutrition))
+                Body composition: \(m.bodyScore)/18 (usedBMI=\(m.usedBMI))
+                Vitals: \(m.vitalsScore)/22
                 Bullets: \(m.explanation.bullets.joined(separator: " | "))
                 """
             } else {
@@ -512,9 +511,9 @@ public actor PredictionAIService {
         case .healthMeter:
             return """
             SHAPE FOR HEALTH METER:
-            Cover ALL five sub-scores in order: Activity, Nutrition, Body composition, Vitals, Lifestyle. For each:
-            - State the sub-score out of max (e.g. "Activity: 18/25").
-            - Quote 1-2 specific inputs that drove that sub-score (steps avg, dietary calories, BMI, sleep, mindful minutes, walking speed, etc.).
+            Cover ALL four sub-scores in order: Activity, Nutrition, Body composition, Vitals. For each:
+            - State the sub-score out of max (e.g. "Activity: 22/30").
+            - Quote 1-2 specific inputs that drove that sub-score (steps avg, dietary calories, BMI, sleep, RHR, HRV, etc.).
             - Say what that means for the user — whether it's pulling the overall score up or down.
             If the user is missing nutrition logs or height/weight, call it out as the cheapest score-boost available.
             """

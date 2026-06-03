@@ -402,11 +402,10 @@ private struct HealthMeterRow: View {
             // Sub-score breakdown — stacked tiny bars so the user sees which
             // dimension is contributing what.
             VStack(spacing: 4) {
-                SubScoreBar(label: "Activity", value: meter.activityScore, max: 25, color: .orange)
-                SubScoreBar(label: "Nutrition", value: meter.nutritionScore, max: 25, color: .green)
-                SubScoreBar(label: "Body", value: meter.bodyScore, max: 15, color: .purple)
-                SubScoreBar(label: "Vitals", value: meter.vitalsScore, max: 20, color: .pink)
-                SubScoreBar(label: "Lifestyle", value: meter.lifestyleScore, max: 15, color: .cyan)
+                SubScoreBar(label: "Activity", value: meter.activityScore, max: 30, color: .orange)
+                SubScoreBar(label: "Nutrition", value: meter.nutritionScore, max: 30, color: .green)
+                SubScoreBar(label: "Body", value: meter.bodyScore, max: 18, color: .purple)
+                SubScoreBar(label: "Vitals", value: meter.vitalsScore, max: 22, color: .pink)
             }
             .padding(.top, 2)
         }

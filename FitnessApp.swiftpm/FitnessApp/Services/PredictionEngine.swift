@@ -569,8 +569,8 @@ public enum PredictionEngine {
 
     // MARK: - Health Meter (composite wellness score)
 
-    /// 0–100 composite blending activity / nutrition / body / vitals /
-    /// lifestyle. Each sub-score caps independently and the total is the sum.
+    /// 0–100 composite blending activity / nutrition / body / vitals.
+    /// Each sub-score caps independently and the total is the sum.
     /// Returns nil when the user has < 5 non-zero step days (insufficient
     /// data to compute anything honestly).
     public static func computeHealthMeter(snapshot s: Snapshot) -> HealthMeterScore? {
@@ -661,37 +661,17 @@ public enum PredictionEngine {
         }
         let vitalsScore = min(20, max(0, Int(vitalsRaw.rounded())))
 
-        // ---------- Lifestyle sub-score (0...15) ----------
-        // Mindful minutes + VO2max percentile + walking gait quality.
-        var lifestyleRaw: Double = 0
-        let mindfulAvg = mean(s.mindfulMinutes7Day.filter { $0 > 0 })
-        if mindfulAvg >= 10 { lifestyleRaw += 5 }
-        else if mindfulAvg >= 5 { lifestyleRaw += 3 }
-        else if mindfulAvg > 0 { lifestyleRaw += 1 }
-
-        if let v = s.vo2Max, v > 0 {
-            // Approx percentiles: 30 = below avg, 40 = avg, 50 = good, 60+ = excellent.
-            switch v {
-            case 50...:    lifestyleRaw += 5
-            case 40..<50:  lifestyleRaw += 4
-            case 30..<40:  lifestyleRaw += 2
-            default:       lifestyleRaw += 1
-            }
-        }
-        if let speed = s.walkingSpeedToday, speed > 0 {
-            // 2.8+ mi/hr is a healthy adult walking pace.
-            if speed >= 2.8 { lifestyleRaw += 3 }
-            else if speed >= 2.0 { lifestyleRaw += 1.5 }
-        }
-        if let asym = s.walkingAsymmetryToday, asym >= 0 {
-            // Apple flags >3% as elevated. Reward low asymmetry, penalize high.
-            if asym <= 1.0 { lifestyleRaw += 2 }
-            else if asym >= 3.0 { lifestyleRaw -= 2 }
-        }
-        let lifestyleScore = min(15, max(0, Int(lifestyleRaw.rounded())))
+        // ---------- Redistribute (Lifestyle removed) ----------
+        // The four dimensions keep their internal scoring; each is scaled to a new
+        // cap so the meter still totals 0–100: Activity 30 / Nutrition 30 / Body 18 /
+        // Vitals 22 (the former Lifestyle 15 points spread proportionally).
+        let activityFinal  = min(30, max(0, Int((Double(activityCapped) / 25.0 * 30.0).rounded())))
+        let nutritionFinal = min(30, max(0, Int((Double(nutritionScore) / 25.0 * 30.0).rounded())))
+        let bodyFinal      = min(18, max(0, Int((Double(bodyScore)      / 15.0 * 18.0).rounded())))
+        let vitalsFinal    = min(22, max(0, Int((Double(vitalsScore)    / 20.0 * 22.0).rounded())))
 
         // ---------- Totals ----------
-        let total = activityCapped + nutritionScore + bodyScore + vitalsScore + lifestyleScore
+        let total = activityFinal + nutritionFinal + bodyFinal + vitalsFinal
         let label: HealthMeterLabel
         switch total {
         case 85...:   label = .excellent
@@ -716,11 +696,10 @@ public enum PredictionEngine {
         var bullets: [String] = []
         // Top contributing positive
         let subscores: [(String, Int, Int)] = [
-            ("Activity", activityCapped, 25),
-            ("Nutrition", nutritionScore, 25),
-            ("Body composition", bodyScore, 15),
-            ("Vitals", vitalsScore, 20),
-            ("Lifestyle", lifestyleScore, 15)
+            ("Activity", activityFinal, 30),
+            ("Nutrition", nutritionFinal, 30),
+            ("Body composition", bodyFinal, 18),
+            ("Vitals", vitalsFinal, 22)
         ]
         if let top = subscores.max(by: { Double($0.1) / Double($0.2) < Double($1.1) / Double($1.2) }) {
             bullets.append("Strongest area: \(top.0) (\(top.1)/\(top.2))")
@@ -745,19 +724,15 @@ public enum PredictionEngine {
         if sleepAvg > 0 && sleepAvg < 6.5 {
             bullets.append("Sleep avg \(String(format: "%.1f", sleepAvg))h — chronic deficit drags the whole score.")
         }
-        if mindfulAvg < 5 {
-            bullets.append("No regular mindfulness logged this week.")
-        }
 
         return HealthMeterScore(
             score: total,
             label: label,
             confidence: confidence,
-            activityScore: activityCapped,
-            nutritionScore: nutritionScore,
-            bodyScore: bodyScore,
-            vitalsScore: vitalsScore,
-            lifestyleScore: lifestyleScore,
+            activityScore: activityFinal,
+            nutritionScore: nutritionFinal,
+            bodyScore: bodyFinal,
+            vitalsScore: vitalsFinal,
             explanation: PredictionExplanation(bullets: Array(bullets.prefix(4))),
             usedNutrition: usedNutrition,
             usedBMI: usedBMI
