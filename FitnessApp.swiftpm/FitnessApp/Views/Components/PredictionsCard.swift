@@ -17,7 +17,6 @@ public struct PredictionsCard: View {
     private var isDark: Bool { themeMode == "dark" }
 
     @State private var whyKind: PredictionKind? = nil
-    @State private var showWhySheet = false
 
     public init(predictions: Predictions?,
                 onOpenCoach: (() -> Void)? = nil,
@@ -77,8 +76,8 @@ public struct PredictionsCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
         .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 22))
-        .sheet(isPresented: $showWhySheet) {
-            if let kind = whyKind, let p = predictions {
+        .sheet(item: $whyKind) { kind in
+            if let p = predictions {
                 PredictionWhySheet(kind: kind, predictions: p)
             }
         }
@@ -254,7 +253,6 @@ public struct PredictionsCard: View {
         var rows: [AnyView] = []
         let openWhy: (PredictionKind) -> Void = { kind in
             whyKind = kind
-            showWhySheet = true
         }
         // Health Meter is the headline — always shown when available.
         if let m = p.healthMeter {

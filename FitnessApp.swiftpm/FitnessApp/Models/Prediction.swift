@@ -352,12 +352,14 @@ public struct ActionSuggestion: Codable, Equatable, Identifiable {
 
 /// Identifies which prediction the user tapped "Why?" on, so the AI can
 /// stream an explanation tailored to that one.
-public enum PredictionKind: String, Codable {
+public enum PredictionKind: String, Codable, Identifiable {
     case recovery
     case nextWorkout
     case trajectory
     case sedentary
     case healthMeter
+
+    public var id: String { rawValue }
 }
 
 /// Lifecycle state of the optional AI enrichment layered on top of the

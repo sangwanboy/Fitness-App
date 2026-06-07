@@ -13,8 +13,7 @@ public struct DailyChallengeView: View {
 
     @State private var countdown = ""
     @State private var ringProgress: Double = 0
-    @State private var shareItem: [Any]? = nil
-    @State private var showShareSheet = false
+    @State private var sharePayload: SharePayload? = nil
 
     private var isDark: Bool { themeMode == "dark" }
     private var accentColor: Color { ThemeHelper.color(from: accentColorHex) }
@@ -63,10 +62,8 @@ public struct DailyChallengeView: View {
             ringProgress = engine.progress
             updateCountdown()
         }
-        .sheet(isPresented: $showShareSheet) {
-            if let items = shareItem {
-                ShareSheetView(activityItems: items)
-            }
+        .sheet(item: $sharePayload) { payload in
+            ShareSheetView(activityItems: payload.items)
         }
         .task {
             while !Task.isCancelled {
@@ -376,10 +373,17 @@ public struct DailyChallengeView: View {
         )
         renderer.scale = 3.0
         if let uiImage = renderer.uiImage {
-            shareItem = [uiImage]
-            showShareSheet = true
+            sharePayload = SharePayload(items: [uiImage])
         }
     }
+}
+
+/// Identifiable wrapper so the share sheet can be driven by `.sheet(item:)` —
+/// `.sheet(isPresented:)` evaluated its content with a stale optional on first
+/// present, which showed a blank sheet until a second tap.
+private struct SharePayload: Identifiable {
+    let id = UUID()
+    let items: [Any]
 }
 
 // MARK: - Arc Ring
