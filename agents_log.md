@@ -2090,3 +2090,13 @@ Latest deployed sequence: **2164**.
 
 3. **Hardcoded HRV population range** — Replaced `"Typical range: 50 - 80 ms"` with the `hrvRangeLabel` computed property. It filters `summary.history` to the last 28 days and derives the user's own min/max, displayed as `"Your range: X – Y ms"`. Falls back to `"Your range: —"` when no history exists.
 
+---
+
+### 2026-06-07 — SleepFocusDetector background Timer leak fix
+
+**Files**: `FitnessApp.swiftpm/FitnessApp/Services/SleepFocusDetector.swift`, `FitnessApp.swiftpm/FitnessApp/FitnessApp.swift`
+
+1. **Runloop Timer never stopped in background** — Replaced the `Timer.scheduledTimer(withTimeInterval: 60, repeats: true)` with a Swift cooperative `Task`-based poll loop using `try await Task.sleep(for: .seconds(60))`. The task is stored in `pollTask: Task<Void, Never>?`. `stop()` now calls `pollTask?.cancel()` which propagates cancellation into the sleep, breaks the loop, and exits cleanly. No Timer is left alive on the run loop.
+
+2. **start/stop wired to scenePhase** — Removed the unconditional `Task { @MainActor in SleepFocusDetector.shared.start() }` from `FitnessApp.init()`. Added `.onChange(of: scenePhase)` on the `WindowGroup` scene: `.active` calls `start()`, `.background` calls `stop()`. This ensures the poll loop is suspended whenever the app is backgrounded and resumes on foreground, matching iOS lifecycle expectations.
+

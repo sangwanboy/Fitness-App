@@ -2,16 +2,27 @@ import SwiftUI
 
 @main
 struct FitnessApp: App {
+    @Environment(\.scenePhase) private var scenePhase
+
     init() {
         Self.migrateHomeCardsList()
         Task { await NotificationManager.shared.requestPermissionIfNeeded() }
-        Task { @MainActor in SleepFocusDetector.shared.start() }
     }
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .preferredColorScheme(.dark)
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            switch newPhase {
+            case .active:
+                SleepFocusDetector.shared.start()
+            case .background:
+                SleepFocusDetector.shared.stop()
+            default:
+                break
+            }
         }
     }
 

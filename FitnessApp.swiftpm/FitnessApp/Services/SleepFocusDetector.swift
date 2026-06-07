@@ -24,28 +24,39 @@ public final class SleepFocusDetector: ObservableObject {
     /// iOS Sleep Focus is currently active.
     @Published public private(set) var sleepFocusLikely: Bool = false
 
-    private var timer: Timer?
+    private var pollTask: Task<Void, Never>?
     private var patternCache: SleepPattern?
 
     private init() {}
 
-    /// Idempotent — call from app launch. Requests focus authorization (the
-    /// user sees a system sheet the first time) and starts a 60-sec poll
-    /// loop. No-op if already started.
+    /// Idempotent — call from app launch (or when returning to foreground).
+    /// Requests focus authorization (the user sees a system sheet the first
+    /// time) and starts a cooperative 60-sec poll loop. The loop is a Swift
+    /// `Task` so Swift structured-concurrency cancellation tears it down
+    /// cleanly — no Timer left running in the background. No-op if already
+    /// started.
     public func start() {
-        if timer != nil { return }
-        Task { @MainActor in
+        if pollTask != nil { return }
+        pollTask = Task { @MainActor [weak self] in
+            guard let self else { return }
             await requestAuthorization()
             refresh()
-            timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
-                Task { @MainActor in self?.refresh() }
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(for: .seconds(60))
+                } catch {
+                    // Cancelled — exit the loop.
+                    break
+                }
+                guard !Task.isCancelled else { break }
+                refresh()
             }
         }
     }
 
     public func stop() {
-        timer?.invalidate()
-        timer = nil
+        pollTask?.cancel()
+        pollTask = nil
     }
 
     /// Force a refresh now — used by the Home tracking card to get fresh
