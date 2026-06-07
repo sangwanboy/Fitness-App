@@ -2068,3 +2068,13 @@ Latest deployed sequence: **2164**.
 
 1. **DayEventRow misdirected tap** — Removed the `Button(action: onTap)` wrapper from `DayEventRow.body` and replaced it with a plain `HStack`. Every calendar event tap was unconditionally opening `WorkoutTrackerView` regardless of event type (meetings, sleep blocks, yoga sessions, etc.). Removed the `onTap: () -> Void` parameter from `DayEventRow` entirely and updated the call-site in `dayPlanCard` to omit it. Rows are now non-interactive display-only until per-event-type detail presentation is implemented.
 
+---
+
+### 2026-06-07 — TrainingLoadEngine force-unwrap crash fixes
+
+**File**: `FitnessApp.swiftpm/FitnessApp/Services/TrainingLoadEngine.swift`
+
+1. **windowStart force-unwrap** (line 129) — Replaced `cal.date(byAdding: .day, value: -27, to: now)!` with a nil-coalescing fallback: `?? now.addingTimeInterval(-27 * 86_400)`. If Calendar returns nil (unusual locale or edge-case date) the engine falls back to a raw TimeInterval offset rather than crashing the background Task silently.
+
+2. **Loop cursor force-unwrap** (line 146) — Replaced `cursor = cal.date(byAdding: .day, value: 1, to: cursor)!` inside the `while` loop with `guard let next = cal.date(byAdding: .day, value: 1, to: cursor) else { break }; cursor = next`. A nil return mid-loop now exits cleanly with whatever days were already accumulated rather than crashing with a hard-to-trace abort inside a detached Task.
+

@@ -126,7 +126,8 @@ public final class TrainingLoadEngine: ObservableObject {
             let cal = Calendar.current
             let now = Date()
             let windowStart = cal.startOfDay(
-                for: cal.date(byAdding: .day, value: -27, to: now)!
+                for: cal.date(byAdding: .day, value: -27, to: now)
+                    ?? now.addingTimeInterval(-27 * 86_400)
             )
 
             // --- 1. Build daily-load map (one entry per calendar day) ---
@@ -143,7 +144,8 @@ public final class TrainingLoadEngine: ObservableObject {
             var cursor = windowStart
             while cursor <= cal.startOfDay(for: now) {
                 loads.append(DailyLoad(date: cursor, load: loadByDay[cursor] ?? 0))
-                cursor = cal.date(byAdding: .day, value: 1, to: cursor)!
+                guard let next = cal.date(byAdding: .day, value: 1, to: cursor) else { break }
+                cursor = next
             }
 
             // --- 2. Rolling averages ---
