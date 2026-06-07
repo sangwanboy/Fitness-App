@@ -2005,3 +2005,48 @@ Files:
 
 Latest deployed sequence: **2156**.
 
+---
+
+## Session 31 — 2026-06-07 (Chat history, Astra creative widgets, streak-in-calendar, breathing animation)
+
+Built by a mixed Opus/Sonnet workflow (1 Opus for the chat/Astra architecture; 2 Sonnet for the
+contained view work) on disjoint file clusters; every diff reviewed against source + clean build.
+
+### Chat history (Opus)
+- NEW `Services/ChatHistoryStore.swift`: @MainActor singleton, JSON in UserDefaults (mirrors
+  AstraWidgetStore), capped to 30 sessions. Stores `ChatSession` + a compact Codable `SessionMessage`
+  (id/role/text/createdAt/imageData) with `init?(from: ChatMessage)` / `toChatMessage()` — deliberately
+  does NOT persist ToolCall (replays as text), avoiding invasive Codable conformance.
+- `ChatViewModel`: `archiveCurrent()` / `startNewChat()` / `loadSession(_:)` + `isViewingArchivedSession`
+  gating (no double-archive; loading archives the live chat first; sending into a past chat reactivates it).
+- `ChatView`: header buttons — history (`clock.arrow.circlepath`) opens `ChatHistorySheet` (glass list,
+  newest-first, tap-to-load, swipe-to-delete, honest empty state) and new-chat (`square.and.pencil`);
+  archive-on-background + archive-on-disappear hooks. Streaming/tools/image/chips untouched.
+- Registered ChatHistoryStore.swift in `project.pbxproj` (4 points; xcodegen unavailable).
+
+### Astra full creative control over widgets (Opus)
+- `VertexGeminiClient` create_widget description + `ChatViewModel` WIDGET STUDIO prompt rewritten to grant
+  full creative license (mix many block types, vary color/icon, bold combos) while keeping HARD LIMITS
+  (6-widget cap, user confirmation, known block types + metric_refs). Model id / endpoint /
+  thoughtSignature / thinkingConfig placement untouched.
+
+### Streak in Calendar (Sonnet)
+- `Views/CalendarView.swift`: observes `StreakEngine.shared`; adds a glass streak banner (current + best,
+  numericText animations) and marks active-streak-week days on the month grid (flame tint + icon). Real
+  engine data only; no per-day fabrication when the engine exposes only week-level data.
+
+### Enhanced breathing animation (Sonnet)
+- `Views/GuidedBreathingView.swift`: phase-change-driven spring (runs to completion instead of being
+  re-applied every tick), soft breathing glow/halo, radial-gradient orb with specular sheen, staggered
+  expanding ripple rings on inhale, cross-faded phase label/icon. All visuals gated behind
+  `accessibilityReduceMotion`; session timing/phase/completion logic untouched.
+
+### Build / deploy
+- Simulator + device **BUILD SUCCEEDED**, zero errors. Installed AND launched via `xcrun devicectl`.
+- **databaseSequenceNumber: 2164**.
+
+### Next
+- Glitch-sweep workflow (Sonnet finders → verify → fix) to run over the codebase incl. this new code.
+
+Latest deployed sequence: **2164**.
+

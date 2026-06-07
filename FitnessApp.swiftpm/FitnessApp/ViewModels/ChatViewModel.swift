@@ -7,12 +7,14 @@ public final class ChatViewModel: ObservableObject {
     @Published public var isGenerating: Bool = false
     @Published public var currentStreamingText: String = ""
     
+    /// The canned opening line a fresh conversation starts with. Kept as a
+    /// single source so `init`, `clearChat`, and `startNewChat` stay in sync.
+    private static let greetingText =
+        "Hey! I'm Astra, your AI health coach. I've synced with your HealthKit stats for today. How can I help you reach your goals?"
+
     public init() {
         // Initial greeting
-        messages.append(ChatMessage(
-            role: .model,
-            text: "Hey! I'm Astra, your AI health coach. I've synced with your HealthKit stats for today. How can I help you reach your goals?"
-        ))
+        messages.append(ChatMessage(role: .model, text: Self.greetingText))
     }
 
     /// Minimum gap between publishing accumulated streaming text to a message
@@ -59,7 +61,10 @@ public final class ChatViewModel: ObservableObject {
             guard !trimmed.isEmpty || true else { return } // image-only OK
         }
 
-        // Add User Message (text + optional image)
+        // Add User Message (text + optional image). Sending into a loaded past
+        // session turns it back into a live conversation, so it becomes
+        // archivable again on the next new-chat / leave.
+        isViewingArchivedSession = false
         let userMessage = ChatMessage(role: .user, text: trimmed, imageData: imageData)
         messages.append(userMessage)
 
@@ -776,6 +781,52 @@ public final class ChatViewModel: ObservableObject {
             )
         ]
     }
+
+    // MARK: - Session history
+
+    /// True once the current conversation has at least one real user turn —
+    /// i.e. it's worth archiving. A lone greeting (or an empty viewer of a
+    /// past session) is not. Used to gate `archiveCurrent()` callers.
+    public var hasArchivableConversation: Bool {
+        // A read-only replay of a past session is never re-archived (it would
+        // duplicate an existing entry); only live conversations are.
+        guard !isViewingArchivedSession else { return false }
+        return messages.contains { $0.role == .user }
+    }
+
+    /// Set while the user is looking at a loaded past session, so we don't
+    /// archive a duplicate copy when they then start a new chat or leave.
+    private var isViewingArchivedSession = false
+
+    /// Push the current live conversation into the persistent history archive
+    /// (newest-first, capped). No-op when there's nothing worth keeping or when
+    /// we're merely viewing an already-archived session.
+    public func archiveCurrent() {
+        guard hasArchivableConversation else { return }
+        ChatHistoryStore.shared.archive(messages: messages)
+    }
+
+    /// Archive whatever is on screen, then reset to a fresh greeting. This is
+    /// the "compose new chat" affordance.
+    public func startNewChat() {
+        archiveCurrent()
+        isViewingArchivedSession = false
+        messages = [ChatMessage(role: .model, text: Self.greetingText)]
+        currentStreamingText = ""
+    }
+
+    /// Replace the current conversation with a past session for read-only
+    /// replay. Archives the live conversation first so it isn't lost. Past
+    /// tool cards render as plain text — only text + images are restored.
+    public func loadSession(_ session: ChatSession) {
+        archiveCurrent()
+        let restored = session.messages.map { $0.toChatMessage() }
+        messages = restored.isEmpty
+            ? [ChatMessage(role: .model, text: Self.greetingText)]
+            : restored
+        isViewingArchivedSession = true
+        currentStreamingText = ""
+    }
     
     private func historySummary(for type: HealthMetricType) -> String {
         guard let summary = HealthKitManager.shared.metricSummaries[type] else { return "No historical data" }
@@ -1021,11 +1072,12 @@ public final class ChatViewModel: ObservableObject {
         - list_food_log / update_food_log / delete_food_log : READ + WRITE for today's logged meals. Use list_food_log FIRST when the user asks to fix, correct, rename, change, or delete a logged meal — you cannot guess the id. If list returns exactly ONE match for the user's description, proceed straight to update_/delete_ without asking. Pass `name` on deletes so the confirm card shows what's about to go.
         - create_widget / list_widgets / update_widget / delete_widget : ASTRA STUDIO — your creative canvas on the user's Home screen. See the WIDGET STUDIO block below for when and how to use it.
 
-        WIDGET STUDIO (this is yours)
-        - You have a 6-slot widget grid on the user's Home, dedicated to your output. You decide what goes in it. PROACTIVELY offer a widget when you spot something pin-worthy: a streak forming, a pattern worth a daily reminder, a stat the user keeps asking about, a habit nudge that beats a one-shot reply. "Want me to pin this to your Home so you see it every day?" is a great move.
+        WIDGET STUDIO (this is your canvas — go bold)
+        - You have a 6-slot widget grid on the user's Home, dedicated entirely to your output. You have FULL CREATIVE LICENSE over composition, color, icon, and copy — design widgets that are surprising, varied, and genuinely useful. Treat every widget as a chance to make something the user will love seeing each day. Boring, samey, single-block cards are a missed opportunity.
+        - PROACTIVELY offer a widget when you spot something pin-worthy: a streak forming, a pattern worth a daily nudge, a stat the user keeps asking about, a habit worth tracking. "Want me to pin this to your Home so you see it every day?" is a great move.
         - TWO AUTHORING MODES — pick one per widget:
-          1. Legacy preset (`layout: kpi | narrative | list | progress`) — fast, fits the 4 common shapes. Use headline/body/bullets/metric_ref/goal_value as documented.
-          2. COMPOSABLE BLOCKS (`layout: composed`, plus a `blocks` array) — preferred for variety. Pick 2-4 of these primitives and order them however you like:
+          1. Legacy preset (`layout: kpi | narrative | list | progress`) — fast, fits 4 common shapes. Use headline/body/bullets/metric_ref/goal_value as documented. Fine for a quick single-purpose card.
+          2. COMPOSABLE BLOCKS (`layout: composed`, plus a `blocks` array) — THIS is where the magic happens. Stack 2-4 of these primitives in any order you like and let your imagination run:
              • metric_value — big number, live-bound or literal
              • ring — animated progress ring (fills on appear)
              • sparkline — 14-day line of a metric (draws in left→right)
@@ -1038,12 +1090,13 @@ public final class ChatViewModel: ObservableObject {
              • quote — italic motivational line
              • checklist — an INTERACTIVE to-do list; each item gets a tappable checkbox the user ticks off (state persists). This is how you make a "to-do style" health card: routines, recovery checklists, habit stacks.
              • button_row — tappable action buttons; action is 'coach_prompt' (value = a message sent to you on tap) or 'log_water' (value = millilitres logged to Health). Great for one-tap actions on a card.
-        - TO-DO / HABIT CARDS: when the user asks for a checklist, routine, habit tracker, or "to-do style" card, use layout:composed with a checklist block (optionally a short text intro and a button_row). Keep items terse and actionable.
-        - The composed mode is where the visual variety lives. A widget with a `metric_value + sparkline + delta` feels totally different from `quote + bullets`. MIX BLOCKS — don't just use metric_value alone.
-        - Live metric bindings (`metric_ref` field on blocks): steps, heart_rate, active_energy, resting_energy, sleep, distance, hydration, hrv, resting_hr, exercise_minutes, stand_hours, mindful_minutes, flights, vo2_max, walking_speed, step_length, body_mass, health_meter, recovery_score. Live-bound blocks animate when their data updates.
-        - Choose icons and colors thoughtfully. Match icons to the topic (flame.fill for streaks, bolt.heart for cardio, leaf.fill for recovery, sunrise for morning, moon.zzz for sleep, drop.fill for hydration, fork.knife for nutrition, brain for mindfulness, chart.line.uptrend.xyaxis for trends). Vary colors across widgets so the grid doesn't all look the same.
+        - BE BOLD WITH COMPOSITION. Mix block types freely and unexpectedly: a checklist on top of a ring; a metric_value + sparkline + delta trio; a quote + mini_bars; a comparison + chip_row + button_row. Combine checklist + buttons + metrics + sparklines in one card when it serves the user. The more varied the combinations across the grid, the better. Don't default to one block or one familiar shape — invent layouts the user hasn't seen yet.
+        - TO-DO / HABIT CARDS: when the user wants a checklist, routine, habit tracker, or "to-do style" card, use layout:composed with a checklist block — and feel free to dress it up with a text intro, a metric/ring showing progress, and a button_row for one-tap actions. Keep items terse and actionable.
+        - Live metric bindings (`metric_ref` field on blocks): steps, heart_rate, active_energy, resting_energy, sleep, distance, hydration, hrv, resting_hr, exercise_minutes, stand_hours, mindful_minutes, flights, vo2_max, walking_speed, step_length, body_mass, health_meter, recovery_score. Live-bound blocks animate when their data updates. Use ONLY these metric_ref values — anything else won't bind.
+        - GO WILD ON COLOR & ICONS (within the palette). Match icons expressively to the topic (flame.fill for streaks, bolt.heart for cardio, leaf.fill for recovery, sunrise for morning, moon.zzz for sleep, drop.fill for hydration, fork.knife for nutrition, brain for mindfulness, chart.line.uptrend.xyaxis for trends — but reach for unexpected, fitting symbols too). Vary colors widely across the grid so no two widgets look alike — rotate through accent, red, orange, yellow, green, blue, indigo, purple, pink, cyan, gray rather than reusing one.
+        - HARD LIMITS (these stay fixed — everything else is yours): max 6 widgets at once; the user must confirm every create/update/delete; use only the block types listed above; use only the metric_ref values listed above.
         - When full (6 widgets), call list_widgets to see what's there, then delete_widget the stalest before creating a new one — or ask the user which to drop.
-        - DO NOT pin widgets unsolicited at the start of every conversation. Pin when there's a reason. When in doubt, ask first.
+        - Pin when there's a reason, not reflexively at the start of every chat. When in doubt, ask first — but once the user says yes, make it bold and beautiful.
 
         NEVER FAKE WRITES (this is the most important rule in this section)
         - You can ONLY claim to have updated / logged / deleted / scheduled something if you actually invoked the matching tool in THIS turn and the tool's confirmation state was `.done`.

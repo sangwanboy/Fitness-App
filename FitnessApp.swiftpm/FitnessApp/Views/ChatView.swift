@@ -5,8 +5,10 @@ import PhotosUI
 public struct ChatView: View {
     @StateObject private var viewModel = ChatViewModel()
     @ObservedObject private var prefillBus = ChatPrefillBus.shared
+    @Environment(\.scenePhase) private var scenePhase
     @State private var inputText: String = ""
     @State private var showClearAlert = false
+    @State private var showHistorySheet = false
     @FocusState private var isInputFocused: Bool
 
     // Camera/photo picker state
@@ -212,6 +214,22 @@ public struct ChatView: View {
         .navigationSubtitle("AI · Always learning your body")
         .toolbarTitleDisplayMode(.inlineLarge)
         .toolbar {
+            ToolbarItemGroup(placement: .topBarLeading) {
+                Button(action: { showHistorySheet = true }) {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .foregroundStyle(accentColor)
+                }
+                .accessibilityLabel("Chat history")
+                .accessibilityHint("View and reopen past conversations")
+
+                Button(action: { withAnimation { viewModel.startNewChat() } }) {
+                    Image(systemName: "square.and.pencil")
+                        .foregroundStyle(accentColor)
+                }
+                .accessibilityLabel("New chat")
+                .accessibilityHint("Archive this conversation and start fresh")
+            }
+
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Menu {
                     Picker("Thinking Level", selection: $thinkingLevel) {
@@ -229,6 +247,25 @@ public struct ChatView: View {
                     Image(systemName: "trash")
                 }
             }
+        }
+        .sheet(isPresented: $showHistorySheet) {
+            ChatHistorySheet(
+                accentColor: accentColor,
+                isDark: isDark,
+                onSelect: { session in
+                    withAnimation { viewModel.loadSession(session) }
+                    showHistorySheet = false
+                }
+            )
+        }
+        .onChange(of: scenePhase) { _, phase in
+            // Backgrounding the app archives the live conversation so it isn't
+            // lost if the process is later terminated.
+            if phase == .background { viewModel.archiveCurrent() }
+        }
+        .onDisappear {
+            // Leaving the Coach tab archives the live conversation too.
+            viewModel.archiveCurrent()
         }
         .onChange(of: photoItem) { newItem in
             guard let newItem else { return }
@@ -558,5 +595,106 @@ struct TypingIndicatorView: View {
         withAnimation(animation.delay(0)) { dot1Scale = 1.0 }
         withAnimation(animation.delay(0.2)) { dot2Scale = 1.0 }
         withAnimation(animation.delay(0.4)) { dot3Scale = 1.0 }
+    }
+}
+
+// MARK: - Chat History Sheet
+/// Lists past chat sessions newest-first. Tapping a row replays that session in
+/// the Coach view; swipe-to-delete removes it. Honest empty state when there's
+/// no history yet. Native glass styling.
+struct ChatHistorySheet: View {
+    @ObservedObject private var store = ChatHistoryStore.shared
+    @Environment(\.dismiss) private var dismiss
+
+    let accentColor: Color
+    let isDark: Bool
+    var onSelect: (ChatSession) -> Void
+
+    private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .abbreviated
+        return f
+    }()
+
+    private func relativeDate(_ date: Date) -> String {
+        Self.relativeFormatter.localizedString(for: date, relativeTo: Date())
+    }
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if store.sessions.isEmpty {
+                    emptyState
+                } else {
+                    List {
+                        ForEach(store.sessions) { session in
+                            Button {
+                                onSelect(session)
+                            } label: {
+                                row(for: session)
+                            }
+                            .buttonStyle(.plain)
+                            .listRowBackground(Color.clear)
+                        }
+                        .onDelete { offsets in
+                            withAnimation { store.delete(at: offsets) }
+                        }
+                    }
+                    .listStyle(.plain)
+                    .scrollContentBackground(.hidden)
+                }
+            }
+            .background(AdaptiveBackground())
+            .navigationTitle("Chat History")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                        .foregroundStyle(accentColor)
+                }
+            }
+        }
+    }
+
+    private func row(for session: ChatSession) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(session.title)
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .foregroundColor(isDark ? .white : .black)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                Text(relativeDate(session.createdAt))
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+            }
+            Text(session.preview)
+                .font(.system(size: 13, weight: .regular, design: .rounded))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 18))
+        .contentShape(RoundedRectangle(cornerRadius: 18))
+        .padding(.vertical, 4)
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "clock.arrow.circlepath")
+                .font(.system(size: 40, weight: .light))
+                .foregroundStyle(.secondary)
+            Text("No past chats yet")
+                .font(.system(size: 17, weight: .semibold, design: .rounded))
+                .foregroundColor(isDark ? .white : .black)
+            Text("Start a new chat and it'll show up here when you move on.")
+                .font(.system(size: 13, weight: .regular, design: .rounded))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 40)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
