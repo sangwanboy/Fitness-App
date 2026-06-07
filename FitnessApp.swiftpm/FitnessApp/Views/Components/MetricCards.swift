@@ -100,7 +100,10 @@ struct BarsChart: View {
                         RoundedRectangle(cornerRadius: inner / 2)
                             .fill(isHl ? color : (isDark ? Color.white.opacity(0.22) : Color.black.opacity(0.18)))
                             .frame(width: inner, height: bh)
-                            .offset(x: CGFloat(i) * bw + (bw - inner) / 2, y: h - bh)
+                            // .bottomLeading already pins each bar to the baseline; only
+                            // the x needs offsetting. A y of (h - bh) double-applied the
+                            // baseline and pushed short bars off the bottom (empty-pill bug).
+                            .offset(x: CGFloat(i) * bw + (bw - inner) / 2, y: 0)
                     }
                 }
             }
