@@ -58,9 +58,6 @@ public struct DetailedMetricView: View {
                                 .foregroundColor(isDark ? .white.opacity(0.7) : .black.opacity(0.7))
                                 .padding(12)
                                 .glassEffect(.regular.interactive(), in: .circle)
-                                .overlay(
-                                    Circle().stroke(isDark ? Color.white.opacity(0.2) : Color.black.opacity(0.12), lineWidth: 0.5)
-                                )
                         }
                         .buttonStyle(InteractiveButtonStyle(scale: 0.9))
                     }
@@ -102,7 +99,7 @@ public struct DetailedMetricView: View {
                             .clipShape(Capsule())
                         } else if summary.type == .heartRate {
                             HStack(spacing: 10) {
-                                Text("Resting rate average: 64 bpm")
+                                Text(restingHRLabel)
                                     .font(.caption)
                                     .foregroundColor(isDark ? .white.opacity(0.8) : .black.opacity(0.8))
 
@@ -122,7 +119,7 @@ public struct DetailedMetricView: View {
                                 .buttonStyle(PlainButtonStyle())
                             }
                         } else {
-                            Text("Typical range: 50 - 80 ms")
+                            Text(hrvRangeLabel)
                                 .font(.caption)
                                 .foregroundColor(isDark ? .white.opacity(0.8) : .black.opacity(0.8))
                         }
@@ -189,6 +186,27 @@ public struct DetailedMetricView: View {
         }
     }
     
+    /// Label shown under the heart-rate main stat.
+    /// Uses the resting-HR summary's currentValue (populated by HealthKit's .restingHeartRate query).
+    private var restingHRLabel: String {
+        if let rhr = healthKitManager.metricSummaries[.restingHeartRate]?.currentValue, rhr > 0 {
+            return "Resting avg: \(Int(rhr.rounded())) bpm"
+        }
+        return "Resting avg: —"
+    }
+
+    /// Label shown under the HRV main stat.
+    /// Computes the user's actual 28-day min/max from summary.history.
+    private var hrvRangeLabel: String {
+        let calendar = Calendar.current
+        let cutoff = calendar.date(byAdding: .day, value: -28, to: Date()) ?? Date().addingTimeInterval(-28 * 86400)
+        let recent = summary.history.filter { $0.date >= cutoff }.map { $0.value }
+        guard let minVal = recent.min(), let maxVal = recent.max() else {
+            return "Your range: —"
+        }
+        return "Your range: \(Int(minVal.rounded())) – \(Int(maxVal.rounded())) ms"
+    }
+
     private var weeklyHistory: [MetricValue] {
         let calendar = Calendar.current
         let now = Date()

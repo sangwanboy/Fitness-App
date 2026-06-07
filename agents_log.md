@@ -2078,3 +2078,15 @@ Latest deployed sequence: **2164**.
 
 2. **Loop cursor force-unwrap** (line 146) — Replaced `cursor = cal.date(byAdding: .day, value: 1, to: cursor)!` inside the `while` loop with `guard let next = cal.date(byAdding: .day, value: 1, to: cursor) else { break }; cursor = next`. A nil return mid-loop now exits cleanly with whatever days were already accumulated rather than crashing with a hard-to-trace abort inside a detached Task.
 
+---
+
+### 2026-06-07 — DetailedMetricView glitch fixes
+
+**File**: `FitnessApp.swiftpm/FitnessApp/Views/DetailedMetricView.swift`
+
+1. **Close button double-border** — Removed the `.overlay(Circle().stroke(..., lineWidth: 0.5))` layer from the xmark button. The native `.glassEffect(.regular.interactive(), in: .circle)` already provides the system hairline specular border; the extra stroke was compounding it into a visibly heavier ring.
+
+2. **Hardcoded resting HR (64 bpm)** — Replaced the hardcoded string `"Resting rate average: 64 bpm"` with the `restingHRLabel` computed property. It reads `healthKitManager.metricSummaries[.restingHeartRate]?.currentValue` (populated by HealthKit's discrete-average `.restingHeartRate` query). Falls back to `"Resting avg: —"` when no data is available.
+
+3. **Hardcoded HRV population range** — Replaced `"Typical range: 50 - 80 ms"` with the `hrvRangeLabel` computed property. It filters `summary.history` to the last 28 days and derives the user's own min/max, displayed as `"Your range: X – Y ms"`. Falls back to `"Your range: —"` when no history exists.
+
