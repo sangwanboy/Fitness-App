@@ -2100,3 +2100,36 @@ Latest deployed sequence: **2164**.
 
 2. **start/stop wired to scenePhase** — Removed the unconditional `Task { @MainActor in SleepFocusDetector.shared.start() }` from `FitnessApp.init()`. Added `.onChange(of: scenePhase)` on the `WindowGroup` scene: `.active` calls `start()`, `.background` calls `stop()`. This ensures the poll loop is suspended whenever the app is backgrounded and resumes on foreground, matching iOS lifecycle expectations.
 
+---
+
+## Session 32 — 2026-06-07 (Glitch-sweep reconciliation + build repair)
+
+The glitch-sweep workflow (Sonnet finders → verify → per-file fixers) confirmed **21** glitches and
+fixed **10 files**. Several fixer agents auto-committed/pushed their own files (commits `6d5e2dc`,
+`c126c2d`, `da0c90e`, `50f2e83`) — not intended; future workflow agent prompts must forbid git.
+Two of those introduced compile breaks which were **repaired forward** (no history rewrite, since
+already pushed):
+- `NutritionDashboardView.swift`: `.background(.regularMaterial.ignoresSafeArea(...))` → invalid;
+  fixed to `.background(.regularMaterial, ignoresSafeAreaEdges: .bottom)`.
+- `HealthTrendsView.swift`: time-range picker used a non-resolving `glassEffect(...isEnabled:)` →
+  rewrote to a conditional `.background { if isSelected { Color.clear.glassEffect(...) } }` + explicit
+  `ForEach(..., id: \.self)`.
+
+Remaining fixes committed here (agents left them uncommitted): `VertexAuth` (token_uri guard vs
+force-unwrap), `PredictionsCard` AnomalyBanner + `SleepTrackingCard` focus banner (fake glass →
+`.glassEffect(.regular.tint(...))`), `HealthTrendsView` (dead detail sheet → `.sheet(item:)`, cards now
+tappable; fake-glass picker → native), and **`WorkoutTrackerView`** — the biggest: replaced the FAKE
+synthesized workout heart rate (`sin()+random()`) with a REAL live HealthKit `HKAnchoredObjectQuery`
+stream (+ avg/peak HR in the summary, + onDisappear teardown). Workout HR now shows real Watch data or
+"—" with no Watch (honest, per no-mock-data).
+
+- Simulator **BUILD SUCCEEDED** (green). **Device deploy PENDING** — phone went `unavailable`
+  (asleep/disconnected) mid-session; last on-device build remains seq **2164**. Redeploy when reachable.
+
+### Deferred to human (1, low risk)
+- `DashboardView.swift` (~551-554): `workoutDates` @State only refreshes via `refreshAllData()` (5-min
+  staleness gate), so the dashboard workout ring can show stale state right after saving a workout.
+  Low impact; left for a deliberate fix.
+
+Latest deployed sequence: **2164** (device deploy of glitch fixes pending).
+

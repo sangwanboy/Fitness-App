@@ -27,7 +27,27 @@ public struct WorkoutTrackerView: View {
     // Timer publisher
     @State private var timer: Timer.TimerPublisher = Timer.publish(every: 1, on: .main, in: .common)
     @State private var cancellable: Any?
-    
+
+    // Live heart-rate streaming (real HealthKit samples, never synthesized).
+    // Owns a local HKHealthStore + anchored query so the BPM shown during a
+    // workout is the user's actual Watch-sourced heart rate, or "—" if none.
+    @State private var hrStore = HKHealthStore()
+    @State private var hrQuery: HKAnchoredObjectQuery?
+    @State private var peakHeartRate = 0
+    @State private var hrSampleCount = 0
+    @State private var hrSum = 0.0
+
+    /// Relative date formatter reused across rows. Building a DateFormatter is
+    /// expensive (locale/calendar setup) and the recent-workouts ForEach can
+    /// re-render every second while a workout runs — so allocate it once.
+    private static let workoutDateFmt: DateFormatter = {
+        let f = DateFormatter()
+        f.doesRelativeDateFormatting = true
+        f.dateStyle = .medium
+        f.timeStyle = .short
+        return f
+    }()
+
     private var isDark: Bool { themeMode == "dark" }
     private var accentColor: Color { ThemeHelper.color(from: accentColorHex) }
     
@@ -336,6 +356,16 @@ public struct WorkoutTrackerView: View {
                 updateWorkoutStats()
             }
         }
+        .onDisappear {
+            // Tear down the timer + live HR stream if the user swipes away
+            // mid-workout, otherwise the publisher keeps firing on a dead view.
+            if isRunning {
+                pauseWorkout()
+            } else if let con = cancellable as? Cancellable {
+                con.cancel()
+            }
+            stopHeartRateStream()
+        }
         .alert("End Workout", isPresented: $showSaveAlert) {
             Button("Cancel", role: .cancel) {}
             Button("Discard", role: .destructive) { discardWorkout() }
@@ -354,7 +384,9 @@ public struct WorkoutTrackerView: View {
                 type: selectedWorkoutType,
                 duration: timeString(from: secondsElapsed),
                 calories: estimatedCalories,
-                distance: estimatedDistance
+                distance: estimatedDistance,
+                avgHeartRate: hrSampleCount > 0 ? Int((hrSum / Double(hrSampleCount)).rounded()) : 0,
+                peakHeartRate: peakHeartRate
             ) {
                 showSummary = false
                 resetWorkout()
@@ -384,11 +416,7 @@ public struct WorkoutTrackerView: View {
     }
 
     private func workoutDateLabel(_ w: HKWorkout) -> String {
-        let f = DateFormatter()
-        f.doesRelativeDateFormatting = true
-        f.dateStyle = .medium
-        f.timeStyle = .short
-        return f.string(from: w.startDate)
+        Self.workoutDateFmt.string(from: w.startDate)
     }
 
     private func workoutDurationLabel(_ w: HKWorkout) -> String {
@@ -411,25 +439,78 @@ public struct WorkoutTrackerView: View {
         timer = Timer.publish(every: 1, on: .main, in: .common)
         let pub = timer.connect()
         cancellable = pub
+        startHeartRateStream()
     }
-    
+
     private func pauseWorkout() {
         isRunning = false
         if let con = cancellable as? Cancellable {
             con.cancel()
         }
+        stopHeartRateStream()
     }
-    
+
     private func updateWorkoutStats() {
         let minutes = Double(secondsElapsed) / 60.0
         estimatedCalories = minutes * selectedWorkoutType.calorieMultiplier
         estimatedDistance = minutes * selectedWorkoutType.speedMultiplier
-        
-        if secondsElapsed < 60 {
-            currentHeartRate = Int(72.0 + (Double(secondsElapsed) * 0.8))
-        } else {
-            let heartRateFluctuation = sin(Double(secondsElapsed) / 10.0) * 5.0
-            currentHeartRate = Int(120.0 + heartRateFluctuation + Double.random(in: -2...2))
+        // Heart rate is NOT computed here — it comes only from live HealthKit
+        // samples via startHeartRateStream(). No data → currentHeartRate stays
+        // at its seeded value (or 0, which renders as "—").
+    }
+
+    // MARK: - Live heart-rate stream (real HealthKit samples only)
+
+    /// Subscribe to live heart-rate samples for the duration of the workout.
+    /// HR can only originate from a Watch / chest strap / wearable — the iPhone
+    /// has no HR sensor — so if nothing streams in, `currentHeartRate` keeps its
+    /// seeded value (or 0) and the UI honestly shows "—" rather than a fake BPM.
+    private func startHeartRateStream() {
+        guard HKHealthStore.isHealthDataAvailable(),
+              let hrType = HKQuantityType.quantityType(forIdentifier: .heartRate) else { return }
+
+        // Reset session HR accumulators for intensity derivation.
+        peakHeartRate = 0
+        hrSampleCount = 0
+        hrSum = 0.0
+
+        // Only react to samples recorded from now on (live readings).
+        let predicate = HKQuery.predicateForSamples(withStart: Date(), end: nil, options: .strictStartDate)
+        let unit = HKUnit.count().unitDivided(by: .minute())
+
+        let handler: (HKAnchoredObjectQuery, [HKSample]?, [HKDeletedObject]?, HKQueryAnchor?, Error?) -> Void = { _, samples, _, _, _ in
+            guard let quantitySamples = samples as? [HKQuantitySample], !quantitySamples.isEmpty else { return }
+            let latest = quantitySamples.max(by: { $0.endDate < $1.endDate })
+            let bpm = latest.map { $0.quantity.doubleValue(for: unit) }
+            // Accumulate avg/peak from every sample for the post-workout summary.
+            let batchSum = quantitySamples.reduce(0.0) { $0 + $1.quantity.doubleValue(for: unit) }
+            let batchCount = quantitySamples.count
+            DispatchQueue.main.async {
+                if let bpm, bpm > 0 {
+                    currentHeartRate = Int(bpm.rounded())
+                    peakHeartRate = max(peakHeartRate, currentHeartRate)
+                }
+                hrSum += batchSum
+                hrSampleCount += batchCount
+            }
+        }
+
+        let query = HKAnchoredObjectQuery(
+            type: hrType,
+            predicate: predicate,
+            anchor: nil,
+            limit: HKObjectQueryNoLimit,
+            resultsHandler: handler
+        )
+        query.updateHandler = handler
+        hrQuery = query
+        hrStore.execute(query)
+    }
+
+    private func stopHeartRateStream() {
+        if let q = hrQuery {
+            hrStore.stop(q)
+            hrQuery = nil
         }
     }
     
@@ -438,6 +519,7 @@ public struct WorkoutTrackerView: View {
         if let con = cancellable as? Cancellable {
             con.cancel()
         }
+        stopHeartRateStream()
 
         let end = Date()
         let start = end.addingTimeInterval(-Double(secondsElapsed))
@@ -475,10 +557,14 @@ public struct WorkoutTrackerView: View {
         if let con = cancellable as? Cancellable {
             con.cancel()
         }
+        stopHeartRateStream()
         secondsElapsed = 0
         currentHeartRate = Int(healthKitManager.metricSummaries[.heartRate]?.currentValue ?? 0)
         estimatedCalories = 0.0
         estimatedDistance = 0.0
+        peakHeartRate = 0
+        hrSampleCount = 0
+        hrSum = 0.0
     }
     
     private func timeString(from totalSeconds: Int) -> String {
@@ -550,10 +636,29 @@ struct WorkoutSummaryView: View {
     let duration: String
     let calories: Double
     let distance: Double
+    /// Average / peak BPM captured from live HealthKit samples this session.
+    /// 0 means no real HR data arrived (e.g. iPhone-only, no Watch).
+    let avgHeartRate: Int
+    let peakHeartRate: Int
     let onDismiss: () -> Void
-    
+
     private var isDark: Bool { themeMode == "dark" }
     private var accentColor: Color { ThemeHelper.color(from: accentColorHex) }
+
+    /// Honest intensity label derived from the real average heart rate.
+    /// Returns nil when no HR data was recorded so the UI shows "—" instead of
+    /// a fabricated "High" — heart-rate zones below assume HRmax ≈ 190.
+    private var intensityLabel: String? {
+        guard avgHeartRate > 0 else { return nil }
+        let pct = Double(avgHeartRate) / 190.0
+        switch pct {
+        case ..<0.60:  return "Zone 1 · Warm Up"
+        case ..<0.70:  return "Zone 2 · Easy"
+        case ..<0.80:  return "Zone 3 · Aerobic"
+        case ..<0.90:  return "Zone 4 · Hard"
+        default:       return "Zone 5 · Max"
+        }
+    }
     
     var body: some View {
         ZStack {
@@ -607,7 +712,9 @@ struct WorkoutSummaryView: View {
                         if type != .strength {
                             SummaryStatTile(title: "Distance", value: String(format: "%.2f mi", distance), icon: "figure.walk", color: .green, isDark: isDark)
                         } else {
-                            SummaryStatTile(title: "Intensity", value: "High", icon: "bolt.fill", color: .red, isDark: isDark)
+                            // Strength has no distance — show intensity derived
+                            // from real HR, or an honest "—" if none was recorded.
+                            SummaryStatTile(title: "Intensity", value: intensityLabel ?? "—", icon: "bolt.fill", color: .red, isDark: isDark)
                         }
                     }
                 }

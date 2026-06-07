@@ -5,8 +5,7 @@ public struct HealthTrendsView: View {
     @ObservedObject private var healthKitManager = HealthKitManager.shared
     
     @State private var timeRange: TimeRange = .week
-    @State private var selectedMetricType: HealthMetricType = .steps
-    @State private var showDetailSheet = false
+    @State private var detailMetric: HealthMetricType?
     
     public init() {}
     
@@ -119,37 +118,30 @@ public struct HealthTrendsView: View {
 
                     // Native Picker for Time Range (Glass Tab style)
                     HStack(spacing: 0) {
-                        ForEach(TimeRange.allCases) { range in
-                            Button(action: {
+                        ForEach(TimeRange.allCases, id: \.self) { range in
+                            let isSelected = timeRange == range
+                            Button {
                                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                                     timeRange = range
                                 }
-                            }) {
+                            } label: {
                                 Text(range.rawValue)
                                     .font(.subheadline)
-                                    .fontWeight(timeRange == range ? .semibold : .regular)
-                                    .foregroundColor(timeRange == range ? .white : .white.opacity(0.85))
+                                    .fontWeight(isSelected ? .semibold : .regular)
+                                    .foregroundColor(isSelected ? .white : .white.opacity(0.85))
                                     .padding(.vertical, 8)
                                     .frame(maxWidth: .infinity)
-                                    .background(
-                                        ZStack {
-                                            if timeRange == range {
-                                                RoundedRectangle(cornerRadius: 10)
-                                                    .fill(Color.white.opacity(0.12))
-                                                    .matchedGeometryEffect(id: "activeTab", in: namespace)
-                                            }
+                                    .background {
+                                        if isSelected {
+                                            Color.clear.glassEffect(.regular.interactive(), in: .rect(cornerRadius: 10))
                                         }
-                                    )
+                                    }
                             }
                             .buttonStyle(InteractiveButtonStyle(scale: 0.95))
                         }
                     }
                     .padding(4)
-                    .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 14))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14)
-                            .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
-                    )
+                    .glassEffect(.regular, in: .rect(cornerRadius: 14))
                     .padding(.horizontal)
 
                     // Key Insight Card
@@ -188,35 +180,45 @@ public struct HealthTrendsView: View {
                         VStack(spacing: 16) {
                             // Steps Chart
                             if let stepsSummary = healthKitManager.metricSummaries[.steps] {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    HStack(spacing: 6) {
-                                        Image(systemName: "figure.walk")
-                                            .foregroundColor(.teal)
-                                        Text("Daily Steps Trend")
-                                            .foregroundColor(.white)
+                                Button {
+                                    detailMetric = .steps
+                                } label: {
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        HStack(spacing: 6) {
+                                            Image(systemName: "figure.walk")
+                                                .foregroundColor(.teal)
+                                            Text("Daily Steps Trend")
+                                                .foregroundColor(.white)
+                                        }
+                                        .font(.subheadline)
+                                        .fontWeight(.semibold)
+
+                                        MetricChart(type: .steps, history: filterHistory(stepsSummary.history))
                                     }
-                                    .font(.subheadline)
-                                    .fontWeight(.semibold)
-                                    
-                                    MetricChart(type: .steps, history: filterHistory(stepsSummary.history))
+                                    .padding(.bottom, 12)
                                 }
-                                .padding(.bottom, 12)
+                                .buttonStyle(.plain)
                             }
-                            
+
                             // Distance Chart
                             if let distSummary = healthKitManager.metricSummaries[.distance] {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    HStack(spacing: 6) {
-                                        Image(systemName: "arrow.triangle.turn.up.right.diamond.fill")
-                                            .foregroundColor(.green)
-                                        Text("Walking & Running Distance")
-                                            .foregroundColor(.white)
+                                Button {
+                                    detailMetric = .distance
+                                } label: {
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        HStack(spacing: 6) {
+                                            Image(systemName: "arrow.triangle.turn.up.right.diamond.fill")
+                                                .foregroundColor(.green)
+                                            Text("Walking & Running Distance")
+                                                .foregroundColor(.white)
+                                        }
+                                        .font(.subheadline)
+                                        .fontWeight(.semibold)
+
+                                        MetricChart(type: .distance, history: filterHistory(distSummary.history))
                                     }
-                                    .font(.subheadline)
-                                    .fontWeight(.semibold)
-                                    
-                                    MetricChart(type: .distance, history: filterHistory(distSummary.history))
                                 }
+                                .buttonStyle(.plain)
                             }
                         }
                         .glassCard()
@@ -231,7 +233,10 @@ public struct HealthTrendsView: View {
                                 .foregroundColor(.white)
                                 .padding(.horizontal)
                             
-                            VStack(alignment: .leading, spacing: 8) {
+                            Button {
+                                detailMetric = .heartRate
+                            } label: {
+                                VStack(alignment: .leading, spacing: 8) {
                                     HStack(spacing: 6) {
                                         Image(systemName: "heart.fill")
                                             .foregroundColor(.red)
@@ -240,9 +245,11 @@ public struct HealthTrendsView: View {
                                     }
                                     .font(.subheadline)
                                     .fontWeight(.semibold)
-                                
-                                MetricChart(type: .heartRate, history: filterHistory(heartSummary.history, maxSamples: 200))
+
+                                    MetricChart(type: .heartRate, history: filterHistory(heartSummary.history, maxSamples: 200))
+                                }
                             }
+                            .buttonStyle(.plain)
                             .glassCard(glowColor: .red.opacity(0.05))
                             .padding(.horizontal)
                         }
@@ -252,8 +259,8 @@ public struct HealthTrendsView: View {
                 .padding(.bottom, 110)
             }
         }
-        .sheet(isPresented: $showDetailSheet) {
-            if let summary = healthKitManager.metricSummaries[selectedMetricType] {
+        .sheet(item: $detailMetric) { type in
+            if let summary = healthKitManager.metricSummaries[type] {
                 DetailedMetricView(summary: summary)
             }
         }
@@ -280,8 +287,6 @@ public struct HealthTrendsView: View {
         }
         return filtered
     }
-    
-    @Namespace private var namespace
 }
 
 struct InsightMiniStat: View {

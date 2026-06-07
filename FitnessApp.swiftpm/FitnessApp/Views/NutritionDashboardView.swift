@@ -367,7 +367,7 @@ public struct NutritionDashboardView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
         }
-        .background(.regularMaterial.ignoresSafeArea(edges: .bottom))
+        .background(.regularMaterial, ignoresSafeAreaEdges: .bottom)
     }
 
     // MARK: - Helpers

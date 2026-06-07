@@ -745,14 +745,7 @@ private struct AnomalyBanner: View {
             Spacer(minLength: 0)
         }
         .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(color.opacity(0.10))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(color.opacity(0.4), lineWidth: 1)
-        )
+        .glassEffect(.regular.tint(color.opacity(0.10)), in: .rect(cornerRadius: 12))
     }
 }
 

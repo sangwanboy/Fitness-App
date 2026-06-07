@@ -31,7 +31,10 @@ public class VertexAuth {
     private func refreshAccessToken(_ sa: VertexConfig.ServiceAccount) async throws -> String {
         let jwt = try createJWT(clientEmail: sa.clientEmail, tokenUri: sa.tokenUri, privateKeyPEM: sa.privateKey)
         
-        var request = URLRequest(url: URL(string: sa.tokenUri)!)
+        guard let tokenURL = URL(string: sa.tokenUri) else {
+            throw NSError(domain: "VertexAuth", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid token_uri in service account: \(sa.tokenUri)"])
+        }
+        var request = URLRequest(url: tokenURL)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         

@@ -96,10 +96,7 @@ public struct SleepTrackingCard: View {
                     .foregroundColor(.indigo)
             }
             .padding(10)
-            .background(
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(Color.indigo.opacity(0.10))
-            )
+            .glassEffect(.regular.tint(Color.indigo.opacity(0.10)).interactive(), in: .rect(cornerRadius: 14))
         }
         .buttonStyle(PlainButtonStyle())
     }
