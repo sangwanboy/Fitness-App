@@ -50,10 +50,22 @@ public struct WidgetsCard: View {
             } else {
                 VStack(spacing: 10) {
                     ForEach(Array(store.widgets.enumerated()), id: \.element.id) { idx, widget in
-                        Button(action: { selectedWidget = widget }) {
-                            AstraWidgetTile(widget: widget, hk: hk)
+                        Group {
+                            if widget.isInteractive {
+                                // Interactive widgets (checklist / action buttons): no
+                                // outer navigate-button, so the inner controls receive
+                                // taps directly. A tap on the tile background still opens
+                                // the detail sheet (for delete / refine).
+                                AstraWidgetTile(widget: widget, hk: hk, onCoachPrompt: handleCoachPrompt)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture { selectedWidget = widget }
+                            } else {
+                                Button(action: { selectedWidget = widget }) {
+                                    AstraWidgetTile(widget: widget, hk: hk, onCoachPrompt: handleCoachPrompt)
+                                }
+                                .buttonStyle(TilePressStyle())
+                            }
                         }
-                        .buttonStyle(TilePressStyle())
                         .accessibilityLabel(widget.title)
                         .transition(.opacity.combined(with: .move(edge: .bottom)))
                         .animation(.spring(response: 0.38, dampingFraction: 0.82).delay(Double(idx) * 0.05), value: store.widgets.count)
@@ -73,6 +85,13 @@ public struct WidgetsCard: View {
                                   onAskAstra?()
                               })
         }
+    }
+
+    /// Queue a follow-up prompt to Astra and hop to the Coach tab. Wired into
+    /// every interactive widget's `coach_prompt` action buttons.
+    private func handleCoachPrompt(_ prompt: String) {
+        ChatPrefillBus.shared.queue(prompt)
+        onAskAstra?()
     }
 
     private var header: some View {
@@ -103,6 +122,7 @@ public struct WidgetsCard: View {
 struct AstraWidgetTile: View {
     let widget: AstraWidget
     @ObservedObject var hk: HealthKitManager
+    var onCoachPrompt: (String) -> Void = { _ in }
 
     @AppStorage("theme_mode") private var themeMode = "dark"
     private var isDark: Bool { themeMode == "dark" }
@@ -155,7 +175,8 @@ struct AstraWidgetTile: View {
     private func composedContent(blocks: [WidgetBlock]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
-                ComposedBlockView(block: block, color: color, hk: hk)
+                ComposedBlockView(block: block, color: color, hk: hk,
+                                  widgetID: widget.id, onCoachPrompt: onCoachPrompt)
             }
         }
     }
@@ -346,7 +367,7 @@ private struct WidgetDetailSheet: View {
                     Spacer()
                 }
 
-                AstraWidgetTile(widget: widget, hk: hk)
+                AstraWidgetTile(widget: widget, hk: hk, onCoachPrompt: { onAskAstra($0) })
 
                 VStack(spacing: 10) {
                     Button {
@@ -417,6 +438,8 @@ struct ComposedBlockView: View {
     let block: WidgetBlock
     let color: Color
     @ObservedObject var hk: HealthKitManager
+    var widgetID: UUID = UUID()
+    var onCoachPrompt: (String) -> Void = { _ in }
 
     var body: some View {
         switch block {
@@ -443,6 +466,116 @@ struct ComposedBlockView: View {
             ChipRowBlockView(chips: chips, color: color)
         case .quote(let s):
             QuoteBlockView(text: s, color: color)
+        case .checklist(let items):
+            ChecklistBlockView(widgetID: widgetID, items: items, color: color)
+        case .buttonRow(let btns):
+            ButtonRowBlockView(buttons: btns, color: color, onCoachPrompt: onCoachPrompt)
+        }
+    }
+}
+
+// MARK: - Interactive blocks (checklist + action buttons)
+
+/// Tappable to-do checklist. Reads live item state from the store so a tap
+/// reflects immediately and persists across launches.
+private struct ChecklistBlockView: View {
+    let widgetID: UUID
+    let items: [ChecklistItem]
+    let color: Color
+
+    @ObservedObject private var store = AstraWidgetStore.shared
+    @AppStorage("theme_mode") private var themeMode = "dark"
+    private var isDark: Bool { themeMode == "dark" }
+
+    /// Prefer the live items from the store (so a toggle updates instantly and
+    /// persists); fall back to the passed-in snapshot for confirm-card previews
+    /// where the widget isn't in the store yet.
+    private var liveItems: [ChecklistItem] {
+        if let w = store.widgets.first(where: { $0.id == widgetID }), let blocks = w.blocks {
+            for b in blocks { if case .checklist(let its) = b { return its } }
+        }
+        return items
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(liveItems) { item in
+                Button {
+                    store.toggleChecklistItem(widgetID: widgetID, itemID: item.id)
+                } label: {
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: item.done ? "checkmark.circle.fill" : "circle")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(item.done ? color : (isDark ? .white.opacity(0.4) : .black.opacity(0.4)))
+                        Text(item.text)
+                            .font(.system(size: 12, weight: .regular))
+                            .strikethrough(item.done, color: isDark ? .white.opacity(0.4) : .black.opacity(0.4))
+                            .foregroundColor(item.done
+                                ? (isDark ? .white.opacity(0.4) : .black.opacity(0.4))
+                                : (isDark ? .white.opacity(0.85) : .black.opacity(0.85)))
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 0)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: liveItems)
+    }
+}
+
+/// Row of Astra-authored action buttons. Each does something real: send a
+/// follow-up prompt to the Coach, or log water to Apple Health.
+private struct ButtonRowBlockView: View {
+    let buttons: [WidgetButton]
+    let color: Color
+    let onCoachPrompt: (String) -> Void
+
+    @State private var loggedIDs: Set<UUID> = []
+
+    var body: some View {
+        VStack(spacing: 6) {
+            ForEach(buttons) { btn in
+                Button {
+                    perform(btn)
+                } label: {
+                    HStack(spacing: 6) {
+                        if let icon = btn.icon, !icon.isEmpty {
+                            Image(systemName: loggedIDs.contains(btn.id) ? "checkmark" : icon)
+                                .font(.system(size: 12, weight: .semibold))
+                        }
+                        Text(loggedIDs.contains(btn.id) ? "Logged" : btn.label)
+                            .font(.system(size: 12, weight: .semibold))
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                    }
+                    .foregroundColor(color)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .glassEffect(.regular.interactive(), in: .capsule)
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func perform(_ btn: WidgetButton) {
+        switch btn.action {
+        case "log_water":
+            let ml = Double(btn.value ?? "250") ?? 250
+            Task {
+                let ok = await HealthKitManager.shared.logMetricValue(type: .hydration, value: ml / 1000.0)
+                if ok { withAnimation { _ = loggedIDs.insert(btn.id) } }
+            }
+        case "coach_prompt":
+            onCoachPrompt(btn.value ?? btn.label)
+        default:
+            // Unknown action — still do something useful rather than nothing.
+            onCoachPrompt(btn.value ?? btn.label)
         }
     }
 }

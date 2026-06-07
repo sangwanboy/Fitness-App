@@ -1036,6 +1036,9 @@ public final class ChatViewModel: ObservableObject {
              • text — paragraph
              • chip_row — horizontal status pills
              • quote — italic motivational line
+             • checklist — an INTERACTIVE to-do list; each item gets a tappable checkbox the user ticks off (state persists). This is how you make a "to-do style" health card: routines, recovery checklists, habit stacks.
+             • button_row — tappable action buttons; action is 'coach_prompt' (value = a message sent to you on tap) or 'log_water' (value = millilitres logged to Health). Great for one-tap actions on a card.
+        - TO-DO / HABIT CARDS: when the user asks for a checklist, routine, habit tracker, or "to-do style" card, use layout:composed with a checklist block (optionally a short text intro and a button_row). Keep items terse and actionable.
         - The composed mode is where the visual variety lives. A widget with a `metric_value + sparkline + delta` feels totally different from `quote + bullets`. MIX BLOCKS — don't just use metric_value alone.
         - Live metric bindings (`metric_ref` field on blocks): steps, heart_rate, active_energy, resting_energy, sleep, distance, hydration, hrv, resting_hr, exercise_minutes, stand_hours, mindful_minutes, flights, vo2_max, walking_speed, step_length, body_mass, health_meter, recovery_score. Live-bound blocks animate when their data updates.
         - Choose icons and colors thoughtfully. Match icons to the topic (flame.fill for streaks, bolt.heart for cardio, leaf.fill for recovery, sunrise for morning, moon.zzz for sleep, drop.fill for hydration, fork.knife for nutrition, brain for mindfulness, chart.line.uptrend.xyaxis for trends). Vary colors across widgets so the grid doesn't all look the same.

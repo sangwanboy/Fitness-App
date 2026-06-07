@@ -1963,3 +1963,45 @@ opened blank on first tap — `.sheet(isPresented:)` race → switched to `.shee
 
 Latest deployed sequence: **2148**.
 
+---
+
+## Session 30 — 2026-06-07 (Astra to-do/checklist cards + action buttons; fix Steps weekly bars)
+
+### Steps widget fix
+The Home **Steps** card's weekly bars rendered as empty/uniform gray pills. Cause: the
+"UI polish round 2" commit changed `BarsChart`'s bar offset from `y: 0` to `y: h - bh` inside a
+`.bottomLeading` ZStack — which double-applied the baseline and pushed short bars off the bottom.
+Reverted the y-offset to `0` (`MetricCards.swift` `BarsChart`). Bars now scale with real daily steps.
+
+### Astra to-do / checklist cards + buttons
+Astra can now author **interactive** Home widgets via two new composable `WidgetBlock` types:
+- **`checklist`** — `items: [string]`; renders tappable checkboxes the user ticks off; checked state
+  persists in `AstraWidgetStore` (`toggleChecklistItem`). This is the "to-do style health card".
+- **`button_row`** — `buttons: [{label, icon?, action, value?}]`; each button does something real:
+  `coach_prompt` (sends `value` to Astra + hops to Coach) or `log_water` (logs `value` ml to Health).
+
+Files:
+- `Models/AstraWidget.swift`: new `ChecklistItem` + `WidgetButton` structs; `.checklist` / `.buttonRow`
+  cases with full Codable + `from(dict:)` (Gemini) + `asDict` round-trip; `isInteractive` flag.
+- `Services/AstraWidgetStore.swift`: `toggleChecklistItem(widgetID:itemID:)` (persisted).
+- `Views/Components/WidgetsCard.swift`: `ChecklistBlockView` + `ButtonRowBlockView`; `ComposedBlockView`
+  gains `widgetID` + `onCoachPrompt`; interactive widgets render WITHOUT the outer navigate-button (a
+  background `onTapGesture` still opens the detail sheet) so inner checkboxes/buttons get taps —
+  avoiding the nested-Button hit-testing trap.
+- `Services/VertexGeminiClient.swift`: `create_widget` tool description documents the two new block
+  types + a full to-do-card example (no schema-structure change — `blocks.items` is free-form object).
+- `ViewModels/ChatViewModel.swift`: WIDGET STUDIO system-prompt block lists checklist/button_row + a
+  "to-do / habit cards" guidance line. Tool args already parse via `WidgetBlock.from(dict:)` (unchanged).
+
+### Build / deploy
+- Simulator + device **BUILD SUCCEEDED**, zero errors. Installed AND launched via `xcrun devicectl`.
+- **databaseSequenceNumber: 2156**.
+
+### Still open
+- **Hydration logging** report unresolved — device console captures kept failing because the phone
+  auto-locks (HealthKit encrypted + app launch blocked while locked). Likely either Water write
+  permission not granted or the +-menu not firing; needs one unlocked-device observation. (The new
+  `log_water` button reuses the same `logMetricValue(.hydration)` path.)
+
+Latest deployed sequence: **2156**.
+

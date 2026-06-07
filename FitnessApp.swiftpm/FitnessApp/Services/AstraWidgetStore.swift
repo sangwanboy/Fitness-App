@@ -78,6 +78,24 @@ public final class AstraWidgetStore: ObservableObject {
         return true
     }
 
+    /// Toggle a checklist item's done state inside a widget's blocks and
+    /// persist. No-op if the widget / item isn't found. Drives the tappable
+    /// to-do checkboxes on Home.
+    public func toggleChecklistItem(widgetID: UUID, itemID: UUID) {
+        guard let wIdx = widgets.firstIndex(where: { $0.id == widgetID }),
+              var blocks = widgets[wIdx].blocks else { return }
+        for bIdx in blocks.indices {
+            if case .checklist(var items) = blocks[bIdx],
+               let iIdx = items.firstIndex(where: { $0.id == itemID }) {
+                items[iIdx].done.toggle()
+                blocks[bIdx] = .checklist(items)
+                widgets[wIdx].blocks = blocks
+                save()
+                return
+            }
+        }
+    }
+
     public func remove(id: UUID) -> Bool {
         let before = widgets.count
         widgets.removeAll { $0.id == id }

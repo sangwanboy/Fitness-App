@@ -55,6 +55,18 @@ public struct AstraWidget: Codable, Identifiable, Equatable {
     /// True when this widget should render through the composable block path.
     public var isComposed: Bool { (blocks?.isEmpty == false) }
 
+    /// True when the widget contains tappable controls (a checklist or action
+    /// buttons). The Home grid renders interactive widgets WITHOUT the
+    /// whole-tile navigate button so the inner controls receive taps directly.
+    public var isInteractive: Bool {
+        (blocks ?? []).contains {
+            switch $0 {
+            case .checklist, .buttonRow: return true
+            default: return false
+            }
+        }
+    }
+
     /// Metric refs the widget can bind to for live values. Anything outside
     /// this set is ignored at render time. Keeps the LLM's creativity bounded
     /// to data we can actually surface.
@@ -65,6 +77,37 @@ public struct AstraWidget: Codable, Identifiable, Equatable {
         "walking_speed", "step_length", "body_mass",
         "health_meter", "recovery_score"
     ]
+}
+
+/// One row in a `.checklist` widget block. `done` persists across launches via
+/// `AstraWidgetStore`, toggled when the user taps the checkbox on Home.
+public struct ChecklistItem: Codable, Equatable, Identifiable {
+    public let id: UUID
+    public var text: String
+    public var done: Bool
+    public init(id: UUID = UUID(), text: String, done: Bool = false) {
+        self.id = id
+        self.text = text
+        self.done = done
+    }
+}
+
+/// One button in a `.buttonRow` widget block. Every button does something real:
+/// `action` is "coach_prompt" (sends `value` to Astra) or "log_water" (logs
+/// `value` millilitres of water to Apple Health).
+public struct WidgetButton: Codable, Equatable, Identifiable {
+    public let id: UUID
+    public var label: String
+    public var icon: String?
+    public var action: String
+    public var value: String?
+    public init(id: UUID = UUID(), label: String, icon: String? = nil, action: String, value: String? = nil) {
+        self.id = id
+        self.label = label
+        self.icon = icon
+        self.action = action
+        self.value = value
+    }
 }
 
 public enum WidgetLayout: String, Codable {
@@ -126,6 +169,15 @@ public enum WidgetBlock: Codable, Equatable {
     /// Italic motivational quote / Astra-authored aphorism.
     case quote(String)
 
+    /// Interactive to-do / habit checklist. Each item renders with a tappable
+    /// checkbox whose checked state persists. Astra authors the item text; the
+    /// user ticks them off.
+    case checklist([ChecklistItem])
+
+    /// A row of action buttons — each does something real on tap (send Astra a
+    /// follow-up prompt, or log water to Health).
+    case buttonRow([WidgetButton])
+
     // MARK: Codable
 
     enum CodingKeys: String, CodingKey {
@@ -137,6 +189,7 @@ public enum WidgetBlock: Codable, Equatable {
         case labelA = "label_a", labelB = "label_b"
         case vsDays = "vs_days"
         case items, text, chips
+        case checklist, buttons
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -185,6 +238,12 @@ public enum WidgetBlock: Codable, Equatable {
         case .quote(let s):
             try c.encode("quote", forKey: .type)
             try c.encode(s, forKey: .text)
+        case .checklist(let items):
+            try c.encode("checklist", forKey: .type)
+            try c.encode(items, forKey: .checklist)
+        case .buttonRow(let btns):
+            try c.encode("button_row", forKey: .type)
+            try c.encode(btns, forKey: .buttons)
         }
     }
 
@@ -237,6 +296,10 @@ public enum WidgetBlock: Codable, Equatable {
             self = .chipRow((try? c.decodeIfPresent([String].self, forKey: .chips)) ?? [])
         case "quote":
             self = .quote((try? c.decodeIfPresent(String.self, forKey: .text)) ?? "")
+        case "checklist":
+            self = .checklist((try? c.decodeIfPresent([ChecklistItem].self, forKey: .checklist)) ?? [])
+        case "button_row":
+            self = .buttonRow((try? c.decodeIfPresent([WidgetButton].self, forKey: .buttons)) ?? [])
         default:
             throw DecodingError.dataCorruptedError(forKey: .type, in: c,
                 debugDescription: "Unknown widget block type: \(type)")
@@ -290,6 +353,23 @@ public enum WidgetBlock: Codable, Equatable {
             return .chipRow((dict["chips"] as? [String]) ?? [])
         case "quote":
             return .quote(s("text") ?? "")
+        case "checklist":
+            let texts = (dict["items"] as? [String]) ?? (dict["checklist"] as? [String]) ?? []
+            let cleaned = texts.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+            return cleaned.isEmpty ? nil : .checklist(cleaned.map { ChecklistItem(text: $0) })
+        case "button_row":
+            let arr = (dict["buttons"] as? [[String: Any]]) ?? []
+            let btns: [WidgetButton] = arr.compactMap { b in
+                guard let label = (b["label"] as? String), !label.isEmpty else { return nil }
+                let action = (b["action"] as? String) ?? "coach_prompt"
+                let val: String?
+                if let v = b["value"] as? String { val = v }
+                else if let v = b["value"] as? Int { val = String(v) }
+                else if let v = b["value"] as? Double { val = String(v) }
+                else { val = nil }
+                return WidgetButton(label: label, icon: b["icon"] as? String, action: action, value: val)
+            }
+            return btns.isEmpty ? nil : .buttonRow(btns)
         default:
             return nil
         }
@@ -333,6 +413,15 @@ public enum WidgetBlock: Codable, Equatable {
             return ["type": "chip_row", "chips": xs]
         case .quote(let s):
             return ["type": "quote", "text": s]
+        case .checklist(let items):
+            return ["type": "checklist", "items": items.map { $0.text }]
+        case .buttonRow(let btns):
+            return ["type": "button_row", "buttons": btns.map { b -> [String: Any] in
+                var d: [String: Any] = ["label": b.label, "action": b.action]
+                if let icon = b.icon { d["icon"] = icon }
+                if let v = b.value { d["value"] = v }
+                return d
+            }]
         }
     }
 }
