@@ -194,7 +194,7 @@ public enum HealthMetricType: String, CaseIterable, Identifiable {
     }
 }
 
-public struct MetricValue: Identifiable, Codable {
+public struct MetricValue: Identifiable, Codable, Equatable {
     public let id: UUID
     public let date: Date
     public let value: Double
@@ -203,6 +203,14 @@ public struct MetricValue: Identifiable, Codable {
         self.id = id
         self.date = date
         self.value = value
+    }
+
+    /// Equality compares ONLY content (date + value), ignoring the random
+    /// per-instance `id`. Freshly-built history arrays therefore compare equal
+    /// when their samples carry the same dates and values — so an unchanged
+    /// HealthKit poll produces no spurious `@Published` publish downstream.
+    public static func == (lhs: MetricValue, rhs: MetricValue) -> Bool {
+        lhs.date == rhs.date && lhs.value == rhs.value
     }
 }
 
@@ -236,13 +244,13 @@ public struct FoodLogEntry: Identifiable, Codable, Hashable {
     }
 }
 
-public struct MetricSummary: Identifiable {
+public struct MetricSummary: Identifiable, Equatable {
     public var id: HealthMetricType { type }
     public let type: HealthMetricType
     public var currentValue: Double
     public var goal: Double
     public var history: [MetricValue]
-    
+
     public var percentComplete: Double {
         guard goal > 0 else { return 0 }
         if type == .heartRate {

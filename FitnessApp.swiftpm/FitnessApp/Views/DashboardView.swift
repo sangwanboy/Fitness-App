@@ -33,6 +33,10 @@ public struct DashboardView: View {
     @State private var lastRefreshed: Date? = nil
     @State private var showFoodPhotoFlow = false
 
+    /// Namespace for the home card grid's GlassEffectContainer. Coalesces the
+    /// per-card backdrop/blur passes into one container render (native iOS 26).
+    @Namespace private var cardGlassNamespace
+
     /// Tiles revealed by tapping "Show more". When the user has no Apple Watch
     /// (no HR samples in the last 7 days), the Watch-only home cards collapse
     /// into Show More instead — they'd just read "—" on the home grid otherwise.
@@ -220,17 +224,22 @@ public struct DashboardView: View {
     public var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: gridSpacing) {
-                ForEach(Array(packedRows.enumerated()), id: \.offset) { rowIndex, row in
-                    HStack(alignment: .top, spacing: gridSpacing) {
-                        ForEach(row, id: \.self) { cardId in
-                            cardView(for: cardId, isWide: row.count == 1 && !wideCardIds.contains(cardId))
-                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                                .opacity(animateWidgets ? 1.0 : 0.0)
-                                .offset(y: animateWidgets ? 0.0 : 15.0)
-                                .animation(.spring(response: 0.5, dampingFraction: 0.82).delay(Double(rowIndex) * 0.06), value: animateWidgets)
+                GlassEffectContainer(spacing: gridSpacing) {
+                    VStack(spacing: gridSpacing) {
+                        ForEach(Array(packedRows.enumerated()), id: \.offset) { rowIndex, row in
+                            HStack(alignment: .top, spacing: gridSpacing) {
+                                ForEach(row, id: \.self) { cardId in
+                                    cardView(for: cardId, isWide: row.count == 1 && !wideCardIds.contains(cardId))
+                                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                                        .glassEffectID(cardId, in: cardGlassNamespace)
+                                        .opacity(animateWidgets ? 1.0 : 0.0)
+                                        .offset(y: animateWidgets ? 0.0 : 15.0)
+                                        .animation(.spring(response: 0.5, dampingFraction: 0.82).delay(Double(rowIndex) * 0.06), value: animateWidgets)
+                                }
+                            }
+                            .frame(maxWidth: .infinity)
                         }
                     }
-                    .frame(maxWidth: .infinity)
                 }
 
                 // Show more / Show less expandable grid of extra HealthKit tiles.

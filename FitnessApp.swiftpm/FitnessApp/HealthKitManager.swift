@@ -235,6 +235,18 @@ public final class HealthKitManager: ObservableObject {
         UserDefaults.standard.bool(forKey: "clinical_records_requested")
     }
     
+    /// One metric facet produced by a single HK query. `value` and `history`
+    /// are independently optional so a value-only query (e.g. today's step sum)
+    /// and a history-only query (e.g. 365-day step buckets) for the SAME metric
+    /// type can each return just their facet; the accumulator merges both into
+    /// the one summary. nil facets leave the existing summary field untouched.
+    /// Sendable so it can flow back out of the `withTaskGroup` child tasks.
+    private struct MetricFetchResult: Sendable {
+        let type: HealthMetricType
+        let value: Double?
+        let history: [MetricValue]?
+    }
+
     // Fetch today's health metrics from HealthKit
     public func fetchTodayData() async {
         guard HKHealthStore.isHealthDataAvailable() else { return }
@@ -243,8 +255,17 @@ public final class HealthKitManager: ObservableObject {
         // automatic / periodic fetches never flash a loading overlay on Home or
         // Progress. Pull-to-refresh shows its own native spinner via `.refreshable`.
 
-        // Fetch steps, calories, heart rate, sleep, distance, hrv, hydration in parallel
-        await withTaskGroup(of: Void.self) { group in
+        // PERFORMANCE: every metric query RETURNS its result instead of
+        // self-mutating `@Published metricSummaries` per callback. We seed a
+        // local copy (preserving user goals + any keys we don't touch),
+        // accumulate every returned value/history into it, and assign the
+        // dictionary back EXACTLY ONCE after the group completes — collapsing
+        // ~45-50 publishes per tick into at most one. `recentWorkouts28`,
+        // `hourlyStepsToday`, and the dietary batch stay as their own single
+        // writes; they back distinct `@Published` properties.
+        var newSummaries = self.metricSummaries
+
+        await withTaskGroup(of: MetricFetchResult?.self) { group in
             group.addTask { await self.fetchSteps() }
             group.addTask { await self.fetchCalories() }
             group.addTask { await self.fetchHeartRate() }
@@ -252,6 +273,14 @@ public final class HealthKitManager: ObservableObject {
             group.addTask { await self.fetchSleep() }
             group.addTask { await self.fetchHRV() }
             group.addTask { await self.fetchHydration() }
+            // History for the seven core tiles (365-day buckets).
+            group.addTask { await self.fetchHistory(type: .steps) }
+            group.addTask { await self.fetchHistory(type: .activeEnergy) }
+            group.addTask { await self.fetchHistory(type: .heartRate) }
+            group.addTask { await self.fetchHistory(type: .distance) }
+            group.addTask { await self.fetchHistory(type: .sleep) }
+            group.addTask { await self.fetchHistory(type: .hrv) }
+            group.addTask { await self.fetchHistory(type: .hydration) }
             // Show-more tiles
             group.addTask { await self.fetchSimpleStatistics(.restingHeartRate, hkID: .restingHeartRate, unit: HKUnit.count().unitDivided(by: .minute()), options: .discreteAverage) }
             group.addTask { await self.fetchSimpleStatistics(.bodyMass,         hkID: .bodyMass,         unit: .gramUnit(with: .kilo),                       options: .mostRecent) }
@@ -286,17 +315,26 @@ public final class HealthKitManager: ObservableObject {
             group.addTask { await self.fetchSimpleHistory(.walkingDoubleSupport, hkID: .walkingDoubleSupportPercentage, unit: .percent(),                                 options: .discreteAverage, scale: 100) }
             group.addTask { await self.fetchSimpleHistory(.walkingAsymmetry,     hkID: .walkingAsymmetryPercentage,     unit: .percent(),                                 options: .discreteAverage, scale: 100) }
             group.addTask { await self.fetchSimpleHistory(.headphoneAudio,       hkID: .headphoneAudioExposure,         unit: HKUnit.decibelAWeightedSoundPressureLevel(), options: .discreteAverage) }
+
+            // Side-channel fetches back their OWN `@Published` properties and
+            // each writes itself exactly once on the MainActor. They return nil
+            // so they don't touch the metric dictionary, but stay in this same
+            // group so they run fully concurrently with the metric queries (as
+            // they did before this refactor).
+            //
             // One-shot per refresh: ask "is there any HR-class data flowing?"
             // so DashboardView can hide Watch-only cards on iPhone-only setups.
-            group.addTask { await self.detectWatchClassData() }
+            group.addTask { await self.detectWatchClassData(); return nil }
             // Prediction inputs: 28-day workout cache + hourly steps for sedentary detection.
             group.addTask {
                 let workouts = await self.fetchRecentWorkouts(days: 28)
                 await MainActor.run { self.recentWorkouts28 = workouts }
+                return nil
             }
             group.addTask {
                 let buckets = await self.fetchHourlyStepsToday()
                 await MainActor.run { self.hourlyStepsToday = buckets }
+                return nil
             }
             // Health Meter inputs: dietary intake from HK (written by log_food
             // or any other Health-writing app the user has).
@@ -311,7 +349,24 @@ public final class HealthKitManager: ObservableObject {
                     self.dietaryCalories7Day = history
                     self.todayFoodLog = log
                 }
+                return nil
             }
+
+            // Drain every returned facet into the local copy. This loop runs on
+            // the group's awaiting context (the MainActor) — no data races, and
+            // crucially no intermediate `@Published` publishes.
+            for await result in group {
+                guard let result, var summary = newSummaries[result.type] else { continue }
+                if let value = result.value { summary.currentValue = value }
+                if let history = result.history { summary.history = history }
+                newSummaries[result.type] = summary
+            }
+        }
+
+        // SINGLE write of the metric dictionary — gated so an unchanged poll
+        // emits ZERO publishes (MetricValue/MetricSummary are content-Equatable).
+        if newSummaries != self.metricSummaries {
+            self.metricSummaries = newSummaries
         }
 
         // All HK data is in — compute predictions on-device, sync, on main.
@@ -413,272 +468,107 @@ public final class HealthKitManager: ObservableObject {
     
     // --- HealthKit Specific Queries ---
     
-    private func fetchSteps() async {
-        guard let stepsType = HKQuantityType.quantityType(forIdentifier: .stepCount) else { return }
+    private func fetchSteps() async -> MetricFetchResult? {
+        guard let stepsType = HKQuantityType.quantityType(forIdentifier: .stepCount) else { return nil }
         let now = Date()
         let startOfDay = Calendar.current.startOfDay(for: now)
         let predicate = HKQuery.predicateForSamples(withStart: startOfDay, end: now, options: .strictStartDate)
-        
-        let query = HKStatisticsQuery(quantityType: stepsType, quantitySamplePredicate: predicate, options: .cumulativeSum) { _, result, error in
-            guard let result = result, let sum = result.sumQuantity() else {
-                print("Failed to fetch steps: \(error?.localizedDescription ?? "unknown error")")
-                return
+
+        let steps: Double? = await withCheckedContinuation { (cont: CheckedContinuation<Double?, Never>) in
+            let query = HKStatisticsQuery(quantityType: stepsType, quantitySamplePredicate: predicate, options: .cumulativeSum) { _, result, error in
+                guard let result = result, let sum = result.sumQuantity() else {
+                    print("Failed to fetch steps: \(error?.localizedDescription ?? "unknown error")")
+                    cont.resume(returning: nil)
+                    return
+                }
+                cont.resume(returning: sum.doubleValue(for: HKUnit.count()))
             }
-            
-            let steps = sum.doubleValue(for: HKUnit.count())
-            DispatchQueue.main.async {
-                self.updateMetricValue(type: .steps, value: steps)
-            }
+            healthStore.execute(query)
         }
-        healthStore.execute(query)
-        await fetchHistory(type: .steps)
+        guard let steps else { return nil }
+        return MetricFetchResult(type: .steps, value: steps, history: nil)
     }
-    
-    private func fetchCalories() async {
-        guard let calorieType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) else { return }
+
+    private func fetchCalories() async -> MetricFetchResult? {
+        guard let calorieType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) else { return nil }
         let now = Date()
         let startOfDay = Calendar.current.startOfDay(for: now)
         let predicate = HKQuery.predicateForSamples(withStart: startOfDay, end: now, options: .strictStartDate)
-        
-        let query = HKStatisticsQuery(quantityType: calorieType, quantitySamplePredicate: predicate, options: .cumulativeSum) { _, result, error in
-            guard let result = result, let sum = result.sumQuantity() else {
-                print("Failed to fetch calories: \(error?.localizedDescription ?? "unknown")")
-                return
+
+        let kcal: Double? = await withCheckedContinuation { (cont: CheckedContinuation<Double?, Never>) in
+            let query = HKStatisticsQuery(quantityType: calorieType, quantitySamplePredicate: predicate, options: .cumulativeSum) { _, result, error in
+                guard let result = result, let sum = result.sumQuantity() else {
+                    print("Failed to fetch calories: \(error?.localizedDescription ?? "unknown")")
+                    cont.resume(returning: nil)
+                    return
+                }
+                cont.resume(returning: sum.doubleValue(for: HKUnit.kilocalorie()))
             }
-            
-            let kcal = sum.doubleValue(for: HKUnit.kilocalorie())
-            DispatchQueue.main.async {
-                self.updateMetricValue(type: .activeEnergy, value: kcal)
-            }
+            healthStore.execute(query)
         }
-        healthStore.execute(query)
-        await fetchHistory(type: .activeEnergy)
+        guard let kcal else { return nil }
+        return MetricFetchResult(type: .activeEnergy, value: kcal, history: nil)
     }
-    
-    private func fetchHeartRate() async {
-        guard let heartRateType = HKQuantityType.quantityType(forIdentifier: .heartRate) else { return }
-        
+
+    private func fetchHeartRate() async -> MetricFetchResult? {
+        guard let heartRateType = HKQuantityType.quantityType(forIdentifier: .heartRate) else { return nil }
+
         let predicate = HKQuery.predicateForSamples(withStart: Date().addingTimeInterval(-3600), end: Date(), options: .strictEndDate)
         let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)
-        
-        let query = HKSampleQuery(sampleType: heartRateType, predicate: predicate, limit: 1, sortDescriptors: [sortDescriptor]) { _, samples, error in
-            guard let samples = samples as? [HKQuantitySample], let latestSample = samples.first else {
-                print("Failed to fetch heart rate: \(error?.localizedDescription ?? "unknown")")
-                return
+
+        let bpm: Double? = await withCheckedContinuation { (cont: CheckedContinuation<Double?, Never>) in
+            let query = HKSampleQuery(sampleType: heartRateType, predicate: predicate, limit: 1, sortDescriptors: [sortDescriptor]) { _, samples, error in
+                guard let samples = samples as? [HKQuantitySample], let latestSample = samples.first else {
+                    print("Failed to fetch heart rate: \(error?.localizedDescription ?? "unknown")")
+                    cont.resume(returning: nil)
+                    return
+                }
+                cont.resume(returning: latestSample.quantity.doubleValue(for: HKUnit(from: "count/min")))
             }
-            
-            let bpm = latestSample.quantity.doubleValue(for: HKUnit(from: "count/min"))
-            DispatchQueue.main.async {
-                self.updateMetricValue(type: .heartRate, value: bpm)
-            }
+            healthStore.execute(query)
         }
-        healthStore.execute(query)
-        await fetchHistory(type: .heartRate)
+        guard let bpm else { return nil }
+        return MetricFetchResult(type: .heartRate, value: bpm, history: nil)
     }
-    
-    private func fetchDistance() async {
-        guard let distanceType = HKQuantityType.quantityType(forIdentifier: .distanceWalkingRunning) else { return }
+
+    private func fetchDistance() async -> MetricFetchResult? {
+        guard let distanceType = HKQuantityType.quantityType(forIdentifier: .distanceWalkingRunning) else { return nil }
         let now = Date()
         let startOfDay = Calendar.current.startOfDay(for: now)
         let predicate = HKQuery.predicateForSamples(withStart: startOfDay, end: now, options: .strictStartDate)
-        
-        let query = HKStatisticsQuery(quantityType: distanceType, quantitySamplePredicate: predicate, options: .cumulativeSum) { _, result, error in
-            guard let result = result, let sum = result.sumQuantity() else {
-                return
+
+        let miles: Double? = await withCheckedContinuation { (cont: CheckedContinuation<Double?, Never>) in
+            let query = HKStatisticsQuery(quantityType: distanceType, quantitySamplePredicate: predicate, options: .cumulativeSum) { _, result, _ in
+                guard let result = result, let sum = result.sumQuantity() else {
+                    cont.resume(returning: nil)
+                    return
+                }
+                cont.resume(returning: sum.doubleValue(for: HKUnit.mile()))
             }
-            
-            let miles = sum.doubleValue(for: HKUnit.mile())
-            DispatchQueue.main.async {
-                self.updateMetricValue(type: .distance, value: miles)
-            }
+            healthStore.execute(query)
         }
-        healthStore.execute(query)
-        await fetchHistory(type: .distance)
+        guard let miles else { return nil }
+        return MetricFetchResult(type: .distance, value: miles, history: nil)
     }
-    
-    private func fetchSleep() async {
-        guard let sleepType = HKCategoryType.categoryType(forIdentifier: .sleepAnalysis) else { return }
+
+        private func fetchSleep() async -> MetricFetchResult? {
+        guard let sleepType = HKCategoryType.categoryType(forIdentifier: .sleepAnalysis) else { return nil }
         let now = Date()
         // Sleep tracking is often spotty — iPhone-only Sleep Focus doesn't
         // necessarily fire every night, and a missed night shouldn't make
         // the card go dark. Look back 30 days and surface the MOST RECENT
         // night with data. The SleepCard reads `summary.history` to derive
-        // a date label ("Last night" / "Yesterday" / "Mon, May 18"), so the
-        // user always sees an honest reading + when it was.
-        guard let windowStart = Calendar.current.date(byAdding: .day, value: -30, to: now) else { return }
+        // a date label, so the user always sees an honest reading + when it was.
+        guard let windowStart = Calendar.current.date(byAdding: .day, value: -30, to: now) else { return nil }
         let predicate = HKQuery.predicateForSamples(withStart: windowStart, end: now, options: [.strictEndDate])
 
-        let query = HKSampleQuery(sampleType: sleepType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, samples, error in
-            guard let samples = samples as? [HKCategorySample] else { return }
-
-            // Bucket per "sleep night" using endDate's startOfDay (matches Apple
-            // Health's own grouping). Watch + 3rd-party sleep apps (AutoSleep,
-            // Pillow) write asleep* values; iPhone-only Sleep Schedule only
-            // writes `.inBed`. Prefer asleep* per night, fall back to inBed.
-            var asleepByDay: [Date: Double] = [:]
-            var inBedByDay: [Date: Double] = [:]
-            let calendar = Calendar.current
-            for sample in samples {
-                let duration = sample.endDate.timeIntervalSince(sample.startDate) / 3600.0
-                let day = calendar.startOfDay(for: sample.endDate)
-                switch sample.value {
-                case HKCategoryValueSleepAnalysis.asleep.rawValue,
-                     HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue,
-                     HKCategoryValueSleepAnalysis.asleepCore.rawValue,
-                     HKCategoryValueSleepAnalysis.asleepDeep.rawValue,
-                     HKCategoryValueSleepAnalysis.asleepREM.rawValue:
-                    asleepByDay[day, default: 0] += duration
-                case HKCategoryValueSleepAnalysis.inBed.rawValue:
-                    inBedByDay[day, default: 0] += duration
-                default:
-                    break
-                }
-            }
-
-            // Walk back day-by-day from today; first non-zero day wins.
-            var mostRecentHours: Double = 0
-            var cursor = calendar.startOfDay(for: now)
-            for _ in 0..<31 {
-                let asleep = asleepByDay[cursor] ?? 0
-                let inBed = inBedByDay[cursor] ?? 0
-                let hours = asleep > 0 ? asleep : inBed
-                if hours > 0 {
-                    mostRecentHours = hours
-                    break
-                }
-                guard let prev = calendar.date(byAdding: .day, value: -1, to: cursor) else { break }
-                cursor = prev
-            }
-
-            DispatchQueue.main.async {
-                self.updateMetricValue(type: .sleep, value: mostRecentHours)
-            }
-        }
-        healthStore.execute(query)
-        await fetchHistory(type: .sleep)
-    }
-    
-    private func fetchHRV() async {
-        guard let hrvType = HKQuantityType.quantityType(forIdentifier: .heartRateVariabilitySDNN) else { return }
-        
-        let predicate = HKQuery.predicateForSamples(withStart: Date().addingTimeInterval(-24 * 3600), end: Date(), options: .strictEndDate)
-        let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)
-        
-        let query = HKSampleQuery(sampleType: hrvType, predicate: predicate, limit: 1, sortDescriptors: [sortDescriptor]) { _, samples, error in
-            guard let samples = samples as? [HKQuantitySample], let latestSample = samples.first else {
-                print("Failed to fetch HRV: \(error?.localizedDescription ?? "unknown")")
-                return
-            }
-            
-            let ms = latestSample.quantity.doubleValue(for: HKUnit.secondUnit(with: .milli))
-            DispatchQueue.main.async {
-                self.updateMetricValue(type: .hrv, value: ms)
-            }
-        }
-        healthStore.execute(query)
-        await fetchHistory(type: .hrv)
-    }
-    
-    private func fetchHydration() async {
-        guard let waterType = HKQuantityType.quantityType(forIdentifier: .dietaryWater) else { return }
-        let now = Date()
-        let startOfDay = Calendar.current.startOfDay(for: now)
-        let predicate = HKQuery.predicateForSamples(withStart: startOfDay, end: now, options: .strictStartDate)
-        
-        let query = HKStatisticsQuery(quantityType: waterType, quantitySamplePredicate: predicate, options: .cumulativeSum) { _, result, error in
-            guard let result = result, let sum = result.sumQuantity() else {
-                print("Failed to fetch hydration: \(error?.localizedDescription ?? "unknown")")
-                return
-            }
-            
-            let liters = sum.doubleValue(for: HKUnit.liter())
-            DispatchQueue.main.async {
-                self.updateMetricValue(type: .hydration, value: liters)
-            }
-        }
-        healthStore.execute(query)
-        await fetchHistory(type: .hydration)
-    }
-    
-    private func fetchHistory(type: HealthMetricType) async {
-        guard HKHealthStore.isHealthDataAvailable() else { return }
-        
-        let calendar = Calendar.current
-        let now = Date()
-        guard let anchorDate = calendar.date(bySettingHour: 0, minute: 0, second: 0, of: now) else { return }
-        guard let startDate = calendar.date(byAdding: .day, value: -365, to: anchorDate) else { return }
-        
-        let interval = DateComponents(day: 1)
-        
-        switch type {
-        case .steps, .activeEnergy, .distance, .hydration:
-            guard let quantityType = getQuantityType(for: type) else { return }
-            let query = HKStatisticsCollectionQuery(
-                quantityType: quantityType,
-                quantitySamplePredicate: nil,
-                options: .cumulativeSum,
-                anchorDate: anchorDate,
-                intervalComponents: interval
-            )
-            
-            query.initialResultsHandler = { _, results, error in
-                guard let results = results else {
-                    print("Failed to fetch statistics collection for \(type): \(error?.localizedDescription ?? "unknown error")")
-                    return
-                }
-                
-                var history: [MetricValue] = []
-                results.enumerateStatistics(from: startDate, to: now) { statistics, stop in
-                    let value: Double
-                    if type == .steps {
-                        value = statistics.sumQuantity()?.doubleValue(for: HKUnit.count()) ?? 0.0
-                    } else if type == .activeEnergy {
-                        value = statistics.sumQuantity()?.doubleValue(for: HKUnit.kilocalorie()) ?? 0.0
-                    } else if type == .distance {
-                        value = statistics.sumQuantity()?.doubleValue(for: HKUnit.mile()) ?? 0.0
-                    } else { // .hydration
-                        value = statistics.sumQuantity()?.doubleValue(for: HKUnit.liter()) ?? 0.0
-                    }
-                    history.append(MetricValue(date: statistics.startDate, value: value))
-                }
-                
-                DispatchQueue.main.async {
-                    self.updateMetricHistory(type: type, history: history)
-                }
-            }
-            healthStore.execute(query)
-            
-        case .heartRate:
-            guard let quantityType = HKQuantityType.quantityType(forIdentifier: .heartRate) else { return }
-            let startOfHR = now.addingTimeInterval(-12 * 3600)
-            let predicate = HKQuery.predicateForSamples(withStart: startOfHR, end: now, options: .strictStartDate)
-            let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
-            
-            let query = HKSampleQuery(sampleType: quantityType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [sortDescriptor]) { _, samples, error in
-                guard let samples = samples as? [HKQuantitySample] else { return }
-                let history = samples.map { sample in
-                    MetricValue(date: sample.startDate, value: sample.quantity.doubleValue(for: HKUnit(from: "count/min")))
-                }
-                DispatchQueue.main.async {
-                    self.updateMetricHistory(type: type, history: history)
-                }
-            }
-            healthStore.execute(query)
-            
-        case .sleep:
-            guard let sleepType = HKCategoryType.categoryType(forIdentifier: .sleepAnalysis) else { return }
-            let predicate = HKQuery.predicateForSamples(withStart: startDate, end: now, options: .strictStartDate)
-            
+        let hours: Double? = await withCheckedContinuation { (cont: CheckedContinuation<Double?, Never>) in
             let query = HKSampleQuery(sampleType: sleepType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, samples, error in
-                guard let samples = samples as? [HKCategorySample] else { return }
+                guard let samples = samples as? [HKCategorySample] else { cont.resume(returning: nil); return }
 
-                // Bucket asleep* and inBed separately so we can prefer the
-                // first when available (Watch / 3rd-party sleep apps) and fall
-                // back to the second for iPhone-only Sleep Schedule users.
-                // Key by `endDate` (matching Apple Health's own grouping) so a
-                // sleep that started 11pm Sat → 7am Sun shows on Sunday's row.
                 var asleepByDay: [Date: Double] = [:]
                 var inBedByDay: [Date: Double] = [:]
+                let calendar = Calendar.current
                 for sample in samples {
                     let duration = sample.endDate.timeIntervalSince(sample.startDate) / 3600.0
                     let day = calendar.startOfDay(for: sample.endDate)
@@ -696,60 +586,202 @@ public final class HealthKitManager: ObservableObject {
                     }
                 }
 
-                var history: [MetricValue] = []
-                var currentDate = startDate
-                while currentDate <= now {
-                    let day = calendar.startOfDay(for: currentDate)
-                    let asleep = asleepByDay[day] ?? 0
-                    let duration = asleep > 0 ? asleep : (inBedByDay[day] ?? 0)
-                    history.append(MetricValue(date: day, value: duration))
-                    guard let nextDate = calendar.date(byAdding: .day, value: 1, to: currentDate) else { break }
-                    currentDate = nextDate
+                var mostRecentHours: Double = 0
+                var cursor = calendar.startOfDay(for: now)
+                for _ in 0..<31 {
+                    let asleep = asleepByDay[cursor] ?? 0
+                    let inBed = inBedByDay[cursor] ?? 0
+                    let hrs = asleep > 0 ? asleep : inBed
+                    if hrs > 0 {
+                        mostRecentHours = hrs
+                        break
+                    }
+                    guard let prev = calendar.date(byAdding: .day, value: -1, to: cursor) else { break }
+                    cursor = prev
                 }
 
-                DispatchQueue.main.async {
-                    self.updateMetricHistory(type: type, history: history)
-                }
+                cont.resume(returning: mostRecentHours)
             }
             healthStore.execute(query)
-            
-        case .hrv:
-            guard let quantityType = HKQuantityType.quantityType(forIdentifier: .heartRateVariabilitySDNN) else { return }
-            let predicate = HKQuery.predicateForSamples(withStart: startDate, end: now, options: .strictStartDate)
-            let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
-            
-            let query = HKSampleQuery(sampleType: quantityType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [sortDescriptor]) { _, samples, error in
-                guard let samples = samples as? [HKQuantitySample] else { return }
-                
-                var hrvByDay: [Date: [Double]] = [:]
-                for sample in samples {
-                    let day = calendar.startOfDay(for: sample.startDate)
-                    let ms = sample.quantity.doubleValue(for: HKUnit.secondUnit(with: .milli))
-                    hrvByDay[day, default: []].append(ms)
-                }
-                
-                var history: [MetricValue] = []
-                var currentDate = startDate
-                while currentDate <= now {
-                    let day = calendar.startOfDay(for: currentDate)
-                    let values = hrvByDay[day] ?? []
-                    let avgVal = values.isEmpty ? 0.0 : (values.reduce(0, +) / Double(values.count))
-                    history.append(MetricValue(date: day, value: avgVal))
-                    guard let nextDate = calendar.date(byAdding: .day, value: 1, to: currentDate) else { break }
-                    currentDate = nextDate
-                }
-                
-                DispatchQueue.main.async {
-                    self.updateMetricHistory(type: type, history: history)
-                }
-            }
-            healthStore.execute(query)
-        default:
-            // Show-more tiles don't carry 365-day history yet; they only render the
-            // current value via fetchSimpleStatistics. Skipping history is fine.
-            break
         }
+        guard let hours else { return nil }
+        return MetricFetchResult(type: .sleep, value: hours, history: nil)
     }
+
+    
+        private func fetchHRV() async -> MetricFetchResult? {
+        guard let hrvType = HKQuantityType.quantityType(forIdentifier: .heartRateVariabilitySDNN) else { return nil }
+
+        let predicate = HKQuery.predicateForSamples(withStart: Date().addingTimeInterval(-24 * 3600), end: Date(), options: .strictEndDate)
+        let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)
+
+        let ms: Double? = await withCheckedContinuation { (cont: CheckedContinuation<Double?, Never>) in
+            let query = HKSampleQuery(sampleType: hrvType, predicate: predicate, limit: 1, sortDescriptors: [sortDescriptor]) { _, samples, error in
+                guard let samples = samples as? [HKQuantitySample], let latestSample = samples.first else {
+                    print("Failed to fetch HRV: \(error?.localizedDescription ?? "unknown")")
+                    cont.resume(returning: nil)
+                    return
+                }
+                cont.resume(returning: latestSample.quantity.doubleValue(for: HKUnit.secondUnit(with: .milli)))
+            }
+            healthStore.execute(query)
+        }
+        guard let ms else { return nil }
+        return MetricFetchResult(type: .hrv, value: ms, history: nil)
+    }
+
+    
+        private func fetchHydration() async -> MetricFetchResult? {
+        guard let waterType = HKQuantityType.quantityType(forIdentifier: .dietaryWater) else { return nil }
+        let now = Date()
+        let startOfDay = Calendar.current.startOfDay(for: now)
+        let predicate = HKQuery.predicateForSamples(withStart: startOfDay, end: now, options: .strictStartDate)
+
+        let liters: Double? = await withCheckedContinuation { (cont: CheckedContinuation<Double?, Never>) in
+            let query = HKStatisticsQuery(quantityType: waterType, quantitySamplePredicate: predicate, options: .cumulativeSum) { _, result, error in
+                guard let result = result, let sum = result.sumQuantity() else {
+                    print("Failed to fetch hydration: \(error?.localizedDescription ?? "unknown")")
+                    cont.resume(returning: nil)
+                    return
+                }
+                cont.resume(returning: sum.doubleValue(for: HKUnit.liter()))
+            }
+            healthStore.execute(query)
+        }
+        guard let liters else { return nil }
+        return MetricFetchResult(type: .hydration, value: liters, history: nil)
+    }
+
+    
+        private func fetchHistory(type: HealthMetricType) async -> MetricFetchResult? {
+        guard HKHealthStore.isHealthDataAvailable() else { return nil }
+
+        let calendar = Calendar.current
+        let now = Date()
+        guard let anchorDate = calendar.date(bySettingHour: 0, minute: 0, second: 0, of: now) else { return nil }
+        guard let startDate = calendar.date(byAdding: .day, value: -365, to: anchorDate) else { return nil }
+
+        let interval = DateComponents(day: 1)
+
+        let fetched: [MetricValue]? = await withCheckedContinuation { (cont: CheckedContinuation<[MetricValue]?, Never>) in
+            switch type {
+            case .steps, .activeEnergy, .distance, .hydration:
+                guard let quantityType = getQuantityType(for: type) else { cont.resume(returning: nil); return }
+                let query = HKStatisticsCollectionQuery(
+                    quantityType: quantityType,
+                    quantitySamplePredicate: nil,
+                    options: .cumulativeSum,
+                    anchorDate: anchorDate,
+                    intervalComponents: interval
+                )
+                query.initialResultsHandler = { _, results, error in
+                    guard let results = results else {
+                        print("Failed to fetch statistics collection for \(type): \(error?.localizedDescription ?? "unknown error")")
+                        cont.resume(returning: nil)
+                        return
+                    }
+                    var history: [MetricValue] = []
+                    results.enumerateStatistics(from: startDate, to: now) { statistics, stop in
+                        let value: Double
+                        if type == .steps {
+                            value = statistics.sumQuantity()?.doubleValue(for: HKUnit.count()) ?? 0.0
+                        } else if type == .activeEnergy {
+                            value = statistics.sumQuantity()?.doubleValue(for: HKUnit.kilocalorie()) ?? 0.0
+                        } else if type == .distance {
+                            value = statistics.sumQuantity()?.doubleValue(for: HKUnit.mile()) ?? 0.0
+                        } else {
+                            value = statistics.sumQuantity()?.doubleValue(for: HKUnit.liter()) ?? 0.0
+                        }
+                        history.append(MetricValue(date: statistics.startDate, value: value))
+                    }
+                    cont.resume(returning: history)
+                }
+                healthStore.execute(query)
+
+            case .heartRate:
+                guard let quantityType = HKQuantityType.quantityType(forIdentifier: .heartRate) else { cont.resume(returning: nil); return }
+                let startOfHR = now.addingTimeInterval(-12 * 3600)
+                let predicate = HKQuery.predicateForSamples(withStart: startOfHR, end: now, options: .strictStartDate)
+                let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
+                let query = HKSampleQuery(sampleType: quantityType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [sortDescriptor]) { _, samples, error in
+                    guard let samples = samples as? [HKQuantitySample] else { cont.resume(returning: nil); return }
+                    let history = samples.map { sample in
+                        MetricValue(date: sample.startDate, value: sample.quantity.doubleValue(for: HKUnit(from: "count/min")))
+                    }
+                    cont.resume(returning: history)
+                }
+                healthStore.execute(query)
+
+            case .sleep:
+                guard let sleepType = HKCategoryType.categoryType(forIdentifier: .sleepAnalysis) else { cont.resume(returning: nil); return }
+                let predicate = HKQuery.predicateForSamples(withStart: startDate, end: now, options: .strictStartDate)
+                let query = HKSampleQuery(sampleType: sleepType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, samples, error in
+                    guard let samples = samples as? [HKCategorySample] else { cont.resume(returning: nil); return }
+                    var asleepByDay: [Date: Double] = [:]
+                    var inBedByDay: [Date: Double] = [:]
+                    for sample in samples {
+                        let duration = sample.endDate.timeIntervalSince(sample.startDate) / 3600.0
+                        let day = calendar.startOfDay(for: sample.endDate)
+                        switch sample.value {
+                        case HKCategoryValueSleepAnalysis.asleep.rawValue,
+                             HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue,
+                             HKCategoryValueSleepAnalysis.asleepCore.rawValue,
+                             HKCategoryValueSleepAnalysis.asleepDeep.rawValue,
+                             HKCategoryValueSleepAnalysis.asleepREM.rawValue:
+                            asleepByDay[day, default: 0] += duration
+                        case HKCategoryValueSleepAnalysis.inBed.rawValue:
+                            inBedByDay[day, default: 0] += duration
+                        default:
+                            break
+                        }
+                    }
+                    var history: [MetricValue] = []
+                    var currentDate = startDate
+                    while currentDate <= now {
+                        let day = calendar.startOfDay(for: currentDate)
+                        let asleep = asleepByDay[day] ?? 0
+                        let duration = asleep > 0 ? asleep : (inBedByDay[day] ?? 0)
+                        history.append(MetricValue(date: day, value: duration))
+                        guard let nextDate = calendar.date(byAdding: .day, value: 1, to: currentDate) else { break }
+                        currentDate = nextDate
+                    }
+                    cont.resume(returning: history)
+                }
+                healthStore.execute(query)
+
+            case .hrv:
+                guard let quantityType = HKQuantityType.quantityType(forIdentifier: .heartRateVariabilitySDNN) else { cont.resume(returning: nil); return }
+                let predicate = HKQuery.predicateForSamples(withStart: startDate, end: now, options: .strictStartDate)
+                let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
+                let query = HKSampleQuery(sampleType: quantityType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [sortDescriptor]) { _, samples, error in
+                    guard let samples = samples as? [HKQuantitySample] else { cont.resume(returning: nil); return }
+                    var hrvByDay: [Date: [Double]] = [:]
+                    for sample in samples {
+                        let day = calendar.startOfDay(for: sample.startDate)
+                        let ms = sample.quantity.doubleValue(for: HKUnit.secondUnit(with: .milli))
+                        hrvByDay[day, default: []].append(ms)
+                    }
+                    var history: [MetricValue] = []
+                    var currentDate = startDate
+                    while currentDate <= now {
+                        let day = calendar.startOfDay(for: currentDate)
+                        let values = hrvByDay[day] ?? []
+                        let avgVal = values.isEmpty ? 0.0 : (values.reduce(0, +) / Double(values.count))
+                        history.append(MetricValue(date: day, value: avgVal))
+                        guard let nextDate = calendar.date(byAdding: .day, value: 1, to: currentDate) else { break }
+                        currentDate = nextDate
+                    }
+                    cont.resume(returning: history)
+                }
+                healthStore.execute(query)
+            default:
+                cont.resume(returning: nil)
+            }
+        }
+        guard let fetched else { return nil }
+        return MetricFetchResult(type: type, value: nil, history: fetched)
+    }
+
 
     private func getQuantityType(for type: HealthMetricType) -> HKQuantityType? {
         switch type {
@@ -887,102 +919,114 @@ public final class HealthKitManager: ObservableObject {
     // Pick the unit + statistics option per type so the same call works for
     // sum (flights, exercise time), average (resting HR, SpO2), and most-recent
     // (weight, VO2 max).
-    private func fetchSimpleStatistics(_ metric: HealthMetricType,
+        private func fetchSimpleStatistics(_ metric: HealthMetricType,
                                        hkID: HKQuantityTypeIdentifier,
                                        unit: HKUnit,
                                        options: HKStatisticsOptions,
                                        todayOnly: Bool = false,
-                                       scale: Double = 1.0) async {
-        guard let qType = HKQuantityType.quantityType(forIdentifier: hkID) else { return }
+                                       scale: Double = 1.0) async -> MetricFetchResult? {
+        guard let qType = HKQuantityType.quantityType(forIdentifier: hkID) else { return nil }
         let now = Date()
         let start: Date = todayOnly
             ? Calendar.current.startOfDay(for: now)
             : now.addingTimeInterval(-30 * 24 * 3600) // 30-day window for averages / most recent
         let predicate = HKQuery.predicateForSamples(withStart: start, end: now, options: .strictStartDate)
 
-        let query = HKStatisticsQuery(quantityType: qType, quantitySamplePredicate: predicate, options: options) { _, result, _ in
-            guard let result else { return }
-            let quantity: HKQuantity?
-            if options.contains(.cumulativeSum) {
-                quantity = result.sumQuantity()
-            } else if options.contains(.discreteAverage) {
-                quantity = result.averageQuantity()
-            } else if options.contains(.mostRecent) {
-                quantity = result.mostRecentQuantity()
-            } else {
-                quantity = nil
+        let value: Double? = await withCheckedContinuation { (cont: CheckedContinuation<Double?, Never>) in
+            let query = HKStatisticsQuery(quantityType: qType, quantitySamplePredicate: predicate, options: options) { _, result, _ in
+                guard let result else { cont.resume(returning: nil); return }
+                let quantity: HKQuantity?
+                if options.contains(.cumulativeSum) {
+                    quantity = result.sumQuantity()
+                } else if options.contains(.discreteAverage) {
+                    quantity = result.averageQuantity()
+                } else if options.contains(.mostRecent) {
+                    quantity = result.mostRecentQuantity()
+                } else {
+                    quantity = nil
+                }
+                guard let q = quantity else { cont.resume(returning: nil); return }
+                cont.resume(returning: q.doubleValue(for: unit) * scale)
             }
-            guard let q = quantity else { return }
-            let value = q.doubleValue(for: unit) * scale
-            DispatchQueue.main.async { self.updateMetricValue(type: metric, value: value) }
+            healthStore.execute(query)
         }
-        healthStore.execute(query)
+        guard let value else { return nil }
+        return MetricFetchResult(type: metric, value: value, history: nil)
     }
+
 
     /// Mindful sessions live in the category-sample table (not quantity) so the
     /// generic helper doesn't apply — sum the durations directly.
-    private func fetchMindfulMinutes() async {
-        guard let t = HKCategoryType.categoryType(forIdentifier: .mindfulSession) else { return }
+        private func fetchMindfulMinutes() async -> MetricFetchResult? {
+        guard let t = HKCategoryType.categoryType(forIdentifier: .mindfulSession) else { return nil }
         let now = Date()
         let startOfDay = Calendar.current.startOfDay(for: now)
         let predicate = HKQuery.predicateForSamples(withStart: startOfDay, end: now, options: .strictStartDate)
-        let query = HKSampleQuery(sampleType: t, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, samples, _ in
-            guard let samples = samples as? [HKCategorySample] else { return }
-            let minutes = samples
-                .map { $0.endDate.timeIntervalSince($0.startDate) / 60.0 }
-                .reduce(0, +)
-            DispatchQueue.main.async { self.updateMetricValue(type: .mindfulMinutes, value: minutes) }
+        let minutes: Double? = await withCheckedContinuation { (cont: CheckedContinuation<Double?, Never>) in
+            let query = HKSampleQuery(sampleType: t, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, samples, _ in
+                guard let samples = samples as? [HKCategorySample] else { cont.resume(returning: nil); return }
+                let total = samples
+                    .map { $0.endDate.timeIntervalSince($0.startDate) / 60.0 }
+                    .reduce(0, +)
+                cont.resume(returning: total)
+            }
+            healthStore.execute(query)
         }
-        healthStore.execute(query)
+        guard let minutes else { return nil }
+        return MetricFetchResult(type: .mindfulMinutes, value: minutes, history: nil)
     }
+
 
     /// 30-day daily history for show-more tile metrics. Mirrors fetchSimpleStatistics
     /// but builds a bucketed `[MetricValue]` series via HKStatisticsCollectionQuery.
     /// Sparse-data metrics (bodyMass, vo2Max) skip empty days rather than zero-filling
     /// so the chart line stays honest.
-    private func fetchSimpleHistory(_ metric: HealthMetricType,
+        private func fetchSimpleHistory(_ metric: HealthMetricType,
                                     hkID: HKQuantityTypeIdentifier,
                                     unit: HKUnit,
                                     options: HKStatisticsOptions,
                                     days: Int = 30,
-                                    scale: Double = 1.0) async {
-        guard let qType = HKQuantityType.quantityType(forIdentifier: hkID) else { return }
+                                    scale: Double = 1.0) async -> MetricFetchResult? {
+        guard let qType = HKQuantityType.quantityType(forIdentifier: hkID) else { return nil }
         let cal = Calendar.current
         let now = Date()
         let anchor = cal.startOfDay(for: now)
-        guard let start = cal.date(byAdding: .day, value: -days, to: anchor) else { return }
+        guard let start = cal.date(byAdding: .day, value: -days, to: anchor) else { return nil }
 
-        let query = HKStatisticsCollectionQuery(
-            quantityType: qType,
-            quantitySamplePredicate: nil,
-            options: options,
-            anchorDate: anchor,
-            intervalComponents: DateComponents(day: 1)
-        )
-        query.initialResultsHandler = { _, results, _ in
-            guard let results = results else { return }
-            var history: [MetricValue] = []
-            results.enumerateStatistics(from: start, to: now) { stats, _ in
-                let q: HKQuantity?
-                if options.contains(.cumulativeSum) {
-                    q = stats.sumQuantity()
-                } else if options.contains(.discreteAverage) {
-                    q = stats.averageQuantity()
-                } else if options.contains(.mostRecent) {
-                    q = stats.mostRecentQuantity()
-                } else {
-                    q = nil
+        let fetched: [MetricValue]? = await withCheckedContinuation { (cont: CheckedContinuation<[MetricValue]?, Never>) in
+            let query = HKStatisticsCollectionQuery(
+                quantityType: qType,
+                quantitySamplePredicate: nil,
+                options: options,
+                anchorDate: anchor,
+                intervalComponents: DateComponents(day: 1)
+            )
+            query.initialResultsHandler = { _, results, _ in
+                guard let results = results else { cont.resume(returning: nil); return }
+                var history: [MetricValue] = []
+                results.enumerateStatistics(from: start, to: now) { stats, _ in
+                    let q: HKQuantity?
+                    if options.contains(.cumulativeSum) {
+                        q = stats.sumQuantity()
+                    } else if options.contains(.discreteAverage) {
+                        q = stats.averageQuantity()
+                    } else if options.contains(.mostRecent) {
+                        q = stats.mostRecentQuantity()
+                    } else {
+                        q = nil
+                    }
+                    guard let q else { return }
+                    let v = q.doubleValue(for: unit) * scale
+                    history.append(MetricValue(date: stats.startDate, value: v))
                 }
-                guard let q else { return }
-                let v = q.doubleValue(for: unit) * scale
-                history.append(MetricValue(date: stats.startDate, value: v))
+                cont.resume(returning: history)
             }
-            DispatchQueue.main.async {
-                self.updateMetricHistory(type: metric, history: history)
-            }
+            healthStore.execute(query)
         }
-        healthStore.execute(query)
+        guard let fetched else { return nil }
+        return MetricFetchResult(type: metric, value: nil, history: fetched)
     }
+
 
     /// Today's logged food items as a flat list. Groups samples by
     /// `HKMetadataKeyFoodType` + minute-bucketed startDate so each entry
@@ -1722,10 +1766,19 @@ public final class HealthKitManager: ObservableObject {
             walkingAsymmetryToday: (metricSummaries[.walkingAsymmetry]?.currentValue).flatMap { $0 > 0 ? $0 : nil }
         )
 
-        predictions = PredictionEngine.computeAll(snapshot: snapshot)
+        let newPredictions = PredictionEngine.computeAll(snapshot: snapshot)
 
-        // Schedule or cancel a sedentary local notification based on the latest snapshot.
-        let sedentary = predictions?.sedentary
+        // Diff-aware: the engine stamps a fresh `generatedAt` on every run, so a
+        // plain `==` always differs. Compare the content signature (everything
+        // EXCEPT generatedAt) and only republish — re-rendering the whole tree —
+        // when something meaningful actually changed.
+        if predictions?.contentSignature != newPredictions.contentSignature {
+            predictions = newPredictions
+        }
+
+        // Schedule or cancel a sedentary local notification based on the latest
+        // snapshot. Cheap + idempotent, so run it every time off the fresh result.
+        let sedentary = newPredictions.sedentary
         NotificationManager.shared.updateSedentaryAlert(
             severity: sedentary?.severity,
             quietHours: sedentary?.quietHours ?? 0
@@ -1840,35 +1893,38 @@ public final class HealthKitManager: ObservableObject {
 
     /// 30-day daily history of mindful session duration (minutes). Category sample
     /// table only, so this can't share the quantity helper.
-    private func fetchMindfulHistory(days: Int = 30) async {
-        guard let t = HKCategoryType.categoryType(forIdentifier: .mindfulSession) else { return }
+        private func fetchMindfulHistory(days: Int = 30) async -> MetricFetchResult? {
+        guard let t = HKCategoryType.categoryType(forIdentifier: .mindfulSession) else { return nil }
         let cal = Calendar.current
         let now = Date()
         let anchor = cal.startOfDay(for: now)
-        guard let start = cal.date(byAdding: .day, value: -days, to: anchor) else { return }
+        guard let start = cal.date(byAdding: .day, value: -days, to: anchor) else { return nil }
         let predicate = HKQuery.predicateForSamples(withStart: start, end: now, options: .strictStartDate)
 
-        let query = HKSampleQuery(sampleType: t, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, samples, _ in
-            guard let samples = samples as? [HKCategorySample] else { return }
-            var byDay: [Date: Double] = [:]
-            for sample in samples {
-                let day = cal.startOfDay(for: sample.startDate)
-                byDay[day, default: 0] += sample.endDate.timeIntervalSince(sample.startDate) / 60.0
+        let fetched: [MetricValue]? = await withCheckedContinuation { (cont: CheckedContinuation<[MetricValue]?, Never>) in
+            let query = HKSampleQuery(sampleType: t, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, samples, _ in
+                guard let samples = samples as? [HKCategorySample] else { cont.resume(returning: nil); return }
+                var byDay: [Date: Double] = [:]
+                for sample in samples {
+                    let day = cal.startOfDay(for: sample.startDate)
+                    byDay[day, default: 0] += sample.endDate.timeIntervalSince(sample.startDate) / 60.0
+                }
+                var history: [MetricValue] = []
+                var d = start
+                while d <= now {
+                    let day = cal.startOfDay(for: d)
+                    history.append(MetricValue(date: day, value: byDay[day] ?? 0))
+                    guard let next = cal.date(byAdding: .day, value: 1, to: d) else { break }
+                    d = next
+                }
+                cont.resume(returning: history)
             }
-            var history: [MetricValue] = []
-            var d = start
-            while d <= now {
-                let day = cal.startOfDay(for: d)
-                history.append(MetricValue(date: day, value: byDay[day] ?? 0))
-                guard let next = cal.date(byAdding: .day, value: 1, to: d) else { break }
-                d = next
-            }
-            DispatchQueue.main.async {
-                self.updateMetricHistory(type: .mindfulMinutes, history: history)
-            }
+            healthStore.execute(query)
         }
-        healthStore.execute(query)
+        guard let fetched else { return nil }
+        return MetricFetchResult(type: .mindfulMinutes, value: nil, history: fetched)
     }
+
 
     // --- UI State Modifiers ---
 

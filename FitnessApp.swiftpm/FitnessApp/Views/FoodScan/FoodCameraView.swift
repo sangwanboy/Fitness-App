@@ -62,9 +62,13 @@ struct FoodCameraView: View {
         .onChange(of: photoItem) { _, item in
             guard let item else { return }
             Task {
-                if let data = try? await item.loadTransferable(type: Data.self),
-                   let img = UIImage(data: data) {
-                    onImage(img)
+                if let data = try? await item.loadTransferable(type: Data.self) {
+                    // Decode off the main actor — UIImage(data:) on a full-res
+                    // library photo can block the UI for tens of ms.
+                    let img = await Task.detached(priority: .userInitiated) {
+                        UIImage(data: data)
+                    }.value
+                    if let img { onImage(img) }
                 }
                 photoItem = nil
             }

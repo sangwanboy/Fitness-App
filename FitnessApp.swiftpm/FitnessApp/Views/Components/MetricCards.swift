@@ -331,6 +331,18 @@ struct SleepCard: View {
     @AppStorage("theme_mode") private var themeMode = "dark"
     private var isDark: Bool { themeMode == "dark" }
 
+    private static let weekdayFmt: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "EEEE"
+        return f
+    }()
+
+    private static let monthDayFmt: DateFormatter = {
+        let f = DateFormatter()
+        f.setLocalizedDateFormatFromTemplate("MMM d")
+        return f
+    }()
+
     /// Most recent non-zero history entry — i.e. the night the current value
     /// is from. nil if we never saw any sleep across the 365-day history.
     private var mostRecentNight: MetricValue? {
@@ -350,13 +362,9 @@ struct SleepCard: View {
         case 0: return "Last night"
         case 1: return "Night before"
         case 2...6:
-            let f = DateFormatter()
-            f.dateFormat = "EEEE"
-            return f.string(from: date) + " night"
+            return Self.weekdayFmt.string(from: date) + " night"
         default:
-            let f = DateFormatter()
-            f.setLocalizedDateFormatFromTemplate("MMM d")
-            return "Night of " + f.string(from: date)
+            return "Night of " + Self.monthDayFmt.string(from: date)
         }
     }
 
@@ -563,10 +571,14 @@ private struct MealRow: View {
     @AppStorage("theme_mode") private var themeMode = "dark"
     private var isDark: Bool { themeMode == "dark" }
 
-    private var timeString: String {
+    private static let timeFmt: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "h:mm a"
-        return f.string(from: entry.loggedAt)
+        return f
+    }()
+
+    private var timeString: String {
+        Self.timeFmt.string(from: entry.loggedAt)
     }
 
     var body: some View {

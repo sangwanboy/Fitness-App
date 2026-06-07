@@ -11,12 +11,22 @@ struct StructuredMarkdownText: View {
     let accentColor: Color
     var bubbleColor: Color? = nil  // foreground override for user bubbles
 
+    // Parsed blocks are cached in @State and recomputed only when `text` changes
+    // (initial appear + each onChange). Previously this was a computed property
+    // that re-ran the whole parser — block split + AttributedString(markdown:)
+    // per block — on EVERY render, which during streaming meant an O(n²)
+    // re-parse storm as deltas arrived. No visual change: the parse still runs
+    // on every text mutation, just not on unrelated re-renders.
+    @State private var blocks: [Block] = []
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
                 renderBlock(block)
             }
         }
+        .onAppear { blocks = parseBlocks(text) }
+        .onChange(of: text) { _, newValue in blocks = parseBlocks(newValue) }
     }
 
     // MARK: - Block model
@@ -33,7 +43,7 @@ struct StructuredMarkdownText: View {
     /// Parse into blocks. We accept both real `\n\n` paragraph breaks and the
     /// LLM's frequent mistake of running sections together on a single line —
     /// classifying line-by-line gives us the right structure either way.
-    private var blocks: [Block] {
+    private func parseBlocks(_ text: String) -> [Block] {
         // Normalize CRLF, then split on \n. We rebuild paragraphs ourselves.
         let lines = text
             .replacingOccurrences(of: "\r\n", with: "\n")

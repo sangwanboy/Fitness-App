@@ -428,6 +428,40 @@ public struct Predictions: Codable, Equatable {
         self.insufficientHistoryDays = insufficientHistoryDays
     }
 
+    /// Equatable signature over the *meaningful* prediction fields, EXCLUDING
+    /// `generatedAt`. `Predictions` is `Equatable`, but because `generatedAt` is
+    /// stamped fresh on every `computeAll`, a plain `==` always differs even when
+    /// nothing of substance changed. Comparing `contentSignature` instead lets a
+    /// recompute that produced an identical result skip the `@Published`
+    /// reassignment — and the whole-tree re-render it would trigger.
+    public struct ContentSignature: Equatable {
+        let recovery: RecoveryReadiness?
+        let nextWorkout: NextWorkoutForecast?
+        let trajectories: [GoalTrajectory]
+        let sedentary: SedentaryAlert?
+        let healthMeter: HealthMeterScore?
+        let anomalies: [Anomaly]
+        let dailyInsight: DailyInsight?
+        let actions: [ActionSuggestion]
+        let aiEnrichmentStatus: EnrichmentStatus
+        let insufficientHistoryDays: Int?
+    }
+
+    public var contentSignature: ContentSignature {
+        ContentSignature(
+            recovery: recovery,
+            nextWorkout: nextWorkout,
+            trajectories: trajectories,
+            sedentary: sedentary,
+            healthMeter: healthMeter,
+            anomalies: anomalies,
+            dailyInsight: dailyInsight,
+            actions: actions,
+            aiEnrichmentStatus: aiEnrichmentStatus,
+            insufficientHistoryDays: insufficientHistoryDays
+        )
+    }
+
     /// True when nothing actionable surfaced — render the empty / baseline state.
     public var isEmpty: Bool {
         recovery == nil && nextWorkout == nil && trajectories.isEmpty && sedentary == nil

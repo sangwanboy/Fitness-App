@@ -775,7 +775,11 @@ private struct ComparisonChartToolCard: View {
     let title: String?
     let accentColor: Color
 
-    @ObservedObject private var hk = HealthKitManager.shared
+    // Snapshot the two compared period slices ONCE on appear. A past comparison
+    // chart never changes, so we must not observe the singleton (its 15s poll
+    // would otherwise re-bucket and re-render this card in the chat list).
+    @State private var snapshotA: [Double] = []
+    @State private var snapshotB: [Double] = []
     @AppStorage("theme_mode") private var themeMode = "dark"
     private var isDark: Bool { themeMode == "dark" }
 
@@ -811,10 +815,11 @@ private struct ComparisonChartToolCard: View {
         }
     }
 
-    private func values(for period: String) -> [Double] {
-        guard let t = metricType, let s = hk.metricSummaries[t] else { return [] }
+    /// Slice a frozen history snapshot down to one period. Runs in `.task`
+    /// against the once-read history so it never touches the singleton.
+    private func values(in history: [MetricValue], for period: String) -> [Double] {
         let (start, end) = resolve(period)
-        return s.history.filter { $0.date >= start && $0.date <= end }.map { $0.value }
+        return history.filter { $0.date >= start && $0.date <= end }.map { $0.value }
     }
     private func avg(_ values: [Double]) -> Double {
         values.isEmpty ? 0 : values.reduce(0, +) / Double(values.count)
@@ -824,8 +829,8 @@ private struct ComparisonChartToolCard: View {
     }
 
     var body: some View {
-        let aValues = values(for: periodA)
-        let bValues = values(for: periodB)
+        let aValues = snapshotA
+        let bValues = snapshotB
         let aAvg = avg(aValues)
         let bAvg = avg(bValues)
         let delta = bAvg == 0 ? 0 : ((aAvg - bAvg) / bAvg) * 100
@@ -863,6 +868,12 @@ private struct ComparisonChartToolCard: View {
         }
         .padding(14).frame(maxWidth: 320)
         .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 18))
+        .task {
+            // Freeze both period slices once; live poll updates won't re-bucket this card.
+            let history = metricType.flatMap { HealthKitManager.shared.metricSummaries[$0]?.history } ?? []
+            snapshotA = values(in: history, for: periodA)
+            snapshotB = values(in: history, for: periodB)
+        }
     }
 
     @ViewBuilder
@@ -1020,7 +1031,10 @@ private struct MetricChartToolCard: View {
     let days: Int
     let accentColor: Color
 
-    @ObservedObject private var hk = HealthKitManager.shared
+    // A chat chart is a snapshot of the past — it must never re-bucket when the
+    // 15s HealthKit poll mutates the shared summaries. So we read the history
+    // ONCE on appear into local @State instead of observing the singleton.
+    @State private var snapshot: [MetricValue] = []
     @AppStorage("theme_mode") private var themeMode = "dark"
     private var isDark: Bool { themeMode == "dark" }
 
@@ -1042,10 +1056,9 @@ private struct MetricChartToolCard: View {
     private var unit: String { metricType?.unit ?? "" }
 
     private var values: [Double] {
-        guard let t = metricType, let summary = hk.metricSummaries[t] else { return [] }
         let cal = Calendar.current
         let cutoff = cal.date(byAdding: .day, value: -days, to: Date()) ?? Date()
-        return summary.history.filter { $0.date >= cutoff }.suffix(days).map { $0.value }
+        return snapshot.filter { $0.date >= cutoff }.suffix(days).map { $0.value }
     }
     private var average: Double { values.isEmpty ? 0 : values.reduce(0, +) / Double(values.count) }
 
@@ -1076,6 +1089,10 @@ private struct MetricChartToolCard: View {
         }
         .padding(14).frame(maxWidth: 290)
         .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 18))
+        .task {
+            // Freeze the history once; live poll updates won't re-render this card.
+            snapshot = metricType.flatMap { HealthKitManager.shared.metricSummaries[$0]?.history } ?? []
+        }
     }
 
     private func format(_ v: Double) -> String {

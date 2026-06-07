@@ -17,6 +17,7 @@ public struct ChatView: View {
     @State private var showCameraSheet = false
     @State private var showLibraryPicker = false
     @State private var cameraImage: UIImage?
+    @State private var isStagingImage = false
     
     @AppStorage("accent_color") private var accentColorHex = "#30D158"
     @AppStorage("theme_mode") private var themeMode = "dark"
@@ -142,13 +143,22 @@ public struct ChatView: View {
 
                         HStack(alignment: .bottom, spacing: 12) {
                             Button { showImageSourceDialog = true } label: {
-                                Image(systemName: "camera.fill")
-                                    .font(.system(size: 18))
-                                    .foregroundStyle(accentColor)
-                                    .frame(width: 32, height: 32)
+                                ZStack {
+                                    if isStagingImage {
+                                        ProgressView()
+                                            .progressViewStyle(.circular)
+                                            .controlSize(.small)
+                                            .tint(accentColor)
+                                    } else {
+                                        Image(systemName: "camera.fill")
+                                            .font(.system(size: 18))
+                                            .foregroundStyle(accentColor)
+                                    }
+                                }
+                                .frame(width: 32, height: 32)
                             }
-                            .disabled(viewModel.isGenerating)
-                            .opacity(viewModel.isGenerating ? 0.4 : 1)
+                            .disabled(viewModel.isGenerating || isStagingImage)
+                            .opacity((viewModel.isGenerating || isStagingImage) ? 0.4 : 1)
                             .accessibilityLabel("Attach photo")
                             .accessibilityHint("Take a photo or choose from library")
 
@@ -222,11 +232,19 @@ public struct ChatView: View {
         }
         .onChange(of: photoItem) { newItem in
             guard let newItem else { return }
+            isStagingImage = true
             Task {
-                if let data = try? await newItem.loadTransferable(type: Data.self),
-                   let ui = UIImage(data: data) {
-                    stageImage(ui)
+                guard let data = try? await newItem.loadTransferable(type: Data.self) else {
+                    isStagingImage = false
+                    return
                 }
+                // Decode off the main actor — UIImage(data:) on a large photo
+                // can block for tens of ms.
+                let ui = await Task.detached(priority: .userInitiated) {
+                    UIImage(data: data)
+                }.value
+                guard let ui else { isStagingImage = false; return }
+                stageImage(ui)
             }
         }
         .onChange(of: cameraImage) { newImage in
@@ -258,10 +276,19 @@ public struct ChatView: View {
 
     /// Common pipeline for both camera- and library-sourced images:
     /// downscale to ≤1200px, JPEG q=0.7, stage as the next outgoing attachment.
+    /// The CPU-bound resize + JPEG encode run off the main actor so the UI
+    /// doesn't freeze; only the final assignment hops back to @MainActor.
     private func stageImage(_ ui: UIImage) {
-        let resized = ui.resizedForUpload(maxDimension: 1200)
-        pendingImageData = resized.jpegData(compressionQuality: 0.7)
-        pendingImagePreview = resized
+        isStagingImage = true
+        Task {
+            let staged: (UIImage, Data?) = await Task.detached(priority: .userInitiated) {
+                let resized = ui.resizedForUpload(maxDimension: 1200)
+                return (resized, resized.jpegData(compressionQuality: 0.7))
+            }.value
+            pendingImageData = staged.1
+            pendingImagePreview = staged.0
+            isStagingImage = false
+        }
     }
 
     private func sendPrompt(_ text: String) {
@@ -311,6 +338,10 @@ struct ChatMessageRow: View {
     var onCancelTool:  (UUID) -> Void = { _ in }
     var onRetry: () -> Void = {}
 
+    /// Decoded attachment image, populated once per row via `.task(id:)` so the
+    /// CPU-bound UIImage(data:) decode doesn't re-run on every streaming delta.
+    @State private var cachedImage: UIImage?
+
     var isUser: Bool { message.role == .user }
 
     /// Parse the LLM's markdown (bold/italic/code/lists/links) into an AttributedString
@@ -334,8 +365,10 @@ struct ChatMessageRow: View {
                 
                 // Bubble Content
                 VStack(alignment: isUser ? .trailing : .leading, spacing: 8) {
-                    // Show user's attached image inside their bubble
-                    if isUser, let data = message.imageData, let ui = UIImage(data: data) {
+                    // Show user's attached image inside their bubble.
+                    // Decoded once via `.task(id:)` into `cachedImage` rather
+                    // than re-decoding in the body on every render.
+                    if isUser, let ui = cachedImage {
                         Image(uiImage: ui)
                             .resizable()
                             .scaledToFill()
@@ -417,6 +450,14 @@ struct ChatMessageRow: View {
                 
                 if !isUser { Spacer(minLength: 48) }
             }
+        }
+        .task(id: message.id) {
+            // Decode the attachment off the main render path, once per message.
+            guard isUser, let data = message.imageData else { return }
+            let decoded = await Task.detached(priority: .userInitiated) {
+                UIImage(data: data)
+            }.value
+            cachedImage = decoded
         }
     }
 }

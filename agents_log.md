@@ -1909,3 +1909,57 @@ Comprehensive UI/UX polish pass across 8 files. A 4-phase multi-agent workflow (
 
 Latest deployed sequence: **4077**.
 
+---
+
+## Session 29 — 2026-06-07 (Performance pass — kill the 15s-poll re-render storm + sheet race fix)
+
+### Context
+App felt laggy. Ran a multi-agent audit (mixed Opus/Sonnet): 7 finder lenses → adversarial verify
+→ Opus synthesis = 19 confirmed findings, 10 prioritized fixes. Dominant cause: the 15s foreground
+poll (`ContentView` `Timer.publish`) → `HealthKitManager.fetchTodayData()` fired ~45–50 separate
+`objectWillChange` pulses per tick (one per HK query callback) across ~12 view subtrees, with no
+equality gating and an unconditional prediction reassignment. Implementation was attempted via a
+parallel agent workflow; it was flaky (StructuredOutput failures, one half-done HealthKit refactor +
+a transient mid-edit DashboardView break), so the core refactor was finished/repaired directly and
+every agent edit was reviewed against the diff before building.
+
+### Fixes (all verified, build green)
+1. **Coalesce HK publishes (the big one)** — `HealthKitManager`: every metric query now RETURNS a
+   `MetricFetchResult` facet (value/history) via `withCheckedContinuation` instead of self-mutating
+   `@Published metricSummaries` per callback. `fetchTodayData()` seeds a local dict, drains all
+   facets, and assigns `metricSummaries` **once**. ~45–50 publishes/tick → 1.
+2. **Equality gating** — `MetricValue` Equatable (manual `==` on date+value, ignoring its random
+   `id`; init unchanged); `MetricSummary` Equatable. The single apply is gated (`!=`), so an
+   unchanged poll now publishes **zero** times.
+3. **Diff-aware predictions** — `Predictions.contentSignature` (everything except `generatedAt`);
+   `recomputePredictions` only reassigns `predictions` when the signature changes.
+4. **Streaming throttle** — `ChatViewModel` flushes accumulated text to the bubble at most ~20×/sec
+   (force-flush on stream end / tool-call / every error path so the final reply is never truncated);
+   `StructuredMarkdownText` parses into `@State` blocks (onAppear + onChange) instead of re-parsing
+   every render — kills the O(n²) re-parse storm.
+5. **Image off main actor** — resize/JPEG/`UIImage(data:)` moved to `Task.detached` in
+   `ChatView.stageImage`, photo-picker `onChange`, `FoodCameraView`, `FoodScanView`; `ChatMessageRow`
+   decodes once via `.task(id:)`. Added a staging spinner on the chat attach button.
+6. **Freeze chat chart cards** — `MetricChartToolCard` / `ComparisonChartToolCard` snapshot history
+   once via `.task` instead of `@ObservedObject HealthKitManager.shared` (poll no longer re-renders
+   past chat charts). `WidgetPreviewConfirmCard` left live (intentional).
+7. **MetricChart hoist** — `chartData` + `isYearScale` computed once in `init` (stored `let`) instead
+   of per-render/per-drag-tick regroup+sort.
+8. **GlassEffectContainer** — wrapped the home card grid + `glassEffectID` per card to coalesce glass
+   backdrop passes (per-card glass kept for off-grid use).
+9. **Static DateFormatters** — `MetricCards` (SleepCard, MealRow) + `PredictionsCard` (NextWorkoutRow,
+   SedentaryRow) cache formatters statically instead of allocating per render.
+10. **Mock-data fix** — `HealthTrendsView` Weekly Insight now computes real step compliance / activity
+    peak / avg sleep from history with honest "-" empty states (was hardcoded 14% / 840 kcal / 7.4 hrs
+    / 64 bpm). HR chart capped to 200 samples.
+
+Also fixed earlier this session: the prediction-card **Why?** sheet (and challenge **Share** sheet)
+opened blank on first tap — `.sheet(isPresented:)` race → switched to `.sheet(item:)` (commit cd838f7).
+
+### Build / deploy
+- Simulator + device **BUILD SUCCEEDED**, zero errors. Installed AND launched via `xcrun devicectl`.
+- **databaseSequenceNumber: 2148** (device CoreDevice install DB appears to have reset since seq 4077;
+  recording the value `devicectl` actually returned).
+
+Latest deployed sequence: **2148**.
+

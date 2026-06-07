@@ -7,9 +7,53 @@ public struct MetricChart: View {
 
     @State private var rawSelectedDate: Date?
 
+    /// True when the history spans more than ~31 days (the 1-year detail view).
+    /// Derived once in init — `history` is a `let` and never mutates for a view
+    /// instance, so this never needs recomputing across renders/drag ticks.
+    private let isYearScale: Bool
+
+    /// Clean, sorted plotting data — one point per bucket. Same-day samples are
+    /// collapsed (averaged; legitimate daily statistics are identical so this just
+    /// de-dupes) so the line is always monotonic in x and can't tangle.
+    /// Derived once in init for the same reason as `isYearScale`.
+    private let chartData: [MetricValue]
+
     public init(type: HealthMetricType, history: [MetricValue]) {
         self.type = type
         self.history = history
+
+        // --- isYearScale: true when the history spans more than ~31 days. ---
+        let yearScale: Bool
+        if let first = history.map(\.date).min(),
+           let last = history.map(\.date).max() {
+            yearScale = last.timeIntervalSince(first) > 31 * 86_400
+        } else {
+            yearScale = false
+        }
+        self.isYearScale = yearScale
+
+        // --- chartData: clean, sorted, one point per bucket. ---
+        if type == .heartRate {
+            // Heart rate is an intraday trace — keep each reading, just sorted.
+            self.chartData = history.sorted { $0.date < $1.date }
+        } else {
+            let cal = Calendar.current
+            if yearScale {
+                let grouped = Dictionary(grouping: history) { cal.dateComponents([.year, .month], from: $0.date) }
+                self.chartData = grouped.compactMap { comps, items -> MetricValue? in
+                    guard let d = cal.date(from: comps), !items.isEmpty else { return nil }
+                    return MetricValue(date: d, value: items.map(\.value).reduce(0, +) / Double(items.count))
+                }
+                .sorted { $0.date < $1.date }
+            } else {
+                // Daily buckets: one clean point per calendar day.
+                let grouped = Dictionary(grouping: history) { cal.startOfDay(for: $0.date) }
+                self.chartData = grouped.map { day, items in
+                    MetricValue(date: day, value: items.map(\.value).reduce(0, +) / Double(items.count))
+                }
+                .sorted { $0.date < $1.date }
+            }
+        }
     }
 
     public var body: some View {
@@ -162,41 +206,6 @@ public struct MetricChart: View {
             .frame(height: 180)
             .padding(.top, 4)
         }
-    }
-
-    /// True when the history spans more than ~31 days (the 1-year detail view).
-    private var isYearScale: Bool {
-        guard let first = history.map(\.date).min(),
-              let last = history.map(\.date).max() else { return false }
-        return last.timeIntervalSince(first) > 31 * 86_400
-    }
-
-    /// Clean, sorted plotting data — one point per bucket. Same-day samples are
-    /// collapsed (averaged; legitimate daily statistics are identical so this just
-    /// de-dupes) so the line is always monotonic in x and can't tangle.
-    private var chartData: [MetricValue] {
-        // Heart rate is an intraday trace — keep each reading, just sorted.
-        if type == .heartRate {
-            return history.sorted { $0.date < $1.date }
-        }
-
-        let cal = Calendar.current
-
-        if isYearScale {
-            let grouped = Dictionary(grouping: history) { cal.dateComponents([.year, .month], from: $0.date) }
-            return grouped.compactMap { comps, items -> MetricValue? in
-                guard let d = cal.date(from: comps), !items.isEmpty else { return nil }
-                return MetricValue(date: d, value: items.map(\.value).reduce(0, +) / Double(items.count))
-            }
-            .sorted { $0.date < $1.date }
-        }
-
-        // Daily buckets: one clean point per calendar day.
-        let grouped = Dictionary(grouping: history) { cal.startOfDay(for: $0.date) }
-        return grouped.map { day, items in
-            MetricValue(date: day, value: items.map(\.value).reduce(0, +) / Double(items.count))
-        }
-        .sorted { $0.date < $1.date }
     }
 
     // Find matching metric value closest to the dragged date

@@ -14,6 +14,30 @@ public final class ChatViewModel: ObservableObject {
             text: "Hey! I'm Astra, your AI health coach. I've synced with your HealthKit stats for today. How can I help you reach your goals?"
         ))
     }
+
+    /// Minimum gap between publishing accumulated streaming text to a message
+    /// bubble. Deltas keep landing in `currentStreamingText` on every chunk, but
+    /// we only mutate `messages[idx].text` (which forces a full markdown
+    /// re-parse + re-render of StructuredMarkdownText) at most ~20×/sec. This
+    /// turns an O(n²) re-parse-per-delta into a bounded number of re-parses.
+    private static let streamFlushInterval: TimeInterval = 0.05
+
+    /// Publish `currentStreamingText` into `messages[idx].text`, but only if
+    /// enough time has elapsed since `lastFlush` (or when `force` is set — used
+    /// for the final value on stream end / tool-call return / error paths so
+    /// the reply is never left truncated). Returns the (possibly updated)
+    /// `lastFlush` timestamp for the caller to thread through the loop.
+    private func flushStreamingText(into idx: Int,
+                                    lastFlush: Date,
+                                    force: Bool) -> Date {
+        guard messages.indices.contains(idx) else { return lastFlush }
+        let now = Date()
+        if force || now.timeIntervalSince(lastFlush) >= Self.streamFlushInterval {
+            messages[idx].text = currentStreamingText
+            return now
+        }
+        return lastFlush
+    }
     
     /// Send a prompt queued from elsewhere (currently: Predictions card action
     /// chips). Skips the "two-character minimum" guard since these are always
@@ -70,13 +94,19 @@ public final class ChatViewModel: ObservableObject {
             let modelId = UUID()
             messages.append(ChatMessage(id: modelId, role: .model, text: ""))
 
+            // Throttle text publishes to ~20×/sec; deltas always accumulate in
+            // currentStreamingText, but we only re-render at most every 50ms.
+            var lastFlush = Date.distantPast
+
             for try await chunk in stream {
                 guard let idx = messages.firstIndex(where: { $0.id == modelId }) else { break }
                 switch chunk {
                 case .text(let delta):
                     currentStreamingText += delta
-                    messages[idx].text = currentStreamingText
+                    lastFlush = flushStreamingText(into: idx, lastFlush: lastFlush, force: false)
                 case .toolCall(let call):
+                    // Force the partial text out before the tool takes over.
+                    _ = flushStreamingText(into: idx, lastFlush: lastFlush, force: true)
                     messages[idx].toolCall = call
                     messages[idx].toolStatus = call.needsConfirmation ? .pending : .autoExecuted
                     // Stop streaming the current model turn; the tool now drives the flow.
@@ -92,8 +122,20 @@ public final class ChatViewModel: ObservableObject {
                     messages[idx].thoughtSignature = sig
                 }
             }
+            // Stream ended cleanly — make sure the final accumulated text lands.
+            if let idx = messages.firstIndex(where: { $0.id == modelId }) {
+                _ = flushStreamingText(into: idx, lastFlush: lastFlush, force: true)
+            }
         } catch {
             print("Chat streaming error: \(error.localizedDescription)")
+            // Flush whatever text streamed before the error so a partial reply
+            // isn't truncated when the error bubble is appended below. Only act
+            // when there's real partial text, so we never blank out a bubble
+            // (e.g. the placeholder, or an earlier message) on a pre-stream error.
+            if !currentStreamingText.isEmpty,
+               let idx = messages.lastIndex(where: { $0.role == .model && $0.toolCall == nil }) {
+                messages[idx].text = currentStreamingText
+            }
             messages.append(ChatMessage(
                 role: .model,
                 text: "Sorry, I ran into an issue connecting to my processors. Please check your network connection and try again.",
@@ -501,13 +543,18 @@ public final class ChatViewModel: ObservableObject {
             let modelId = UUID()
             messages.append(ChatMessage(id: modelId, role: .model, text: ""))
 
+            // Throttle text publishes — same 50ms cadence as sendMessage.
+            var lastFlush = Date.distantPast
+
             for try await chunk in stream {
                 guard let idx = messages.firstIndex(where: { $0.id == modelId }) else { break }
                 switch chunk {
                 case .text(let delta):
                     currentStreamingText += delta
-                    messages[idx].text = currentStreamingText
+                    lastFlush = flushStreamingText(into: idx, lastFlush: lastFlush, force: false)
                 case .toolCall(let call):
+                    // Force the partial text out before the tool takes over.
+                    _ = flushStreamingText(into: idx, lastFlush: lastFlush, force: true)
                     // A follow-up that itself chains a tool — re-enter the same
                     // pending/confirmation loop. ChatView's card UI handles this
                     // identically to the original toolCall.
@@ -520,6 +567,10 @@ public final class ChatViewModel: ObservableObject {
                     messages[idx].thoughtSignature = sig
                 }
             }
+            // Stream ended cleanly — make sure the final accumulated text lands.
+            if let idx = messages.firstIndex(where: { $0.id == modelId }) {
+                _ = flushStreamingText(into: idx, lastFlush: lastFlush, force: true)
+            }
             // If the follow-up produced no text and no tool call, drop the empty placeholder
             // so the chat doesn't show a blank bubble.
             if let idx = messages.firstIndex(where: { $0.id == modelId }),
@@ -528,10 +579,15 @@ public final class ChatViewModel: ObservableObject {
             }
         } catch {
             print("Follow-up streaming error: \(error.localizedDescription)")
-            // Drop the empty placeholder we appended above before recording
-            // the error, so the user sees a single error bubble (not blank+error).
-            if let idx = messages.lastIndex(where: { $0.role == .model && $0.text.isEmpty && $0.toolCall == nil }) {
-                messages.remove(at: idx)
+            // Flush any partial text that streamed before the error so a real
+            // reply isn't lost. Only a genuinely-empty placeholder is dropped
+            // below, so the user sees a single error bubble (not blank+error).
+            if let idx = messages.lastIndex(where: { $0.role == .model && $0.toolCall == nil && $0.text.isEmpty }) {
+                if currentStreamingText.isEmpty {
+                    messages.remove(at: idx)
+                } else {
+                    messages[idx].text = currentStreamingText
+                }
             }
             messages.append(ChatMessage(
                 role: .model,
@@ -666,13 +722,18 @@ public final class ChatViewModel: ObservableObject {
             let modelId = UUID()
             messages.append(ChatMessage(id: modelId, role: .model, text: ""))
 
+            // Throttle text publishes — same 50ms cadence as sendMessage.
+            var lastFlush = Date.distantPast
+
             for try await chunk in stream {
                 guard let idx = messages.firstIndex(where: { $0.id == modelId }) else { break }
                 switch chunk {
                 case .text(let delta):
                     currentStreamingText += delta
-                    messages[idx].text = currentStreamingText
+                    lastFlush = flushStreamingText(into: idx, lastFlush: lastFlush, force: false)
                 case .toolCall(let call):
+                    // Force the partial text out before the tool takes over.
+                    _ = flushStreamingText(into: idx, lastFlush: lastFlush, force: true)
                     messages[idx].toolCall = call
                     messages[idx].toolStatus = call.needsConfirmation ? .pending : .autoExecuted
                     if call.producesPayload {
@@ -685,8 +746,20 @@ public final class ChatViewModel: ObservableObject {
                     messages[idx].thoughtSignature = sig
                 }
             }
+            // Stream ended cleanly — make sure the final accumulated text lands.
+            if let idx = messages.firstIndex(where: { $0.id == modelId }) {
+                _ = flushStreamingText(into: idx, lastFlush: lastFlush, force: true)
+            }
         } catch {
             print("Retry streaming error: \(error.localizedDescription)")
+            // Flush whatever text streamed before the error so a partial reply
+            // isn't truncated when the error bubble is appended below. Only act
+            // when there's real partial text, so we never blank out a bubble
+            // (e.g. the placeholder, or an earlier message) on a pre-stream error.
+            if !currentStreamingText.isEmpty,
+               let idx = messages.lastIndex(where: { $0.role == .model && $0.toolCall == nil }) {
+                messages[idx].text = currentStreamingText
+            }
             messages.append(ChatMessage(
                 role: .model,
                 text: "Still couldn't reach the coach. Check your network and try again.",

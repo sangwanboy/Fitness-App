@@ -194,13 +194,26 @@ public struct FoodScanView: View {
     // MARK: - Image processing + API call
 
     private func handlePickedImage(_ raw: UIImage) {
-        // Downscale to ≤1200px JPEG q=0.7 — same pipeline as ChatView.stageImage
-        let resized = raw.resizedForUpload(maxDimension: 1200)
-        guard let jpeg = resized.jpegData(compressionQuality: 0.7) else { return }
-
-        phase = .analyzing(resized)
+        // Move to the analyzing screen immediately so the UI responds; the
+        // CPU-bound downscale + JPEG encode then run off the main actor inside
+        // the task rather than blocking before the transition.
+        phase = .analyzing(raw)
 
         analyzeTask = Task {
+            // Downscale to ≤1200px JPEG q=0.7 — same pipeline as ChatView.stageImage.
+            let staged: (UIImage, Data?) = await Task.detached(priority: .userInitiated) {
+                let resized = raw.resizedForUpload(maxDimension: 1200)
+                return (resized, resized.jpegData(compressionQuality: 0.7))
+            }.value
+            let resized = staged.0
+            guard let jpeg = staged.1 else {
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    phase = .error(resized, "Couldn't process that photo. Please try again.")
+                }
+                return
+            }
+
             do {
                 let result = try await FoodVisionService.shared.recognizeFood(imageData: jpeg)
                 guard !Task.isCancelled else { return }

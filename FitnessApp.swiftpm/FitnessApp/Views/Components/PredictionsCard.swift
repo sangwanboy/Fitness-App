@@ -531,14 +531,18 @@ private struct NextWorkoutRow: View {
     @AppStorage("theme_mode") private var themeMode = "dark"
     private var isDark: Bool { themeMode == "dark" }
 
-    private var timeLabel: String {
+    private static let timeFmt: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "h a"
+        return f
+    }()
+
+    private var timeLabel: String {
         let cal = Calendar.current
         let today = cal.startOfDay(for: Date())
         let start = cal.date(byAdding: .hour, value: forecast.startHour, to: today) ?? today
         let end = cal.date(byAdding: .hour, value: forecast.endHour, to: today) ?? today
-        return "\(f.string(from: start))–\(f.string(from: end))"
+        return "\(Self.timeFmt.string(from: start))–\(Self.timeFmt.string(from: end))"
     }
 
     var body: some View {
@@ -639,6 +643,12 @@ private struct SedentaryRow: View {
     @AppStorage("theme_mode") private var themeMode = "dark"
     private var isDark: Bool { themeMode == "dark" }
 
+    private static let timeFmt: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "h a"
+        return f
+    }()
+
     private var severityColor: Color {
         switch alert.severity {
         case .moderate: return .orange
@@ -652,12 +662,10 @@ private struct SedentaryRow: View {
 
     private var subtext: String {
         if let h = alert.lastActiveHour {
-            let f = DateFormatter()
-            f.dateFormat = "h a"
             let cal = Calendar.current
             let today = cal.startOfDay(for: Date())
             let when = cal.date(byAdding: .hour, value: h, to: today) ?? today
-            return "Last 250+ step hour: \(f.string(from: when)). A 5-min walk now keeps the streak."
+            return "Last 250+ step hour: \(Self.timeFmt.string(from: when)). A 5-min walk now keeps the streak."
         }
         return "Quiet morning. A short walk now sets the tone."
     }
