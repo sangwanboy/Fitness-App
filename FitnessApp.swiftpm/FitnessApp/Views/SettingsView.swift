@@ -252,6 +252,8 @@ public struct SettingsView: View {
                     Text("\(Int(glassTintStrength))%")
                         .font(.system(size: 13, weight: .bold, design: .rounded))
                         .foregroundColor(accentColor)
+                        .contentTransition(.numericText())
+                        .animation(.default, value: glassTintStrength)
                 }
                 Slider(value: $glassTintStrength, in: 0...100, step: 5)
                     .tint(accentColor)
@@ -343,6 +345,7 @@ public struct SettingsView: View {
                 HStack(spacing: 8) {
                     Image(systemName: vertexStatusIcon)
                         .foregroundColor(vertexStatusColor)
+                        .contentTransition(.symbolEffect(.replace))
                     Text(vertexStatusText)
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundColor(isDark ? .white.opacity(0.85) : .black.opacity(0.85))
@@ -356,6 +359,7 @@ public struct SettingsView: View {
                             .disabled(isTestingVertex)
                     }
                 }
+                .animation(.easeInOut(duration: 0.2), value: vertexStatus)
 
                 Text("Paste a Google Cloud service-account JSON key with Vertex AI access. Stored locally on device only.")
                     .font(.system(size: 12, weight: .medium))
@@ -507,6 +511,8 @@ struct ProfileStatTile: View {
                 .font(.system(size: 22, weight: .bold, design: .rounded))
                 .foregroundColor(color)
                 .tracking(-0.7)
+                .contentTransition(.numericText())
+                .animation(.default, value: value)
             Text(label)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundColor(isDark ? .white.opacity(0.55) : .black.opacity(0.55))
@@ -516,6 +522,8 @@ struct ProfileStatTile: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
         .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 18))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(value) \(label)")
     }
 }
 

@@ -100,7 +100,7 @@ struct BarsChart: View {
                         RoundedRectangle(cornerRadius: inner / 2)
                             .fill(isHl ? color : (isDark ? Color.white.opacity(0.22) : Color.black.opacity(0.18)))
                             .frame(width: inner, height: bh)
-                            .offset(x: CGFloat(i) * bw + (bw - inner) / 2, y: 0)
+                            .offset(x: CGFloat(i) * bw + (bw - inner) / 2, y: h - bh)
                     }
                 }
             }
@@ -157,6 +157,8 @@ struct BigNum: View {
                     .tracking(-1.2)
                     .foregroundColor(color ?? (isDark ? .white : .black))
                     .monospacedDigit()
+                    .contentTransition(.numericText())
+                    .animation(.spring(response: 0.35, dampingFraction: 0.8), value: value)
                 if let unit {
                     Text(unit)
                         .font(.system(size: 14, weight: .semibold))
@@ -212,6 +214,8 @@ struct MetricHeaderValue: View {
                     .tracking(-1.2)
                     .foregroundColor(valueColor ?? (isDark ? .white : .black))
                     .monospacedDigit()
+                    .contentTransition(.numericText())
+                    .animation(.spring(response: 0.35, dampingFraction: 0.8), value: value)
                 if let unit {
                     Text(unit)
                         .font(.system(size: 14, weight: .semibold))
@@ -249,29 +253,34 @@ struct StepsCard: View {
     var isWide: Bool = false
     let action: () -> Void
 
+    @AppStorage("theme_mode") private var themeMode = "dark"
+    private var isDark: Bool { themeMode == "dark" }
+    @State private var tapped = false
+
     var body: some View {
         let value = summary?.currentValue ?? 0
         let pct = Int((summary?.percentComplete ?? 0) * 100)
         let series = MetricCardHelpers.last7(summary)
-        return Button(action: action) {
+        return Button(action: { tapped.toggle(); action() }) {
             VStack(alignment: .leading, spacing: 10) {
                 MetricHeaderValue(isWide: isWide, icon: "figure.walk", title: "Steps", color: .orange,
                                   value: formatSteps(value),
                                   caption: value > 0 ? "\(pct)% of goal" : "No data yet")
-                // Reserve the chart's vertical footprint either way so the tile
-                // height matches its 2-col grid partner even before data lands.
                 if !series.isEmpty {
                     BarsChart(values: series, labels: MetricCardHelpers.weekLabels(series.count),
                               color: .orange).frame(height: 42)
                 } else if !isWide {
-                    Color.clear.frame(height: 42)
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(isDark ? Color.white.opacity(0.06) : Color.black.opacity(0.05))
+                        .frame(height: 42)
                 }
             }
             .padding(14)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 22))
+            .glassCard(cornerRadius: 22)
         }
         .buttonStyle(PlainButtonStyle())
+        .sensoryFeedback(.impact(weight: .light), trigger: tapped)
     }
 
     private func formatSteps(_ v: Double) -> String {

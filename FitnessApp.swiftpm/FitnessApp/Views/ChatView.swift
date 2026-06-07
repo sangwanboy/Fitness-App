@@ -61,6 +61,7 @@ public struct ChatView: View {
                         Color.clear.frame(height: 12).id("bottom_anchor")
                     }
                     .padding(.horizontal, 20)
+                    .animation(.spring(response: 0.4, dampingFraction: 0.75), value: viewModel.messages.count)
                     // Clearance for the floating overlay. When the keyboard is
                     // up, only the composer (~90pt) sits above it. When unfocused
                     // both the suggestion chips bar AND the composer overlay the
@@ -101,10 +102,13 @@ public struct ChatView: View {
                                             .padding(.vertical, 8)
                                             .glassEffect(.regular.interactive(), in: .capsule)
                                     }
+                                    .sensoryFeedback(.selection, trigger: chip)
                                 }
                             }
                             .padding(.horizontal, 20)
                         }
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: viewModel.isGenerating)
                     }
 
                     // Composer — native TextField wrapped in Apple Liquid Glass.
@@ -145,6 +149,8 @@ public struct ChatView: View {
                             }
                             .disabled(viewModel.isGenerating)
                             .opacity(viewModel.isGenerating ? 0.4 : 1)
+                            .accessibilityLabel("Attach photo")
+                            .accessibilityHint("Take a photo or choose from library")
 
                             TextField(pendingImageData == nil ? "Ask about your health…" : "Add a note (optional)…",
                                       text: $inputText, axis: .vertical)
@@ -179,8 +185,8 @@ public struct ChatView: View {
                             }
                             .disabled(!canSend || viewModel.isGenerating)
                             .opacity(viewModel.isGenerating ? 0.5 : 1)
-                            .animation(.easeInOut(duration: 0.15), value: viewModel.isGenerating)
-                            .animation(.easeInOut(duration: 0.15), value: canSend)
+                            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: viewModel.isGenerating)
+                            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: canSend)
                         }
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)

@@ -390,47 +390,59 @@ private struct ConfirmFooterShim: View {
     let onConfirm: () -> Void
     let onCancel: () -> Void
     var body: some View {
-        switch status {
-        case .done:
-            HStack(spacing: 6) {
-                Image(systemName: "checkmark").foregroundColor(.green)
-                Text("Done").font(.system(size: 13, weight: .semibold)).foregroundColor(.green)
-            }
-        case .failed:
-            HStack(spacing: 6) {
-                Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.red)
-                Text("Failed").font(.system(size: 13, weight: .semibold)).foregroundColor(.red)
-            }
-        case .cancelled:
-            HStack(spacing: 6) {
-                Image(systemName: "xmark").foregroundColor(.secondary)
-                Text("Cancelled").font(.system(size: 13, weight: .semibold)).foregroundColor(.secondary)
-            }
-        case .confirmed:
-            HStack { Spacer(); ProgressView().controlSize(.small); Spacer() }.frame(height: 36)
-        case .pending, .autoExecuted:
-            HStack(spacing: 10) {
-                Button(action: onCancel) {
-                    Text("Cancel")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(.secondary)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 36)
-                        .glassEffect(.regular.interactive(), in: .capsule)
+        Group {
+            switch status {
+            case .done:
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark").foregroundColor(.green)
+                    Text("Done").font(.system(size: 13, weight: .semibold)).foregroundColor(.green)
                 }
-                .buttonStyle(PlainButtonStyle())
-                Button(action: onConfirm) {
-                    Text(confirmLabel)
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 36)
-                        .background(accentColor)
-                        .clipShape(Capsule())
+                .frame(height: 36)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .transition(.opacity.combined(with: .scale(scale: 0.95)))
+            case .failed:
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.red)
+                    Text("Failed").font(.system(size: 13, weight: .semibold)).foregroundColor(.red)
                 }
-                .buttonStyle(PlainButtonStyle())
+                .frame(height: 36)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .transition(.opacity.combined(with: .scale(scale: 0.95)))
+            case .cancelled:
+                HStack(spacing: 6) {
+                    Image(systemName: "xmark").foregroundColor(.secondary)
+                    Text("Cancelled").font(.system(size: 13, weight: .semibold)).foregroundColor(.secondary)
+                }
+                .frame(height: 36)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .transition(.opacity.combined(with: .scale(scale: 0.95)))
+            case .confirmed:
+                HStack { Spacer(); ProgressView().controlSize(.small); Spacer() }.frame(height: 36)
+            case .pending, .autoExecuted:
+                HStack(spacing: 10) {
+                    Button(action: onCancel) {
+                        Text("Cancel")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 36)
+                            .glassEffect(.regular.interactive(), in: .capsule)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                    Button(action: onConfirm) {
+                        Text(confirmLabel)
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 36)
+                            .background(LinearGradient(colors: [accentColor, accentColor.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing), in: Capsule())
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                }
+                .transition(.opacity.combined(with: .scale(scale: 0.95)))
             }
         }
+        .animation(.spring(response: 0.3, dampingFraction: 0.75), value: status)
     }
 }
 

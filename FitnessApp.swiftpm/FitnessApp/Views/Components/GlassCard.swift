@@ -17,7 +17,6 @@ public struct GlassBackgroundModifier: ViewModifier {
 
     public func body(content: Content) -> some View {
         content
-            .padding()
             .glassEffect(glassEffectStyle(), in: .rect(cornerRadius: cornerRadius))
     }
 

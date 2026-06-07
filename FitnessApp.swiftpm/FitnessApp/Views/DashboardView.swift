@@ -220,15 +220,14 @@ public struct DashboardView: View {
     public var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: gridSpacing) {
-                ForEach(Array(packedRows.enumerated()), id: \.offset) { _, row in
+                ForEach(Array(packedRows.enumerated()), id: \.offset) { rowIndex, row in
                     HStack(alignment: .top, spacing: gridSpacing) {
                         ForEach(row, id: \.self) { cardId in
-                            // A narrow card alone on its row renders in its wide
-                            // layout so it fills the width instead of stretching.
                             cardView(for: cardId, isWide: row.count == 1 && !wideCardIds.contains(cardId))
                                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                                 .opacity(animateWidgets ? 1.0 : 0.0)
                                 .offset(y: animateWidgets ? 0.0 : 15.0)
+                                .animation(.spring(response: 0.5, dampingFraction: 0.82).delay(Double(rowIndex) * 0.06), value: animateWidgets)
                         }
                     }
                     .frame(maxWidth: .infinity)
@@ -239,21 +238,23 @@ public struct DashboardView: View {
                     let pairs = stride(from: 0, to: extraMetricTypes.count, by: 2).map { i in
                         Array(extraMetricTypes[i..<min(i + 2, extraMetricTypes.count)])
                     }
-                    ForEach(Array(pairs.enumerated()), id: \.offset) { _, pair in
-                        HStack(alignment: .top, spacing: gridSpacing) {
-                            ForEach(pair, id: \.self) { metric in
-                                // An odd last tile renders in its wide layout so
-                                // it fills the row instead of being half-empty.
-                                SimpleMetricCard(
-                                    type: metric,
-                                    summary: healthKitManager.metricSummaries[metric],
-                                    isWide: pair.count == 1,
-                                    action: { selectedMetric = metric }
-                                )
-                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    VStack(spacing: gridSpacing) {
+                        ForEach(Array(pairs.enumerated()), id: \.offset) { _, pair in
+                            HStack(alignment: .top, spacing: gridSpacing) {
+                                ForEach(pair, id: \.self) { metric in
+                                    SimpleMetricCard(
+                                        type: metric,
+                                        summary: healthKitManager.metricSummaries[metric],
+                                        isWide: pair.count == 1,
+                                        action: { selectedMetric = metric }
+                                    )
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                                }
                             }
+                            .transition(.opacity.combined(with: .move(edge: .top)))
                         }
                     }
+                    .animation(.spring(response: 0.45, dampingFraction: 0.85), value: showMoreMetrics)
                 }
 
                 showMoreButton
@@ -294,7 +295,7 @@ public struct DashboardView: View {
         .sheet(isPresented: $showNutritionDashboard) { NutritionDashboardView() }
         .fullScreenCover(isPresented: $showFoodPhotoFlow) { FoodScanView() }
         .onAppear {
-            withAnimation(.easeOut(duration: 0.5)) { animateWidgets = true }
+            animateWidgets = true
             let isStale = lastRefreshed.map { Date().timeIntervalSince($0) > 300 } ?? true
             guard isStale else { return }
             lastRefreshed = Date()

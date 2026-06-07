@@ -164,7 +164,7 @@ public struct AppLoadingScreen: View {
         withAnimation(.linear(duration: 22).repeatForever(autoreverses: false)) {
             innerRingAngle = 360
         }
-        withAnimation(.spring(response: 0.7, dampingFraction: 0.55).delay(0.08)) {
+        withAnimation(.spring(response: 0.6, dampingFraction: 0.72).delay(0.08)) {
             heartScale = 1.0
         }
         withAnimation(.easeInOut(duration: 1.3).repeatForever(autoreverses: true)) {
@@ -173,17 +173,8 @@ public struct AppLoadingScreen: View {
         withAnimation(.easeOut(duration: 0.55).delay(0.3)) {
             titleOpacity = 1.0
         }
-        withAnimation(.easeOut(duration: 0.55).delay(0.55)) {
+        withAnimation(.easeOut(duration: 0.55).delay(0.65)) {
             taglineOpacity = 1.0
-        }
-
-        Task { @MainActor in
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 280_000_000)
-                withAnimation(.easeInOut(duration: 0.28)) {
-                    dotsPhase = (dotsPhase + 1) % 3
-                }
-            }
         }
     }
 }
