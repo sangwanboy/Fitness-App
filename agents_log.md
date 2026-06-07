@@ -2050,3 +2050,21 @@ contained view work) on disjoint file clusters; every diff reviewed against sour
 
 Latest deployed sequence: **2164**.
 
+---
+
+### 2026-06-07 — NutritionDashboardView glitch fixes
+
+**File**: `FitnessApp.swiftpm/FitnessApp/Views/NutritionDashboardView.swift`
+
+1. **CalorieTrendChart stale day labels** — Converted `static let dayLetters` from a closure-initialized stored property to a computed `private var`. Labels now derive from `Date()` at render time, so they remain accurate past midnight without restarting the app. Also updated the `ForEach` call-site from `Self.dayLetters` to `dayLetters`.
+
+2. **Sticky log bar opaque background** — Replaced the hardcoded `Color.black.opacity(0.85)` / `Color(red:0.97,...).opacity(0.85)` background with `.background(.regularMaterial.ignoresSafeArea(edges: .bottom))`. The bar now uses the system `regularMaterial` blur/vibrancy, matching the Liquid Glass style used throughout the rest of the app.
+
+---
+
+### 2026-06-07 — CalendarView DayEventRow wrong navigation fix
+
+**File**: `FitnessApp.swiftpm/FitnessApp/Views/CalendarView.swift`
+
+1. **DayEventRow misdirected tap** — Removed the `Button(action: onTap)` wrapper from `DayEventRow.body` and replaced it with a plain `HStack`. Every calendar event tap was unconditionally opening `WorkoutTrackerView` regardless of event type (meetings, sleep blocks, yoga sessions, etc.). Removed the `onTap: () -> Void` parameter from `DayEventRow` entirely and updated the call-site in `dayPlanCard` to omit it. Rows are now non-interactive display-only until per-event-type detail presentation is implemented.
+

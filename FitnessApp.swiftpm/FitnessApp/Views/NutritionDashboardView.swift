@@ -367,11 +367,7 @@ public struct NutritionDashboardView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
         }
-        .background(
-            (isDark ? Color.black : Color(red: 0.97, green: 0.97, blue: 0.97))
-                .opacity(0.85)
-                .ignoresSafeArea(edges: .bottom)
-        )
+        .background(.regularMaterial.ignoresSafeArea(edges: .bottom))
     }
 
     // MARK: - Helpers
@@ -535,14 +531,14 @@ private struct CalorieTrendChart: View {
     @AppStorage("theme_mode") private var themeMode = "dark"
     private var isDark: Bool { themeMode == "dark" }
 
-    private static let dayLetters: [String] = {
+    private var dayLetters: [String] {
         let cal = Calendar.current
         let f = DateFormatter(); f.dateFormat = "EEEEE"
         let today = Date()
         return (0..<7).reversed().compactMap { offset in
             cal.date(byAdding: .day, value: -offset, to: today).map { f.string(from: $0) }
         }
-    }()
+    }
 
     var body: some View {
         VStack(spacing: 6) {
@@ -612,7 +608,7 @@ private struct CalorieTrendChart: View {
 
             // Day labels
             HStack(spacing: 0) {
-                ForEach(Array(Self.dayLetters.enumerated()), id: \.offset) { _, d in
+                ForEach(Array(dayLetters.enumerated()), id: \.offset) { _, d in
                     Text(d)
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundColor(isDark ? .white.opacity(0.45) : .black.opacity(0.45))

@@ -436,8 +436,7 @@ public struct CalendarView: View {
                 ForEach(Array(eventsForSelectedDay.enumerated()), id: \.element.calendarItemIdentifier) { idx, ev in
                     DayEventRow(event: ev,
                                 isLast: idx == eventsForSelectedDay.count - 1,
-                                accentColor: accentColor,
-                                onTap: { onOpenWorkout() })
+                                accentColor: accentColor)
                 }
             }
         }
@@ -509,7 +508,6 @@ struct DayEventRow: View {
     let event: EKEvent
     let isLast: Bool
     let accentColor: Color
-    let onTap: () -> Void
 
     @AppStorage("theme_mode") private var themeMode = "dark"
     private var isDark: Bool { themeMode == "dark" }
@@ -535,41 +533,38 @@ struct DayEventRow: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Button(action: onTap) {
-                HStack(spacing: 0) {
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(color)
-                        .frame(width: 4)
-                        .padding(.vertical, 14)
-                        .padding(.leading, 12)
-                        .padding(.trailing, 12)
+            HStack(spacing: 0) {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(color)
+                    .frame(width: 4)
+                    .padding(.vertical, 14)
+                    .padding(.leading, 12)
+                    .padding(.trailing, 12)
 
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(timeText.uppercased())
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundColor(isDark ? .white.opacity(0.55) : .black.opacity(0.55))
-                            .tracking(0.3)
-                        Text(event.title ?? "Untitled")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundColor(isDark ? .white : .black)
-                            .lineLimit(1)
-                    }
-                    .padding(.vertical, 10)
-
-                    Spacer()
-
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 9)
-                            .fill(color.opacity(0.18))
-                            .frame(width: 34, height: 34)
-                        Image(systemName: icon)
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(color)
-                    }
-                    .padding(.trailing, 14)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(timeText.uppercased())
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(isDark ? .white.opacity(0.55) : .black.opacity(0.55))
+                        .tracking(0.3)
+                    Text(event.title ?? "Untitled")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(isDark ? .white : .black)
+                        .lineLimit(1)
                 }
+                .padding(.vertical, 10)
+
+                Spacer()
+
+                ZStack {
+                    RoundedRectangle(cornerRadius: 9)
+                        .fill(color.opacity(0.18))
+                        .frame(width: 34, height: 34)
+                    Image(systemName: icon)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(color)
+                }
+                .padding(.trailing, 14)
             }
-            .buttonStyle(PlainButtonStyle())
             if !isLast {
                 Rectangle()
                     .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.06))
