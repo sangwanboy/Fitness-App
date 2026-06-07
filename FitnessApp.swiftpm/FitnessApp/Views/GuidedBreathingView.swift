@@ -17,6 +17,11 @@ public struct GuidedBreathingView: View {
     @State private var selectedId: String = "box"
     @State private var showCustomEditor = false
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    // Orb animation state — driven by phase changes, not per-tick progress
+    @State private var orbScale: CGFloat = 0.7
+    @State private var rippleTrigger: Int = 0   // increment to fire a ripple burst
 
     private var isDark: Bool { themeMode == "dark" }
     private var accentColor: Color { ThemeHelper.color(from: accentColorHex) }
@@ -172,58 +177,98 @@ public struct GuidedBreathingView: View {
             ? max(0, Int(ceil(currentDuration * (1.0 - progress))))
             : Int(proto.inhaleSec)
 
-        // Circle scale: expand on inhale (1.0), contract on exhale (0.6), hold at current
-        let circleScale: Double = {
-            guard manager.isRunning else { return 0.7 }
-            switch phase {
-            case .inhale:
-                return 0.6 + 0.4 * progress
-            case .hold1:
-                return 1.0
-            case .exhale:
-                return 1.0 - 0.4 * progress
-            case .hold2:
-                return 0.6
-            }
-        }()
-
         return ZStack {
-            // Outer pulsing glow ring
-            Circle()
-                .fill(color.opacity(0.18))
-                .frame(width: 260, height: 260)
-                .scaleEffect(manager.isRunning ? (0.85 + 0.30 * circleScale) : 0.9)
-                .animation(
-                    manager.isRunning
-                        ? .easeInOut(duration: manager.selectedProtocol.activePhases.first(where: { $0.phase == phase })?.duration ?? 1)
-                        : .easeInOut(duration: 2).repeatForever(autoreverses: true),
-                    value: circleScale
-                )
+            // ── Ripple rings (inhale only, not shown when reduce-motion is on) ──
+            if !reduceMotion && manager.isRunning {
+                ForEach(0..<3, id: \.self) { i in
+                    RippleRing(color: color, trigger: rippleTrigger, delay: Double(i) * 0.35)
+                }
+            }
 
-            // Middle frosted glass circle
-            Circle()
-                .frame(width: 200, height: 200)
-                .glassEffect(.regular, in: .circle)
-                .scaleEffect(circleScale)
-                .animation(
-                    .easeInOut(duration: currentDuration * (1.0 - progress)),
-                    value: circleScale
-                )
+            // ── Soft outer glow halo (blurred, breathes with the orb) ──
+            // orbScale is driven by withAnimation in onChange, so no extra .animation needed.
+            if !reduceMotion {
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [color.opacity(0.38), color.opacity(0.10), .clear],
+                            center: .center,
+                            startRadius: 60,
+                            endRadius: 140
+                        )
+                    )
+                    .frame(width: 280, height: 280)
+                    .blur(radius: 22)
+                    .scaleEffect(orbScale * 1.12)
+            }
 
-            // Inner content: phase label + countdown
+            // ── Second softer halo layer for depth ──
+            if !reduceMotion {
+                Circle()
+                    .fill(color.opacity(0.09))
+                    .frame(width: 248, height: 248)
+                    .blur(radius: 10)
+                    .scaleEffect(orbScale * 1.06)
+            }
+
+            // ── Main orb: gradient fill + glass frost ──
+            ZStack {
+                // Richer gradient base
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [
+                                color.opacity(0.55),
+                                color.opacity(0.22),
+                                color.opacity(0.06)
+                            ],
+                            center: UnitPoint(x: 0.38, y: 0.32),
+                            startRadius: 8,
+                            endRadius: 105
+                        )
+                    )
+                    .frame(width: 210, height: 210)
+
+                // Glass frost overlay on top
+                Circle()
+                    .frame(width: 210, height: 210)
+                    .glassEffect(.regular, in: .circle)
+
+                // Subtle inner specular highlight
+                if !reduceMotion {
+                    Circle()
+                        .fill(
+                            RadialGradient(
+                                colors: [Color.white.opacity(0.18), .clear],
+                                center: UnitPoint(x: 0.35, y: 0.28),
+                                startRadius: 0,
+                                endRadius: 72
+                            )
+                        )
+                        .frame(width: 210, height: 210)
+                        .blendMode(.plusLighter)
+                }
+            }
+            .scaleEffect(orbScale)
+
+            // ── Inner content: phase icon + label + countdown ──
             VStack(spacing: 6) {
                 if manager.isRunning {
                     Image(systemName: phase.icon)
                         .font(.system(size: 22, weight: .medium))
                         .foregroundColor(color)
-                        .transition(.scale.combined(with: .opacity))
                         .id("phase_icon_\(phase.rawValue)_\(currentPhaseIndex)")
+                        .transition(.asymmetric(
+                            insertion: .opacity.combined(with: .scale(scale: 0.75)),
+                            removal: .opacity.combined(with: .scale(scale: 1.2))
+                        ))
 
                     Text(phase.label)
                         .font(.system(size: 18, weight: .semibold, design: .rounded))
                         .foregroundColor(isDark ? .white : .black)
-                        .transition(.opacity)
                         .id("phase_label_\(phase.rawValue)_\(currentPhaseIndex)")
+                        .transition(.opacity)
+                        .contentTransition(.opacity)
 
                     Text("\(countdownSecs)")
                         .font(.system(size: 42, weight: .thin, design: .rounded))
@@ -241,10 +286,80 @@ public struct GuidedBreathingView: View {
                         .foregroundColor(isDark ? .white.opacity(0.6) : .black.opacity(0.6))
                 }
             }
-            .animation(.easeInOut(duration: 0.3), value: manager.isRunning)
-            .animation(.easeInOut(duration: 0.25), value: phase)
+            .animation(.spring(response: 0.35, dampingFraction: 0.82), value: manager.isRunning)
+            .animation(.spring(response: 0.35, dampingFraction: 0.82), value: phase)
         }
-        .frame(height: 280)
+        .frame(height: 300)
+        // Drive orbScale and ripple from phase/running changes
+        .onChange(of: phase) { _, newPhase in
+            guard manager.isRunning else { return }
+            let dur: Double
+            switch newPhase {
+            case .inhale:
+                dur = manager.selectedProtocol.activePhases.first(where: { $0.phase == .inhale })?.duration ?? 4
+            case .hold1:
+                dur = manager.selectedProtocol.activePhases.first(where: { $0.phase == .hold1 })?.duration ?? 2
+            case .exhale:
+                dur = manager.selectedProtocol.activePhases.first(where: { $0.phase == .exhale })?.duration ?? 6
+            case .hold2:
+                dur = manager.selectedProtocol.activePhases.first(where: { $0.phase == .hold2 })?.duration ?? 2
+            }
+            let spring: Animation = {
+                switch newPhase {
+                case .inhale:  return .spring(response: dur * 0.85, dampingFraction: 0.72)
+                case .hold1, .hold2: return .spring(response: 0.55, dampingFraction: 0.85)
+                case .exhale:  return .spring(response: dur * 0.88, dampingFraction: 0.68)
+                }
+            }()
+            let target: CGFloat = (newPhase == .inhale || newPhase == .hold1) ? 1.0 : 0.6
+            withAnimation(spring) { orbScale = target }
+            if newPhase == .inhale && !reduceMotion { rippleTrigger += 1 }
+        }
+        .onChange(of: manager.isRunning) { _, running in
+            if running {
+                // Session just started — set initial scale for the first inhale
+                withAnimation(.spring(response: 0.5, dampingFraction: 0.78)) { orbScale = 0.62 }
+            } else {
+                withAnimation(.spring(response: 0.6, dampingFraction: 0.85)) { orbScale = 0.7 }
+            }
+        }
+        .onAppear {
+            orbScale = manager.isRunning
+                ? ((manager.currentPhase == .inhale || manager.currentPhase == .hold1) ? 1.0 : 0.6)
+                : 0.7
+        }
+    }
+
+    // MARK: - Ripple Ring Helper
+
+    /// A single expanding+fading ring that fires when `trigger` changes.
+    private struct RippleRing: View {
+        let color: Color
+        let trigger: Int
+        let delay: Double
+
+        @State private var scale: CGFloat = 0.55
+        @State private var opacity: Double = 0.0
+
+        var body: some View {
+            Circle()
+                .strokeBorder(color.opacity(opacity), lineWidth: 1.5)
+                .frame(width: 210, height: 210)
+                .scaleEffect(scale)
+                .onChange(of: trigger) { _, _ in
+                    // Reset to starting state immediately (no animation), then expand+fade
+                    scale = 0.55
+                    opacity = 0.0
+                    withAnimation(.easeOut(duration: 2.2).delay(delay)) {
+                        scale = 1.65
+                        opacity = 0.0
+                    }
+                    // Kick opacity up at the very start of this ripple's window
+                    withAnimation(.easeIn(duration: 0.15).delay(delay)) {
+                        opacity = 0.45
+                    }
+                }
+        }
     }
 
     // MARK: - Controls
