@@ -11,6 +11,7 @@ public struct CalendarView: View {
     @AppStorage("theme_mode") private var themeMode = "dark"
 
     @ObservedObject private var ek = EventKitManager.shared
+    @ObservedObject private var streakEngine = StreakEngine.shared
 
     let onBack: () -> Void
     let onOpenWorkout: () -> Void
@@ -47,6 +48,9 @@ public struct CalendarView: View {
                     } else {
                         monthGrid
                     }
+
+                    streakBanner
+                        .padding(.top, 14)
 
                     sectionHeader(selectedDateLabel)
                     dayPlanCard
@@ -166,6 +170,93 @@ public struct CalendarView: View {
         }
     }
 
+    // MARK: - Streak helpers
+
+    /// Active week starts from StreakEngine (start-of-day, local).
+    private var activeWeekStarts: Set<Date> {
+        let cal = Calendar(identifier: .gregorian)
+        return Set(
+            streakEngine.weeklyActivity
+                .filter { $0.isActive }
+                .map { cal.startOfDay(for: $0.weekStart) }
+        )
+    }
+
+    /// True if `date` falls within a week that counts toward the streak.
+    private func isInStreakWeek(_ date: Date) -> Bool {
+        let cal = Calendar(identifier: .gregorian)
+        // Find Monday on or before this date.
+        var comps = cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
+        comps.weekday = 2
+        guard let monday = cal.date(from: comps) else { return false }
+        return activeWeekStarts.contains(cal.startOfDay(for: monday))
+    }
+
+    /// Flame color matching StreakCard logic.
+    private var flameColor: Color {
+        let s = streakEngine.currentStreak
+        if s == 0 { return .gray.opacity(0.5) }
+        if s < 4  { return .orange.opacity(0.85) }
+        if s < 13 { return .orange }
+        return Color(red: 1.0, green: 0.45, blue: 0.1)
+    }
+
+    // MARK: - Streak banner
+
+    private var streakBanner: some View {
+        HStack(spacing: 12) {
+            // Flame icon
+            Image(systemName: "flame.fill")
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundColor(flameColor)
+
+            // Current streak
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(alignment: .lastTextBaseline, spacing: 4) {
+                    Text("\(streakEngine.currentStreak)")
+                        .font(.system(size: 24, weight: .bold, design: .rounded))
+                        .foregroundColor(streakEngine.currentStreak > 0 ? flameColor : (isDark ? .white.opacity(0.35) : .black.opacity(0.35)))
+                        .monospacedDigit()
+                        .contentTransition(.numericText())
+                        .animation(.spring(response: 0.5, dampingFraction: 0.7), value: streakEngine.currentStreak)
+                    Text("week\(streakEngine.currentStreak == 1 ? "" : "s")")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(isDark ? .white.opacity(0.6) : .black.opacity(0.6))
+                }
+                Text("Current streak")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(isDark ? .white.opacity(0.45) : .black.opacity(0.45))
+            }
+
+            Spacer(minLength: 8)
+
+            // Best / longest streak
+            VStack(alignment: .trailing, spacing: 1) {
+                HStack(alignment: .lastTextBaseline, spacing: 3) {
+                    Image(systemName: "trophy.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.yellow)
+                    Text("\(streakEngine.longestStreak)")
+                        .font(.system(size: 20, weight: .bold, design: .rounded))
+                        .foregroundColor(isDark ? .white : .black)
+                        .monospacedDigit()
+                        .contentTransition(.numericText())
+                        .animation(.spring(response: 0.5, dampingFraction: 0.7), value: streakEngine.longestStreak)
+                    Text("wk")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(isDark ? .white.opacity(0.5) : .black.opacity(0.5))
+                }
+                Text("Best")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(isDark ? .white.opacity(0.45) : .black.opacity(0.45))
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 20))
+    }
+
     // MARK: - Subviews
     private var weekStrip: some View {
         let cal = Calendar.current
@@ -243,13 +334,19 @@ public struct CalendarView: View {
                         let isSel = cal.isDate(date, inSameDayAs: selectedDate)
                         let isToday = cal.isDateInToday(date)
                         let dayEvents = ek.events.filter { cal.isDate($0.startDate, inSameDayAs: date) }
+                        let isStreak = isInStreakWeek(date)
                         Button { selectedDate = date } label: {
                             VStack(spacing: 2) {
                                 Text("\(dayNumber)")
                                     .font(.system(size: 14, weight: (isToday || isSel) ? .bold : .medium))
                                     .foregroundColor(isSel ? .white : (isDark ? .white : .black))
                                 HStack(spacing: 2) {
-                                    ForEach(0..<min(dayEvents.count, 3), id: \.self) { _ in
+                                    if isStreak && !isSel {
+                                        Image(systemName: "flame.fill")
+                                            .font(.system(size: 5, weight: .bold))
+                                            .foregroundColor(flameColor.opacity(0.8))
+                                    }
+                                    ForEach(0..<min(dayEvents.count, 2), id: \.self) { _ in
                                         Circle()
                                             .fill(isSel ? Color.white : accentColor)
                                             .frame(width: 3, height: 3)
@@ -265,6 +362,9 @@ public struct CalendarView: View {
                                     } else if isToday {
                                         RoundedRectangle(cornerRadius: 10)
                                             .stroke(accentColor, lineWidth: 1.5)
+                                    } else if isStreak {
+                                        RoundedRectangle(cornerRadius: 10)
+                                            .fill(flameColor.opacity(0.10))
                                     } else {
                                         Color.clear
                                     }
