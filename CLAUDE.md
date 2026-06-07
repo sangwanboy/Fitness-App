@@ -13,12 +13,14 @@ Native iOS 26 Liquid Glass UI only.
 
 ## Git & deployment workflow — IMPORTANT
 
-**Commit and push after every meaningful unit of work.** Specifically, whenever:
-- a **new feature** is added,
-- a **bug / error** is fixed, or
-- a **new build is pushed** to the device.
+**Commit and push after ANY change to the codebase** — code, config, docs, assets,
+`project.yml`, etc. Don't batch unrelated work; one logical change per commit, pushed.
 
-Do this each time (in order):
+**Exception — logs don't need a push of their own.** Updating `agents_log.md` (or other
+log/handoff notes) is not, by itself, a reason to push. Fold the log update into the same
+commit as the code change it documents; never make a log-only commit just to push it.
+
+Do this for each codebase change (in order):
 
 1. **Key safety first — NEVER commit secrets.** Before staging, confirm the Google Cloud
    credential and any key material stay out of git:
@@ -30,10 +32,11 @@ Do this each time (in order):
      `git diff --cached -- '*.swift' '*.json' '*.plist' | grep -iE "PRIVATE KEY|private_key|AIza|MII[A-Za-z0-9+/]{40}"` should be empty.
    - The real `vertex-service-account.json` lives on disk only (gitignored). The outstanding
      action in `agents_log.md` — rotate GCP key `4d33d3bc…` for project `vertexi-ai-493516` — still stands.
-2. Commit with a clear Conventional-Commit message (`feat:`/`fix:`/`perf:`/`docs:`) describing the
+2. Update `agents_log.md` (the change + the new `databaseSequenceNumber` when a build was
+   deployed) and stage it alongside the code, so the log rides in the same commit.
+3. Commit with a clear Conventional-Commit message (`feat:`/`fix:`/`perf:`/`docs:`) describing the
    change, ending with the new `databaseSequenceNumber` when a build was deployed.
-3. `git push origin main`.
-4. Update `agents_log.md` (the change + the new sequence number).
+4. `git push origin main`.
 
 ## Build & deploy
 
