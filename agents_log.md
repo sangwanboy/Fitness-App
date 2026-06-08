@@ -2133,3 +2133,36 @@ stream (+ avg/peak HR in the summary, + onDisappear teardown). Workout HR now sh
 
 Latest deployed sequence: **2164** (device deploy of glitch fixes pending).
 
+---
+
+## Open items / handoff (as of 2026-06-07, end of session)
+
+Code on `main` is **green** (simulator build) and pushed (tip `4ac57c0`). Outstanding:
+
+1. **Device deploy of the glitch fixes is PENDING.** The phone went `unavailable` mid-session, so the
+   last build actually ON the iPhone is **seq 2164** (the four features). The glitch-sweep fixes
+   (commits `6d5e2dc`→`4ac57c0`) are committed + pushed + compile-green but **not yet installed**.
+   To deploy when the phone is reachable + unlocked: device build → `xcrun devicectl device install` →
+   `launch`; record the new `databaseSequenceNumber`.
+
+2. **Hydration logging — still undiagnosed.** User reports logging water fails. Console captures kept
+   failing because the phone auto-locks (HealthKit encrypted + launch blocked while locked). Open
+   question to resolve it: when tapping the Hydration card "+", does the Glass/Bottle/Large menu
+   appear? menu-appears → it's a write-permission issue (Water write not granted); nothing-happens →
+   the +-menu/Menu hit-testing isn't firing. The new widget `log_water` button reuses the same
+   `HealthKitManager.logMetricValue(.hydration)` path, so it's a second probe of the same path.
+
+3. **Deferred glitch (low risk): dashboard workout-ring staleness.** Root cause clarified this session —
+   Home has a **two-tier refresh**: (a) the 15s silent poll calls only `fetchTodayData()` = live
+   metrics + predictions; (b) `refreshAllData()` (DashboardView ~549) is the heavyweight pass that also
+   pulls last-7-days workouts (→ `workoutDates`, the per-day workout markers), recomputes the streak,
+   and fetches EventKit calendar + reminders. `refreshAllData()` runs on `.onAppear` behind a **5-min
+   staleness gate** (line 308) and on pull-to-refresh (ungated). So a just-saved workout only updates
+   `workoutDates` via the gated path → the completion marker can lag up to 5 min. Fix: after a workout
+   saves, invalidate the gate (`lastRefreshed = nil`) / call `refreshAllData()`, or fold `workoutDates`
+   into the 15s sync.
+
+**Process note:** glitch-sweep fixer agents auto-ran `git commit`/`push` (and pushed two compile-broken
+commits, repaired forward). FUTURE workflow agent prompts MUST explicitly forbid git operations — agents
+edit files only; the orchestrator builds, reviews, commits, and deploys.
+
