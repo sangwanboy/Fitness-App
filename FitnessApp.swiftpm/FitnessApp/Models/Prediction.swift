@@ -228,6 +228,10 @@ public struct HealthMeterScore: Codable, Equatable {
     /// Whether the user has actual nutrition data — if false, nutrition
     /// sub-score is a neutral estimate and the card flags it.
     public let usedNutrition: Bool
+    /// Whether any meal was logged TODAY. `usedNutrition` can be true off the
+    /// 7-day window alone — surfaces must not claim food was logged today
+    /// unless this is also true.
+    public let mealsLoggedToday: Bool
     /// Whether the user has height + weight to compute BMI — if false, body
     /// sub-score is a neutral estimate.
     public let usedBMI: Bool
@@ -236,7 +240,7 @@ public struct HealthMeterScore: Codable, Equatable {
                 activityScore: Int, nutritionScore: Int, bodyScore: Int,
                 vitalsScore: Int,
                 explanation: PredictionExplanation,
-                usedNutrition: Bool, usedBMI: Bool) {
+                usedNutrition: Bool, mealsLoggedToday: Bool, usedBMI: Bool) {
         self.score = score
         self.label = label
         self.confidence = confidence
@@ -246,6 +250,7 @@ public struct HealthMeterScore: Codable, Equatable {
         self.vitalsScore = vitalsScore
         self.explanation = explanation
         self.usedNutrition = usedNutrition
+        self.mealsLoggedToday = mealsLoggedToday
         self.usedBMI = usedBMI
     }
 }

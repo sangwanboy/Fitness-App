@@ -590,7 +590,8 @@ public enum PredictionEngine {
         // ---------- Nutrition sub-score (0...25) ----------
         // Intake-to-TDEE ratio + hydration + protein adequacy.
         let intake7 = s.dietaryCalories7Day.filter { $0 > 0 }
-        let usedNutrition = !intake7.isEmpty || s.dietaryCaloriesToday > 0
+        let mealsLoggedToday = s.dietaryCaloriesToday > 0
+        let usedNutrition = !intake7.isEmpty || mealsLoggedToday
         var nutritionRaw: Double = 12  // neutral default when no diet data
 
         if usedNutrition {
@@ -735,6 +736,7 @@ public enum PredictionEngine {
             vitalsScore: vitalsFinal,
             explanation: PredictionExplanation(bullets: Array(bullets.prefix(4))),
             usedNutrition: usedNutrition,
+            mealsLoggedToday: mealsLoggedToday,
             usedBMI: usedBMI
         )
     }

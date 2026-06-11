@@ -410,7 +410,7 @@ public actor PredictionAIService {
     nonisolated static func predictionsSummary(_ p: Predictions) -> String {
         var lines: [String] = []
         if let m = p.healthMeter {
-            lines.append("Health Meter: \(m.score)/100 (\(m.label.headline)) confidence=\(m.confidence.rawValue) — Activity \(m.activityScore)/30, Nutrition \(m.nutritionScore)/30 (logged=\(m.usedNutrition)), Body \(m.bodyScore)/18 (BMI=\(m.usedBMI)), Vitals \(m.vitalsScore)/22")
+            lines.append("Health Meter: \(m.score)/100 (\(m.label.headline)) confidence=\(m.confidence.rawValue) — Activity \(m.activityScore)/30, Nutrition \(m.nutritionScore)/30 (hasMealData=\(m.usedNutrition), mealsLoggedToday=\(m.mealsLoggedToday)), Body \(m.bodyScore)/18 (BMI=\(m.usedBMI)), Vitals \(m.vitalsScore)/22")
         }
         if let r = p.recovery {
             lines.append("Recovery: \(r.score)/100 (\(r.label.headline)) confidence=\(r.confidence.rawValue) usedHRV=\(r.usedHRV) usedRHR=\(r.usedRHR)")
@@ -466,7 +466,7 @@ public actor PredictionAIService {
                 detail = """
                 Total score: \(m.score)/100 (\(m.label.headline), \(m.confidence.rawValue) confidence)
                 Activity: \(m.activityScore)/30
-                Nutrition: \(m.nutritionScore)/30 (usedNutrition=\(m.usedNutrition))
+                Nutrition: \(m.nutritionScore)/30 (hasMealData=\(m.usedNutrition), mealsLoggedToday=\(m.mealsLoggedToday))\(m.usedNutrition && !m.mealsLoggedToday ? " — score is from the last 7 days; the user has NOT logged any food today, never claim they did" : "")
                 Body composition: \(m.bodyScore)/18 (usedBMI=\(m.usedBMI))
                 Vitals: \(m.vitalsScore)/22
                 Bullets: \(m.explanation.bullets.joined(separator: " | "))

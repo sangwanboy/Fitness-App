@@ -2166,3 +2166,45 @@ Code on `main` is **green** (simulator build) and pushed (tip `4ac57c0`). Outsta
 commits, repaired forward). FUTURE workflow agent prompts MUST explicitly forbid git operations — agents
 edit files only; the orchestrator builds, reviews, commits, and deploys.
 
+---
+
+## Session 33 — 2026-06-11 (Health Meter "meals logged today" honesty fix + device deploy)
+
+### Bug
+User: Health Meter implied a meal was logged today when none was. Root cause:
+`PredictionEngine.computeHealthMeter` set `usedNutrition = !intake7.isEmpty || dietaryCaloriesToday > 0`
+— true off the **last 7 days** alone. Every surface then presented nutrition as "logged" with no time
+qualifier: the card dropped its "no meals logged" tag, and the AI contexts said `logged=true` /
+omitted the neutral-estimate note, so Astra + the Why sheet could claim food was logged **today**.
+(Date windows themselves were correct — `fetchTodaySum` buckets from `startOfDay`.)
+
+### Fix — distinguish "has meal data this week" from "logged a meal today"
+- `Models/Prediction.swift` — `HealthMeterScore` gains `mealsLoggedToday: Bool` (+ init param).
+  `Predictions` is never decoded from disk, so the Codable field add is safe; `ContentSignature`
+  carries the whole struct so diff-gating picks it up automatically.
+- `Services/PredictionEngine.swift` — computes `mealsLoggedToday = s.dietaryCaloriesToday > 0` and
+  passes it through. Scoring unchanged (7-day average remains the right basis for the sub-score).
+- `Views/Components/PredictionsCard.swift` — HealthMeterRow tag is now three-state: no data at all →
+  "· no meals logged"; data this week but none today → "· no meals today"; logged today → no tag.
+- `ViewModels/ChatViewModel.swift` `predictionsFullBlock` — nutrition line now appends
+  "(from last 7 days — NO meals logged TODAY; never claim the user ate or logged food today)" when
+  applicable, so every Coach turn carries the guard inline.
+- `Services/PredictionAIService.swift` — `predictionsSummary` (daily insight / actions / anomalies)
+  and the Why-sheet `whyPrompt` healthMeter detail both emit `hasMealData=` + `mealsLoggedToday=`,
+  with the same explicit never-claim instruction on the Why path.
+- Note: the per-calendar-day AI enrichment cache means an already-generated daily insight from before
+  this build keeps its old text until midnight or a pull-to-refresh (which invalidates the cache).
+
+### Build / deploy
+- Simulator + device **BUILD SUCCEEDED**, zero errors. Installed AND launched via `xcrun devicectl`.
+- This deploy also brings the Session 32 glitch-sweep fixes (commits `6d5e2dc`→`4ac57c0`) onto the
+  device — open item 1 from the 2026-06-07 handoff is now closed.
+- **databaseSequenceNumber: 2644**.
+
+### Still open (carried from 2026-06-07 handoff)
+- Hydration logging report (needs one unlocked-device observation: does the +-menu appear?).
+- Dashboard workout-ring staleness (deferred, low risk).
+- Rotate GCP key `4d33d3bc…` for project `vertexi-ai-493516`.
+
+Latest deployed sequence: **2644**.
+

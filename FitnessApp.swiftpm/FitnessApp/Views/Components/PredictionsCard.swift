@@ -388,6 +388,10 @@ private struct HealthMeterRow: View {
                             Text("· no meals logged")
                                 .font(.system(size: 10, weight: .medium))
                                 .foregroundColor(isDark ? .white.opacity(0.45) : .black.opacity(0.45))
+                        } else if !meter.mealsLoggedToday {
+                            Text("· no meals today")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundColor(isDark ? .white.opacity(0.45) : .black.opacity(0.45))
                         }
                         if !meter.usedBMI {
                             Text("· no height/weight")
