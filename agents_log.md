@@ -2315,3 +2315,38 @@ Two small Sonnet workflows (orchestrator: scouting, frozen designs, review, buil
 
 Latest deployed sequence: **2660**.
 
+---
+
+## Session 36 — 2026-06-12 (Distance chart giant-circle fix + detail-popup polish for all metrics)
+
+### Bug (user screenshot)
+Distance detail popup rendered enormous green circles sweeping across the whole screen, escaping the
+chart card. Root cause (latent since Session 23, NOT a regression from seq 2660): Swift Charts'
+`.symbolSize(40)` does NOT constrain CUSTOM `.symbol { }` closures — the unframed
+`Circle().strokeBorder(...)` got an unbounded size proposal, drawing one giant circle per data point.
+Diagnosed by orchestrator (git-diff of the branch pre/post proved the code was unchanged); fix
+dispatched to a Sonnet workflow (`detail-popup-polish`).
+
+### Fixes (MetricChart.swift + DetailedMetricView.swift)
+- Custom symbol now has an explicit `.frame(width: 8, height: 8)`; bare `.symbolSize(40)` removed.
+  File audited — the only other symbol usage is the safe named `.symbol(.circle)` form.
+  **Lesson for future agents: never use a custom `.symbol { }` closure without an explicit frame.**
+- `mainStatLabel` now exhaustive over every HealthMetricType: TOTAL only for cumulative metrics,
+  "LAST NIGHT" for sleep, "TODAY'S AVERAGE" for intraday averages (HR, walking gait, SpO₂, audio…),
+  "LATEST READING" for point-in-time (HRV, bodyMass, VO₂max).
+- Goal chip ("N% remaining to goal") now gated on `isUserConfigurableGoal` — observational metrics
+  (weight, walking speed, headphone audio, gait, SpO₂, VO₂max, resting energy) no longer show a
+  meaningless chip.
+- Fake-glass capsule chips in the popup (goal chip, HR Zones button) → native `.glassEffect`.
+- Weekly Average / Peak rows + chart tooltip now share metric-aware value formatting mirroring
+  `displayValueString` (no more "3 mi/hr" from 2.5; %.2f for distance/bodyMass, %.1f for the rest
+  of the decimal metrics).
+- Sleep weekly average skips zero (untracked) nights.
+- Close button got `.accessibilityLabel("Close")`.
+
+### Build / deploy
+- Simulator + device **BUILD SUCCEEDED**, zero errors. Installed AND launched via `xcrun devicectl`.
+- **databaseSequenceNumber: 2668**.
+
+Latest deployed sequence: **2668**.
+

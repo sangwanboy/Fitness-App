@@ -59,6 +59,7 @@ public struct DetailedMetricView: View {
                                 .padding(12)
                                 .glassEffect(.regular.interactive(), in: .circle)
                         }
+                        .accessibilityLabel("Close")
                         .buttonStyle(InteractiveButtonStyle(scale: 0.9))
                     }
                     .padding(.horizontal)
@@ -84,19 +85,18 @@ public struct DetailedMetricView: View {
                         }
                         
                         // Status indicator
-                        if summary.type != .heartRate && summary.type != .hrv {
+                        if summary.type.isUserConfigurableGoal {
                             HStack(spacing: 8) {
                                 Image(systemName: summary.percentComplete >= 1.0 ? "checkmark.circle.fill" : "arrow.up.circle.fill")
                                     .foregroundColor(summary.percentComplete >= 1.0 ? .green : summary.type.themeColor)
-                                
+
                                 Text(summary.percentComplete >= 1.0 ? "Daily goal achieved!" : "\(String(format: "%.0f%%", (1.0 - summary.percentComplete) * 100)) remaining to goal")
                                     .font(.caption)
                                     .foregroundColor(isDark ? .white.opacity(0.8) : .black.opacity(0.8))
                             }
                             .padding(.vertical, 6)
                             .padding(.horizontal, 12)
-                            .background(isDark ? Color.white.opacity(0.04) : Color.black.opacity(0.04))
-                            .clipShape(Capsule())
+                            .glassEffect(.regular, in: .capsule)
                         } else if summary.type == .heartRate {
                             HStack(spacing: 10) {
                                 Text(restingHRLabel)
@@ -113,8 +113,7 @@ public struct DetailedMetricView: View {
                                     .foregroundColor(.red)
                                     .padding(.horizontal, 9)
                                     .padding(.vertical, 4)
-                                    .background(Color.red.opacity(0.12))
-                                    .clipShape(Capsule())
+                                    .glassEffect(.regular.tint(.red.opacity(0.12)).interactive(), in: .capsule)
                                 }
                                 .buttonStyle(PlainButtonStyle())
                             }
@@ -154,16 +153,16 @@ public struct DetailedMetricView: View {
                             Label("Weekly Average", systemImage: "chart.bar.fill")
                                 .foregroundColor(isDark ? .white.opacity(0.8) : .black.opacity(0.8))
                             Spacer()
-                            Text("\(String(format: (summary.type == .sleep || summary.type == .hydration) ? "%.1f" : summary.type == .distance ? "%.2f" : "%.0f", weeklyAverage)) \(summary.type.unit)")
+                            Text("\(formattedMetricValue(weeklyAverage)) \(summary.type.unit)")
                                 .fontWeight(.semibold)
                                 .foregroundColor(isDark ? .white : .black)
                         }
-                        
+
                         HStack {
                             Label("Weekly Peak", systemImage: "arrow.up.right.circle.fill")
                                 .foregroundColor(isDark ? .white.opacity(0.8) : .black.opacity(0.8))
                             Spacer()
-                            Text("\(String(format: (summary.type == .sleep || summary.type == .hydration) ? "%.1f" : summary.type == .distance ? "%.2f" : "%.0f", weeklyPeak)) \(summary.type.unit)")
+                            Text("\(formattedMetricValue(weeklyPeak)) \(summary.type.unit)")
                                 .fontWeight(.semibold)
                                 .foregroundColor(isDark ? .white : .black)
                         }
@@ -189,12 +188,24 @@ public struct DetailedMetricView: View {
     /// Header label for the main stat card — metric-aware.
     private var mainStatLabel: String {
         switch summary.type {
-        case .heartRate:
+        // Cumulative daily totals
+        case .steps, .activeEnergy, .restingEnergy, .distance, .hydration,
+             .flightsClimbed, .exerciseMinutes, .standHours, .mindfulMinutes:
+            return "TODAY'S TOTAL"
+        case .sleep:
+            return "LAST NIGHT"
+        // Intraday averages
+        case .heartRate, .walkingSpeed, .walkingStepLength,
+             .walkingDoubleSupport, .walkingAsymmetry, .headphoneAudio,
+             .oxygenSaturation:
             return "TODAY'S AVERAGE"
+        // Point-in-time / physiological readings
         case .hrv:
             return "LATEST READING"
-        default:
-            return "TODAY'S TOTAL"
+        case .restingHeartRate:
+            return "TODAY'S AVERAGE"
+        case .bodyMass, .vo2Max:
+            return "LATEST READING"
         }
     }
 
@@ -229,10 +240,23 @@ public struct DetailedMetricView: View {
     }
     
     private var weeklyAverage: Double {
-        let hist = weeklyHistory
+        let hist = summary.type == .sleep
+            ? weeklyHistory.filter { $0.value > 0 }
+            : weeklyHistory
         guard !hist.isEmpty else { return 0 }
-        let total = hist.map { $0.value }.reduce(0, +)
-        return total / Double(hist.count)
+        return hist.map { $0.value }.reduce(0, +) / Double(hist.count)
+    }
+
+    private func formattedMetricValue(_ value: Double) -> String {
+        switch summary.type {
+        case .sleep, .hydration, .vo2Max, .walkingSpeed,
+             .walkingDoubleSupport, .walkingAsymmetry:
+            return String(format: "%.1f", value)
+        case .distance, .bodyMass:
+            return String(format: "%.2f", value)
+        default:
+            return String(format: "%.0f", value)
+        }
     }
     
     private var weeklyPeak: Double {

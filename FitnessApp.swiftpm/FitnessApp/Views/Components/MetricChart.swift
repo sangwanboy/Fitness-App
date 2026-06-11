@@ -92,7 +92,7 @@ public struct MetricChart: View {
 
                     Spacer()
 
-                    Text("\(String(format: (type == .sleep || type == .hydration) ? "%.1f" : type == .distance ? "%.2f" : "%.0f", selectedPoint.value)) \(type.unit)")
+                    Text("\(formattedValue(selectedPoint.value)) \(type.unit)")
                         .font(.system(size: 14, weight: .bold, design: .rounded))
                         .foregroundColor(type.themeColor)
                 }
@@ -181,8 +181,8 @@ public struct MetricChart: View {
                         .foregroundStyle(type.themeColor)
                         .symbol {
                             Circle().strokeBorder(type.themeColor, lineWidth: 2)
+                                .frame(width: 8, height: 8)
                         }
-                        .symbolSize(40)
                         .interpolationMethod(.monotone)
 
                     default:
@@ -264,6 +264,18 @@ public struct MetricChart: View {
             }
         } else {
             return chartData.first { Calendar.current.isDate($0.date, inSameDayAs: selectedDate) }
+        }
+    }
+
+    func formattedValue(_ value: Double) -> String {
+        switch type {
+        case .sleep, .hydration, .vo2Max, .walkingSpeed,
+             .walkingDoubleSupport, .walkingAsymmetry:
+            return String(format: "%.1f", value)
+        case .distance, .bodyMass:
+            return String(format: "%.2f", value)
+        default:
+            return String(format: "%.0f", value)
         }
     }
 
