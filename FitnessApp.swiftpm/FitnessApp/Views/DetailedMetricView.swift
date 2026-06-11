@@ -66,7 +66,7 @@ public struct DetailedMetricView: View {
                     
                     // Large Main Stat Card
                     VStack(spacing: 12) {
-                        Text("TODAY'S TOTAL")
+                        Text(mainStatLabel)
                             .font(.system(size: 11, weight: .bold))
                             .foregroundColor(isDark ? .white.opacity(0.5) : .black.opacity(0.5))
                             .tracking(1.5)
@@ -186,6 +186,18 @@ public struct DetailedMetricView: View {
         }
     }
     
+    /// Header label for the main stat card — metric-aware.
+    private var mainStatLabel: String {
+        switch summary.type {
+        case .heartRate:
+            return "TODAY'S AVERAGE"
+        case .hrv:
+            return "LATEST READING"
+        default:
+            return "TODAY'S TOTAL"
+        }
+    }
+
     /// Label shown under the heart-rate main stat.
     /// Uses the resting-HR summary's currentValue (populated by HealthKit's .restingHeartRate query).
     private var restingHRLabel: String {

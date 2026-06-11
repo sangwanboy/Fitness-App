@@ -2208,3 +2208,73 @@ omitted the neutral-estimate note, so Astra + the Why sheet could claim food was
 
 Latest deployed sequence: **2644**.
 
+---
+
+## Session 34 — 2026-06-11 (Full-app multi-agent audit + fix: 46 confirmed findings)
+
+### Process
+Two-workflow operation, orchestrator (Fable) doing planning/architecture only, heavy work on Sonnet:
+- **Audit workflow** (`full-app-audit`, 72 agents, ~2.7M tokens, 22 min): 10 parallel Sonnet finder
+  lenses (crash-safety, SwiftUI state, honest-data, glass conventions, HealthKit, Vertex/Gemini, perf,
+  concurrency, UX polish, known open items) → dedup (95 raw → 83) → adversarial skeptic verification
+  (Sonnet; Opus only on concurrency/Vertex claims): **46 confirmed, 16 rejected, 21 unverified lows**.
+- **Fix workflow** (`full-app-fix`, 10 fixers on disjoint file clusters: 9 Sonnet + 1 Fable for the
+  chat/Vertex core). First run died on session rate limit mid-edit; re-ran with "drive to end state"
+  instructions — all 10 clusters completed, finishing or confirming the partial edits.
+  Cross-cluster contract frozen up front: `logMetricValue(type:value:start:end:) async -> Bool`.
+
+### Highlights of what was fixed (32 files, +478/−328)
+- **WorkoutTrackerView: 3 stacked `.sheet(isPresented:)` modifiers** — only the last ever worked, so
+  the Analytics and HR Zones sheets NEVER presented. Now one `ActiveSheet` enum + `.sheet(item:)`.
+- **Hydration logging (open item CLOSED at the code level)**: `logMetricValue` returned nothing and
+  swallowed all HK write errors; HydrationCard's + menu gave zero feedback. Now returns success Bool,
+  HydrationCard fires a haptic on success and shows an alert pointing at Health write permission on
+  failure. Steps/distance writes accept a start/end interval (workout steps now span the workout —
+  no more zero-duration point samples that double-count vs Watch).
+- **Workout-ring staleness (open item CLOSED)**: WorkoutTrackerView posts `fg.workout.saved`;
+  DashboardView observes it, nils the 5-min gate, refreshes immediately.
+- **Chat core (Fable cluster)**: cancelToolCall no longer double-streams (isGenerating guard set
+  synchronously); sendFollowup now auto-executes chained read tools (get_predictions → list_reminders
+  chains no longer stall); 120s watchdog Task cancelled on stream termination (was outliving every
+  response); VertexAuth token cache now NSLock-guarded; Coach system prompt now includes daily macro
+  goals (goal_macro_calories etc.) so Astra can coach against them.
+- **Honest data**: SettingsView HR/HRV mock fallbacks → "—"; HeartRateZonesView "60 bpm" fallback →
+  "— (estimated)"; DetailedMetricView "TODAY'S TOTAL" is now metric-aware (AVERAGE / LATEST READING);
+  HR zones now use the most recent RHR reading instead of the 30-day average (orchestrator hardened
+  the 0-value fallback).
+- **Glass sweep**: InsightMiniStat, FoodReviewSheet (flat black → AdaptiveBackground), FoodCameraView
+  upload button, GuidedBreathingView buttons, SleepModeView end button, DailyChallenge fills,
+  NutritionDashboard sticky bar — all to native `.glassEffect`.
+- **Crash safety**: TrainingLoadEngine computeWeekStreak force-unwraps (ran on every HK refresh),
+  SleepSessionManager `window.first!`.
+- **Perf**: DashboardView 17-case @ViewBuilder switch split (type-checker limit); CalendarView month
+  grid O(1) lookups + formatter statics; DateFormatter hoisting across Dashboard/ToolCards/Nutrition/
+  ProgressHub; WorkoutAnalyticsView O(n²) rolling mean → single O(n) pass; BreathingSessionManager
+  haptic generator reuse with prepare().
+- **Wiring**: MacroRingCards no-op buttons → open goals editor; ChallengeEngine.refreshProgress() +
+  StreakEngine.refresh() now fire after data loads; dead `bg_style` AppStorage + unreachable
+  background branches deleted; deprecated single-param onChange migrated everywhere (orchestrator
+  finished ContentView + WidgetsCard stragglers — build now has ZERO deprecation warnings).
+- NutritionDashboardView MacroRingCards, accessibility labels added across Dashboard/Chat/Nutrition
+  toolbars; PulsingThinkingLabel animation now stops onDisappear; SleepTrackingCard subtitle wraps at
+  large Dynamic Type.
+
+### Skipped honestly by fixers (verified not-issues)
+StreakView badge fill (decorative icon, not fake glass), StreakEngine UserDefaults-in-detached-Task
+(value-copy, no isolation issue), DailyChallengeView countdown pill (already native glass).
+
+### Build / deploy
+- Simulator **BUILD SUCCEEDED**, zero errors, zero deprecation warnings.
+- **Device deploy PENDING** — iPhone reported `unavailable` (asleep/disconnected) at session end.
+  Last build on the phone remains seq **2644** (Health Meter fix). Deploy this commit when reachable:
+  device build → `xcrun devicectl device install` → launch → record new sequence number.
+
+### Still open
+- Device deploy of this commit (above).
+- Hydration logging: code-level fix shipped (error surfacing + haptic). Needs one on-device check —
+  if the alert appears, grant Water write permission in Settings > Health; if no menu appears at all,
+  report back (hit-testing would then be the suspect, though none was found in audit).
+- Rotate GCP key `4d33d3bc…` for project `vertexi-ai-493516` (longstanding).
+
+Latest deployed sequence: **2644** (this session's fixes not yet on device).
+

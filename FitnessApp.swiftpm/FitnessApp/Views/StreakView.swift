@@ -33,10 +33,9 @@ public struct StreakView: View {
     }
 
     /// 12 most-recent weeks for the calendar grid, oldest → newest.
+    /// Cached via a separate computed property on the already-sorted engine data.
     private var last12Weeks: [WeekActivity?] {
-        let sorted = engine.weeklyActivity.sorted { $0.weekStart < $1.weekStart }
-        let real   = Array(sorted.suffix(12))
-        // Pad with nils at the front if we have fewer than 12.
+        let real = Array(engine.weeklyActivity.suffix(12))
         let padding = Array(repeating: nil as WeekActivity?, count: max(0, 12 - real.count))
         return padding + real.map { Optional($0) }
     }
@@ -288,14 +287,16 @@ public struct StreakView: View {
         let placeholder = StreakBadge(id: milestone, earnedDate: Date())
 
         ZStack {
-            RoundedRectangle(cornerRadius: 14)
-                .fill(
-                    earned
-                        ? placeholder.badgeColor.opacity(0.15)
-                        : (isDark ? Color.white.opacity(0.05) : Color.black.opacity(0.04))
-                )
-                .glassEffect(.regular, in: .rect(cornerRadius: 14))
+            Color.clear
                 .frame(width: 100, height: 118)
+                .glassEffect(
+                    .regular.tint(
+                        earned
+                            ? placeholder.badgeColor.opacity(0.15)
+                            : (isDark ? Color.white.opacity(0.05) : Color.black.opacity(0.04))
+                    ),
+                    in: .rect(cornerRadius: 14)
+                )
 
             VStack(spacing: 8) {
                 ZStack {

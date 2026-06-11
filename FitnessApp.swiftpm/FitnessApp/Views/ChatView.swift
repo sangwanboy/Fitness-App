@@ -23,7 +23,6 @@ public struct ChatView: View {
     
     @AppStorage("accent_color") private var accentColorHex = "#30D158"
     @AppStorage("theme_mode") private var themeMode = "dark"
-    @AppStorage("glass_strength") private var glassStrength = "moderate"
     @AppStorage("thinking_level") private var thinkingLevel = "medium"
     
     private var isDark: Bool { themeMode == "dark" }
@@ -74,17 +73,17 @@ public struct ChatView: View {
                 }
                 .scrollContentBackground(.hidden)
                 .background(AdaptiveBackground())
-                .onChange(of: viewModel.messages.count) { _ in scrollToBottom(proxy: proxy) }
-                .onChange(of: viewModel.isGenerating) { _ in scrollToBottom(proxy: proxy) }
+                .onChange(of: viewModel.messages.count) { scrollToBottom(proxy: proxy) }
+                .onChange(of: viewModel.isGenerating) { scrollToBottom(proxy: proxy) }
                 .onAppear {
                     scrollToBottom(proxy: proxy)
                     consumePrefillIfAny()
                     consumeComposerSeedIfAny()
                 }
-                .onChange(of: prefillBus.pendingPrompt) { _ in
+                .onChange(of: prefillBus.pendingPrompt) {
                     consumePrefillIfAny()
                 }
-                .onChange(of: prefillBus.composerSeed) { _ in
+                .onChange(of: prefillBus.composerSeed) {
                     consumeComposerSeedIfAny()
                 }
             }
@@ -242,10 +241,12 @@ public struct ChatView: View {
                     Image(systemName: "brain")
                         .foregroundStyle(accentColor)
                 }
+                .accessibilityLabel("Thinking level")
 
                 Button(action: { showClearAlert = true }) {
                     Image(systemName: "trash")
                 }
+                .accessibilityLabel("Clear chat")
             }
         }
         .sheet(isPresented: $showHistorySheet) {
@@ -267,7 +268,7 @@ public struct ChatView: View {
             // Leaving the Coach tab archives the live conversation too.
             viewModel.archiveCurrent()
         }
-        .onChange(of: photoItem) { newItem in
+        .onChange(of: photoItem) { _, newItem in
             guard let newItem else { return }
             isStagingImage = true
             Task {
@@ -284,7 +285,7 @@ public struct ChatView: View {
                 stageImage(ui)
             }
         }
-        .onChange(of: cameraImage) { newImage in
+        .onChange(of: cameraImage) { _, newImage in
             if let newImage { stageImage(newImage); cameraImage = nil }
         }
         .confirmationDialog("Add a photo", isPresented: $showImageSourceDialog, titleVisibility: .visible) {

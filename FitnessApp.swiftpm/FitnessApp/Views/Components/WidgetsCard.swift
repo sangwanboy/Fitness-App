@@ -680,7 +680,7 @@ private struct RampingNumber: View {
                 displayed = target
             }
         }
-        .onChange(of: target) { newTarget in
+        .onChange(of: target) { _, newTarget in
             withAnimation(.spring(response: 0.5, dampingFraction: 0.75)) {
                 displayed = newTarget
             }
@@ -784,7 +784,7 @@ private struct RingBlockView: View {
                 fillProgress = target
             }
         }
-        .onChange(of: target) { newTarget in
+        .onChange(of: target) { _, newTarget in
             withAnimation(.spring(response: 0.6, dampingFraction: 0.85)) {
                 fillProgress = newTarget
             }

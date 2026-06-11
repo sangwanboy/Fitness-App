@@ -43,17 +43,22 @@ public actor VertexGeminiClient {
             // Total wall-clock timeout: if the request task is still running 120s
             // after it started, cancel it. Combined with the 60s idle timeout on the
             // URLRequest, this means the LLM cannot pin the chat open indefinitely.
-            Task {
+            // onTermination fires on finish, error, AND early consumer drop (e.g.
+            // the view model returning on a tool call), so the watchdog never
+            // outlives the stream it guards.
+            let watchdog = Task {
                 try? await Task.sleep(nanoseconds: 120_000_000_000)
-                if !work.isCancelled {
-                    work.cancel()
-                    continuation.finish(throwing: NSError(
-                        domain: "VertexGeminiClient", code: 408,
-                        userInfo: [NSLocalizedDescriptionKey: "LLM timed out after 2 minutes."]))
-                }
+                guard !Task.isCancelled, !work.isCancelled else { return }
+                work.cancel()
+                continuation.finish(throwing: NSError(
+                    domain: "VertexGeminiClient", code: 408,
+                    userInfo: [NSLocalizedDescriptionKey: "LLM timed out after 2 minutes."]))
             }
 
-            continuation.onTermination = { _ in work.cancel() }
+            continuation.onTermination = { _ in
+                work.cancel()
+                watchdog.cancel()
+            }
         }
     }
 

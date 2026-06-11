@@ -90,7 +90,10 @@ public struct ProgressHubView: View {
             let isStale = lastRefreshed.map { Date().timeIntervalSince($0) > 300 } ?? true
             guard isStale else { return }
             lastRefreshed = Date()
-            Task { try? await hk.fetchTodayData() }
+            Task {
+                try? await hk.fetchTodayData()
+                await MainActor.run { streakEngine.refresh() }
+            }
         }
         // --- Sheets ---
         .sheet(isPresented: $showStreak)           { StreakView() }
@@ -539,9 +542,11 @@ public struct ProgressHubView: View {
 
     // MARK: - Helpers
 
+    private static let subtitleDateFormatter: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "EEEE, MMM d"; return f
+    }()
+
     private func currentDateString() -> String {
-        let f = DateFormatter()
-        f.dateFormat = "EEEE, MMM d"
-        return f.string(from: Date())
+        Self.subtitleDateFormatter.string(from: Date())
     }
 }

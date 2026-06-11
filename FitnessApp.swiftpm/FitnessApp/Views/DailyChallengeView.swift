@@ -21,7 +21,7 @@ public struct DailyChallengeView: View {
     public init() {}
 
     public var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 AdaptiveBackground()
 
@@ -130,7 +130,7 @@ public struct DailyChallengeView: View {
             .foregroundColor(color)
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
-            .background(color.opacity(0.12).clipShape(Capsule()))
+            .glassEffect(.regular.tint(color.opacity(0.12)), in: .capsule)
         }
         .padding(20)
         .frame(maxWidth: .infinity)
@@ -305,8 +305,7 @@ public struct DailyChallengeView: View {
                 .foregroundColor(color)
         }
         .padding(12)
-        .background(color.opacity(0.06).clipShape(RoundedRectangle(cornerRadius: 14)))
-        .glassEffect(.regular, in: .rect(cornerRadius: 14))
+        .glassEffect(.regular.tint(color.opacity(0.06)), in: .rect(cornerRadius: 14))
     }
 
     // MARK: - Loading

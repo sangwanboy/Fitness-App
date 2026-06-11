@@ -289,6 +289,7 @@ public struct PredictionsCard: View {
 
 private struct PulsingThinkingLabel: View {
     @State private var opacity: Double = 1.0
+    @State private var animating = false
     var body: some View {
         Text("Thinking…")
             .font(.system(size: 11, weight: .semibold))
@@ -296,9 +297,14 @@ private struct PulsingThinkingLabel: View {
             .tracking(0.3)
             .opacity(opacity)
             .onAppear {
+                animating = true
                 withAnimation(.easeInOut(duration: 0.95).repeatForever(autoreverses: true)) {
                     opacity = 0.35
                 }
+            }
+            .onDisappear {
+                animating = false
+                opacity = 1.0
             }
             .accessibilityLabel("AI insights loading")
     }

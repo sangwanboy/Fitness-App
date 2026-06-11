@@ -4,6 +4,10 @@ import Security
 public class VertexAuth {
     public static let shared = VertexAuth()
 
+    /// Guards the cached-token fields below — getAccessToken is hit
+    /// concurrently from chat, vision, and prediction services. Never held
+    /// across an await.
+    private let cacheLock = NSLock()
     private var cachedToken: String?
     private var tokenExpiry: Date?
     private var cachedClientEmail: String?  // invalidate cache if user pastes a different key
@@ -12,17 +16,23 @@ public class VertexAuth {
 
     public func getAccessToken() async throws -> String {
         let (sa, _) = try VertexConfig.current()
-        if let token = cachedToken,
-           let expiry = tokenExpiry,
-           expiry > Date(),
-           cachedClientEmail == sa.clientEmail {
+        cacheLock.lock()
+        let cached: String? = {
+            guard let token = cachedToken,
+                  let expiry = tokenExpiry,
+                  expiry > Date(),
+                  cachedClientEmail == sa.clientEmail else { return nil }
             return token
-        }
+        }()
+        cacheLock.unlock()
+        if let cached { return cached }
         return try await refreshAccessToken(sa)
     }
 
     /// Clears the cached OAuth token. Call after the user pastes a new key.
     public func invalidateCache() {
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
         cachedToken = nil
         tokenExpiry = nil
         cachedClientEmail = nil
@@ -60,9 +70,11 @@ public class VertexAuth {
         
         let tokenResponse = try JSONDecoder().decode(TokenResponse.self, from: tokenData)
         
+        cacheLock.lock()
         self.cachedToken = tokenResponse.accessToken
         self.tokenExpiry = Date().addingTimeInterval(Double(tokenResponse.expiresIn - 60))
         self.cachedClientEmail = sa.clientEmail
+        cacheLock.unlock()
 
         return tokenResponse.accessToken
     }

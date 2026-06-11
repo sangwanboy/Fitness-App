@@ -165,17 +165,6 @@ public struct GuidedBreathingView: View {
         let proto = manager.isRunning ? manager.selectedProtocol : selectedProtocol
         let color = proto.color
         let phase = manager.isRunning ? manager.currentPhase : .inhale
-        let progress = manager.isRunning ? manager.phaseProgress : 0.0
-        let currentPhaseIndex = manager.isRunning
-            ? (proto.activePhases.firstIndex(where: { $0.phase == phase }) ?? 0)
-            : 0
-        let currentDuration = manager.isRunning
-            ? (proto.activePhases.first(where: { $0.phase == phase })?.duration ?? 1)
-            : proto.inhaleSec
-
-        let countdownSecs = manager.isRunning
-            ? max(0, Int(ceil(currentDuration * (1.0 - progress))))
-            : Int(proto.inhaleSec)
 
         return ZStack {
             // ── Ripple rings (inhale only, not shown when reduce-motion is on) ──
@@ -252,12 +241,14 @@ public struct GuidedBreathingView: View {
             .scaleEffect(orbScale)
 
             // ── Inner content: phase icon + label + countdown ──
+            // Countdown is isolated in BreathingCountdownView so phaseProgress
+            // ticks (20 Hz) only re-evaluate that leaf node, not the whole orb.
             VStack(spacing: 6) {
                 if manager.isRunning {
                     Image(systemName: phase.icon)
                         .font(.system(size: 22, weight: .medium))
                         .foregroundColor(color)
-                        .id("phase_icon_\(phase.rawValue)_\(currentPhaseIndex)")
+                        .id("phase_icon_\(phase.rawValue)")
                         .transition(.asymmetric(
                             insertion: .opacity.combined(with: .scale(scale: 0.75)),
                             removal: .opacity.combined(with: .scale(scale: 1.2))
@@ -266,16 +257,11 @@ public struct GuidedBreathingView: View {
                     Text(phase.label)
                         .font(.system(size: 18, weight: .semibold, design: .rounded))
                         .foregroundColor(isDark ? .white : .black)
-                        .id("phase_label_\(phase.rawValue)_\(currentPhaseIndex)")
+                        .id("phase_label_\(phase.rawValue)")
                         .transition(.opacity)
                         .contentTransition(.opacity)
 
-                    Text("\(countdownSecs)")
-                        .font(.system(size: 42, weight: .thin, design: .rounded))
-                        .foregroundColor(isDark ? .white.opacity(0.9) : .black.opacity(0.9))
-                        .monospacedDigit()
-                        .contentTransition(.numericText(countsDown: true))
-                        .animation(.easeInOut(duration: 0.3), value: countdownSecs)
+                    BreathingCountdownView(manager: manager, isDark: isDark)
                 } else {
                     Image(systemName: proto.icon)
                         .font(.system(size: 28, weight: .light))
@@ -362,12 +348,37 @@ public struct GuidedBreathingView: View {
         }
     }
 
+    // MARK: - Countdown Leaf View
+    // Isolated so that phaseProgress ticks (20 Hz) only invalidate this node.
+
+    private struct BreathingCountdownView: View {
+        @ObservedObject var manager: BreathingSessionManager
+        let isDark: Bool
+
+        private var countdownSecs: Int {
+            let proto = manager.selectedProtocol
+            let phase = manager.currentPhase
+            let duration = proto.activePhases.first(where: { $0.phase == phase })?.duration ?? 1
+            return max(0, Int(ceil(duration * (1.0 - manager.phaseProgress))))
+        }
+
+        var body: some View {
+            Text("\(countdownSecs)")
+                .font(.system(size: 42, weight: .thin, design: .rounded))
+                .foregroundColor(isDark ? .white.opacity(0.9) : .black.opacity(0.9))
+                .monospacedDigit()
+                .contentTransition(.numericText(countsDown: true))
+                .animation(.easeInOut(duration: 0.3), value: countdownSecs)
+        }
+    }
+
     // MARK: - Controls
 
     private var controlsSection: some View {
         VStack(spacing: 16) {
             // Start / stop button
             Button {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 if manager.isRunning {
                     manager.stopSession()
                 } else {
@@ -383,12 +394,10 @@ public struct GuidedBreathingView: View {
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
                 .frame(height: 54)
-                .background(
-                    manager.isRunning
-                        ? Color.red.opacity(0.85)
-                        : (selectedProtocol.color)
+                .glassEffect(
+                    .regular.tint(manager.isRunning ? Color.red.opacity(0.55) : selectedProtocol.color.opacity(0.55)).interactive(),
+                    in: .rect(cornerRadius: 16)
                 )
-                .clipShape(.rect(cornerRadius: 16))
                 .animation(.easeInOut(duration: 0.25), value: manager.isRunning)
             }
             .buttonStyle(.plain)

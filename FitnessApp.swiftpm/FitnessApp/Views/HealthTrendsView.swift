@@ -306,7 +306,6 @@ struct InsightMiniStat: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 8)
         .padding(.horizontal, 12)
-        .background(Color.white.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .glassEffect(.regular, in: .rect(cornerRadius: 10))
     }
 }

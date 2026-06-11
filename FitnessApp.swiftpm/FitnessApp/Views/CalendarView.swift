@@ -70,7 +70,7 @@ public struct CalendarView: View {
         }
         .sheet(isPresented: $showAddSheet) { addEventSheet }
         .task { reloadEvents() }
-        .onChange(of: selectedDate) { _ in reloadEvents() }
+        .onChange(of: selectedDate) { reloadEvents() }
     }
 
     private var headerBar: some View {
@@ -134,18 +134,23 @@ public struct CalendarView: View {
     }
 
     // MARK: - Helpers
+    private static let monthFormatter: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "MMMM yyyy"; return f
+    }()
+    private static let todayFormatter: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "'Today,' MMM d"; return f
+    }()
+    private static let weekdayFormatter: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "EEEE, MMM d"; return f
+    }()
+
     private var monthLabel: String {
-        let f = DateFormatter(); f.dateFormat = "MMMM yyyy"
-        return f.string(from: selectedDate)
+        Self.monthFormatter.string(from: selectedDate)
     }
     private var selectedDateLabel: String {
-        let f = DateFormatter()
-        if Calendar.current.isDateInToday(selectedDate) {
-            f.dateFormat = "'Today,' MMM d"
-        } else {
-            f.dateFormat = "EEEE, MMM d"
-        }
-        return f.string(from: selectedDate)
+        Calendar.current.isDateInToday(selectedDate)
+            ? Self.todayFormatter.string(from: selectedDate)
+            : Self.weekdayFormatter.string(from: selectedDate)
     }
 
     private func reloadEvents() {
@@ -160,14 +165,12 @@ public struct CalendarView: View {
     }
 
     private var weekEvents: [Int] {
-        // Returns event counts for each day of the current week (M..S)
         let cal = Calendar.current
+        let byDay = Dictionary(grouping: ek.events) { cal.startOfDay(for: $0.startDate) }
         let weekDates = (0..<7).compactMap { i in
             cal.date(byAdding: .day, value: i - (cal.component(.weekday, from: selectedDate) - cal.firstWeekday), to: selectedDate)
         }
-        return weekDates.map { d in
-            ek.events.filter { cal.isDate($0.startDate, inSameDayAs: d) }.count
-        }
+        return weekDates.map { d in byDay[cal.startOfDay(for: d)]?.count ?? 0 }
     }
 
     // MARK: - Streak helpers
@@ -315,6 +318,21 @@ public struct CalendarView: View {
         let monthRange = cal.range(of: .day, in: .month, for: monthStart) ?? 1..<32
         let firstWeekday = cal.component(.weekday, from: monthStart) - cal.firstWeekday
         let totalCells = 42
+
+        // Precompute per-day event counts O(n) once; cell lookup is O(1).
+        let eventCountByDay: [Date: Int] = Dictionary(
+            ek.events.map { (cal.startOfDay(for: $0.startDate), 1) },
+            uniquingKeysWith: +
+        )
+
+        // Precompute streak days for the visible month cells.
+        var streakDays = Set<Date>()
+        for offset in 0..<monthRange.count {
+            if let d = cal.date(byAdding: .day, value: offset, to: monthStart) {
+                if isInStreakWeek(d) { streakDays.insert(cal.startOfDay(for: d)) }
+            }
+        }
+
         return VStack(spacing: 6) {
             HStack(spacing: 4) {
                 ForEach(["S","M","T","W","T","F","S"], id: \.self) { d in
@@ -331,10 +349,11 @@ public struct CalendarView: View {
                     if dayNumber < 1 || dayNumber > monthRange.count {
                         Color.clear.frame(height: 44)
                     } else if let date = cal.date(byAdding: .day, value: dayNumber - 1, to: monthStart) {
+                        let dayStart = cal.startOfDay(for: date)
                         let isSel = cal.isDate(date, inSameDayAs: selectedDate)
                         let isToday = cal.isDateInToday(date)
-                        let dayEvents = ek.events.filter { cal.isDate($0.startDate, inSameDayAs: date) }
-                        let isStreak = isInStreakWeek(date)
+                        let eventCount = eventCountByDay[dayStart] ?? 0
+                        let isStreak = streakDays.contains(dayStart)
                         Button { selectedDate = date } label: {
                             VStack(spacing: 2) {
                                 Text("\(dayNumber)")
@@ -346,7 +365,7 @@ public struct CalendarView: View {
                                             .font(.system(size: 5, weight: .bold))
                                             .foregroundColor(flameColor.opacity(0.8))
                                     }
-                                    ForEach(0..<min(dayEvents.count, 2), id: \.self) { _ in
+                                    ForEach(0..<min(eventCount, 2), id: \.self) { _ in
                                         Circle()
                                             .fill(isSel ? Color.white : accentColor)
                                             .frame(width: 3, height: 3)
@@ -467,9 +486,12 @@ public struct CalendarView: View {
         .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 20))
     }
 
+    private static let shortWeekdayFormatter: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "EEE"; return f
+    }()
+
     private func weekdayLabel(_ d: Date) -> String {
-        let f = DateFormatter(); f.dateFormat = "EEE"
-        return f.string(from: d).uppercased()
+        Self.shortWeekdayFormatter.string(from: d).uppercased()
     }
 
     // MARK: - Add event sheet
@@ -526,9 +548,12 @@ struct DayEventRow: View {
         return "calendar"
     }
 
+    private static let timeFormatter: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "h:mm a"; return f
+    }()
+
     private var timeText: String {
-        let f = DateFormatter(); f.dateFormat = "h:mm a"
-        return f.string(from: event.startDate)
+        Self.timeFormatter.string(from: event.startDate)
     }
 
     var body: some View {

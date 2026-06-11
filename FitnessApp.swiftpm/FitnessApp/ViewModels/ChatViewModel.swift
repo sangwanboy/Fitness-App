@@ -351,10 +351,13 @@ public final class ChatViewModel: ObservableObject {
     /// to "see" food that isn't there.
     fileprivate static func nutritionBlock(calories: Double,
                                            protein: Double,
-                                           log: [FoodLogEntry]) -> String {
+                                           log: [FoodLogEntry],
+                                           goals: MacroGoals) -> String {
+        let goalsLine = "- Daily goals: \(Int(goals.calories)) kcal · \(Int(goals.protein))g protein · \(Int(goals.carbs))g carbs · \(Int(goals.fat))g fat — coach intake against these."
         if log.isEmpty && calories <= 0 {
             return """
             NUTRITION TODAY (from HealthKit dietary samples)
+            \(goalsLine)
             - No meals logged yet today. If the user mentions a meal, do NOT claim to see it — confirm it isn't logged and offer to log it via the log_food tool.
             """
         }
@@ -371,8 +374,8 @@ public final class ChatViewModel: ObservableObject {
         let header = "NUTRITION TODAY (from HealthKit dietary samples — these are real entries already saved)"
         let totals = "- Total: \(Int(calories.rounded())) kcal · \(String(format: "%.0f", protein)) g protein"
         return items.isEmpty
-            ? "\(header)\n\(totals)"
-            : "\(header)\n\(totals)\n- Logged items:\n\(items)"
+            ? "\(header)\n\(totals)\n\(goalsLine)"
+            : "\(header)\n\(totals)\n\(goalsLine)\n- Logged items:\n\(items)"
     }
 
     /// Full structured breakdown of the prediction snapshot for the system
@@ -524,6 +527,13 @@ public final class ChatViewModel: ObservableObject {
     public func cancelToolCall(messageId: UUID) {
         guard let idx = messages.firstIndex(where: { $0.id == messageId }) else { return }
         messages[idx].toolStatus = .cancelled
+        // Skip the acknowledgment turn while another stream is active — a
+        // concurrent sendFollowup would append a doubled model message. The
+        // cancelled status still round-trips as a functionResponse on the
+        // next turn. Set isGenerating before the Task so nothing can slip in
+        // between scheduling and execution.
+        guard !isGenerating else { return }
+        isGenerating = true
         Task { await sendFollowup() }
     }
 
@@ -569,9 +579,14 @@ public final class ChatViewModel: ObservableObject {
                     _ = flushStreamingText(into: idx, lastFlush: lastFlush, force: true)
                     // A follow-up that itself chains a tool — re-enter the same
                     // pending/confirmation loop. ChatView's card UI handles this
-                    // identically to the original toolCall.
+                    // identically to the original toolCall. Read tools that
+                    // produce a payload auto-execute here too, so chains like
+                    // get_predictions → list_reminders keep flowing.
                     messages[idx].toolCall = call
                     messages[idx].toolStatus = call.needsConfirmation ? .pending : .autoExecuted
+                    if call.producesPayload {
+                        await autoExecuteReadTool(messageId: modelId)
+                    }
                     return
                 case .usage(let usage):
                     messages[idx].tokenUsage = usage
@@ -968,7 +983,8 @@ public final class ChatViewModel: ObservableObject {
         let nutritionBlock = Self.nutritionBlock(
             calories: hk.dietaryCaloriesToday,
             protein: hk.dietaryProteinToday,
-            log: hk.todayFoodLog
+            log: hk.todayFoodLog,
+            goals: NutritionService.shared.macroGoals
         )
 
         // -- 7-day histories --------------------------------------------------

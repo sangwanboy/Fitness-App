@@ -117,8 +117,7 @@ struct FoodCameraView: View {
                             .font(.system(size: 22, weight: .semibold))
                             .foregroundColor(.white)
                             .frame(width: 52, height: 52)
-                            .background(.white.opacity(0.16), in: RoundedRectangle(cornerRadius: 14))
-                            .overlay(RoundedRectangle(cornerRadius: 14).stroke(.white.opacity(0.5), lineWidth: 1))
+                            .glassEffect(.regular.tint(.white.opacity(0.18)), in: .rect(cornerRadius: 14))
                         Text("Upload")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundColor(.white.opacity(0.9))
@@ -265,6 +264,11 @@ struct CameraPreview: UIViewRepresentable {
 
     final class PreviewView: UIView {
         override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
-        var videoPreviewLayer: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
+        var videoPreviewLayer: AVCaptureVideoPreviewLayer {
+            guard let l = layer as? AVCaptureVideoPreviewLayer else {
+                return AVCaptureVideoPreviewLayer()
+            }
+            return l
+        }
     }
 }

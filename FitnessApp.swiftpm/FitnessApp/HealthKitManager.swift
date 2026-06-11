@@ -381,6 +381,10 @@ public final class HealthKitManager: ObservableObject {
         if let hrvHistory = metricSummaries[.hrv]?.history, !hrvHistory.isEmpty {
             BreathingSessionManager.shared.scheduleHRVNudgeIfNeeded(hrv: hrvHistory)
         }
+
+        // Challenge progress depends on the freshly-written metric summaries.
+        // Mirror the StreakEngine pattern in DashboardView's refreshAllData().
+        ChallengeEngine.shared.refreshProgress()
     }
 
     /// Refresh today's snapshot only if the last computed `predictions` is
@@ -513,7 +517,7 @@ public final class HealthKitManager: ObservableObject {
     private func fetchHeartRate() async -> MetricFetchResult? {
         guard let heartRateType = HKQuantityType.quantityType(forIdentifier: .heartRate) else { return nil }
 
-        let predicate = HKQuery.predicateForSamples(withStart: Date().addingTimeInterval(-3600), end: Date(), options: .strictEndDate)
+        let predicate = HKQuery.predicateForSamples(withStart: Date().addingTimeInterval(-3600), end: Date(), options: .strictStartDate)
         let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)
 
         let bpm: Double? = await withCheckedContinuation { (cont: CheckedContinuation<Double?, Never>) in
@@ -803,40 +807,45 @@ public final class HealthKitManager: ObservableObject {
     }
     
     // Writes a new sample to HealthKit
-    public func logMetricValue(type: HealthMetricType, value: Double, date: Date = Date()) async -> Bool {
+    @discardableResult
+    public func logMetricValue(type: HealthMetricType, value: Double, start: Date? = nil, end: Date? = nil) async -> Bool {
         guard HKHealthStore.isHealthDataAvailable() else { return false }
-        
+
+        let now = Date()
+        let sampleStart = start ?? now
+        let sampleEnd = end ?? now
+
         let sample: HKSample
-        
+
         switch type {
         case .steps:
             guard let sampleType = HKQuantityType.quantityType(forIdentifier: .stepCount) else { return false }
             let quantity = HKQuantity(unit: HKUnit.count(), doubleValue: value)
-            sample = HKQuantitySample(type: sampleType, quantity: quantity, start: date, end: date)
+            sample = HKQuantitySample(type: sampleType, quantity: quantity, start: sampleStart, end: sampleEnd)
         case .activeEnergy:
             guard let sampleType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) else { return false }
             let quantity = HKQuantity(unit: HKUnit.kilocalorie(), doubleValue: value)
-            sample = HKQuantitySample(type: sampleType, quantity: quantity, start: date, end: date)
+            sample = HKQuantitySample(type: sampleType, quantity: quantity, start: sampleStart, end: sampleEnd)
         case .heartRate:
             guard let sampleType = HKQuantityType.quantityType(forIdentifier: .heartRate) else { return false }
             let quantity = HKQuantity(unit: HKUnit(from: "count/min"), doubleValue: value)
-            sample = HKQuantitySample(type: sampleType, quantity: quantity, start: date, end: date)
+            sample = HKQuantitySample(type: sampleType, quantity: quantity, start: sampleStart, end: sampleEnd)
         case .distance:
             guard let sampleType = HKQuantityType.quantityType(forIdentifier: .distanceWalkingRunning) else { return false }
             let quantity = HKQuantity(unit: HKUnit.mile(), doubleValue: value)
-            sample = HKQuantitySample(type: sampleType, quantity: quantity, start: date, end: date)
+            sample = HKQuantitySample(type: sampleType, quantity: quantity, start: sampleStart, end: sampleEnd)
         case .sleep:
             guard let sampleType = HKCategoryType.categoryType(forIdentifier: .sleepAnalysis) else { return false }
-            let startDate = date.addingTimeInterval(-value * 3600.0)
-            sample = HKCategorySample(type: sampleType, value: HKCategoryValueSleepAnalysis.asleep.rawValue, start: startDate, end: date)
+            let sleepStart = start ?? sampleEnd.addingTimeInterval(-value * 3600.0)
+            sample = HKCategorySample(type: sampleType, value: HKCategoryValueSleepAnalysis.asleep.rawValue, start: sleepStart, end: sampleEnd)
         case .hrv:
             guard let sampleType = HKQuantityType.quantityType(forIdentifier: .heartRateVariabilitySDNN) else { return false }
             let quantity = HKQuantity(unit: HKUnit.secondUnit(with: .milli), doubleValue: value)
-            sample = HKQuantitySample(type: sampleType, quantity: quantity, start: date, end: date)
+            sample = HKQuantitySample(type: sampleType, quantity: quantity, start: sampleStart, end: sampleEnd)
         case .hydration:
             guard let sampleType = HKQuantityType.quantityType(forIdentifier: .dietaryWater) else { return false }
             let quantity = HKQuantity(unit: HKUnit.liter(), doubleValue: value)
-            sample = HKQuantitySample(type: sampleType, quantity: quantity, start: date, end: date)
+            sample = HKQuantitySample(type: sampleType, quantity: quantity, start: sampleStart, end: sampleEnd)
         default:
             // Show-more tiles (restingHR, bodyMass, flights, exercise, stand, mindful, SpO2, VO2 Max)
             // are read-only from HealthKit in this app — no manual logging path.

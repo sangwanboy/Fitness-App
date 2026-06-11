@@ -292,9 +292,11 @@ public struct DashboardView: View {
                 Button { showSearchSheet = true } label: {
                     Image(systemName: "magnifyingglass")
                 }
+                .accessibilityLabel("Search")
                 Button(action: onOpenCalendar) {
                     Image(systemName: "calendar")
                 }
+                .accessibilityLabel("Open calendar")
                 Button { switchToTab("profile") } label: {
                     avatarView
                 }
@@ -308,6 +310,10 @@ public struct DashboardView: View {
             let isStale = lastRefreshed.map { Date().timeIntervalSince($0) > 300 } ?? true
             guard isStale else { return }
             lastRefreshed = Date()
+            Task { await refreshAllData() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .init("fg.workout.saved"))) { _ in
+            lastRefreshed = nil
             Task { await refreshAllData() }
         }
         .sheet(item: $selectedMetric) { metricType in
@@ -361,8 +367,24 @@ public struct DashboardView: View {
     }
     
     // MARK: - Card Router
+
+    private static let specialCardIds: Set<String> = [
+        "coach", "predictions", "activity", "upcoming",
+        "workouts", "meals", "widgets", "tracksleep", "streak", "challenge"
+    ]
+
     @ViewBuilder
     private func cardView(for id: String, isWide: Bool = false) -> some View {
+        if Self.specialCardIds.contains(id) {
+            specialCardView(for: id, isWide: isWide)
+        } else {
+            metricCardView(for: id, isWide: isWide)
+        }
+    }
+
+    /// Special/composite cards that don't map 1-to-1 with a HealthMetricType (10 cases).
+    @ViewBuilder
+    private func specialCardView(for id: String, isWide: Bool) -> some View {
         switch id {
         case "coach":
             Button(action: { switchToTab("chat") }) {
@@ -380,6 +402,32 @@ public struct DashboardView: View {
             ActivityRingsCard(action: { ExternalLink.openHealth() })
         case "upcoming":
             upcomingWorkoutCardView
+        case "workouts":
+            weeklyWorkoutsCardView
+        case "meals":
+            MealsCard(
+                entries: healthKitManager.todayFoodLog,
+                onAddMeal: { showFoodPhotoFlow = true },
+                onViewDetails: { showNutritionDashboard = true }
+            )
+        case "widgets":
+            WidgetsCard(onAskAstra: { switchToTab("chat") })
+        case "tracksleep":
+            SleepTrackingCard(
+                onStartTracking: onOpenSleepMode,
+                onOpenLast: { lastSleepReport = $0 }
+            )
+        case "streak":
+            StreakCard(isWide: isWide)
+        default:
+            DailyChallengeCard()
+        }
+    }
+
+    /// Metric-backed cards keyed by home-card ID or promoted HealthMetricType rawValue (7 named + fallback).
+    @ViewBuilder
+    private func metricCardView(for id: String, isWide: Bool) -> some View {
+        switch id {
         case "steps":
             StepsCard(summary: healthKitManager.metricSummaries[.steps], isWide: isWide) {
                 selectedMetric = .steps
@@ -389,14 +437,10 @@ public struct DashboardView: View {
                 selectedMetric = .heartRate
             }
             .contextMenu {
-                Button {
-                    showHRZones = true
-                } label: {
+                Button { showHRZones = true } label: {
                     Label("View HR Zones", systemImage: "waveform.path.ecg")
                 }
-                Button {
-                    selectedMetric = .heartRate
-                } label: {
+                Button { selectedMetric = .heartRate } label: {
                     Label("View Details", systemImage: "chart.xyaxis.line")
                 }
             }
@@ -420,33 +464,7 @@ public struct DashboardView: View {
             HydrationCard(summary: healthKitManager.metricSummaries[.hydration], isWide: isWide) {
                 selectedMetric = .hydration
             }
-        case "workouts":
-            weeklyWorkoutsCardView
-        case "meals":
-            MealsCard(
-                entries: healthKitManager.todayFoodLog,
-                onAddMeal: {
-                    showFoodPhotoFlow = true
-                },
-                onViewDetails: {
-                    showNutritionDashboard = true
-                }
-            )
-        case "widgets":
-            WidgetsCard(onAskAstra: { switchToTab("chat") })
-        case "tracksleep":
-            SleepTrackingCard(
-                onStartTracking: onOpenSleepMode,
-                onOpenLast: { lastSleepReport = $0 }
-            )
-        case "streak":
-            StreakCard(isWide: isWide)
-        case "challenge":
-            DailyChallengeCard()
         default:
-            // Promoted show-more metric: id is the HealthMetricType.rawValue.
-            // Renders as a SimpleMetricCard tile (same as in Show More) so
-            // visual consistency stays — just placed inline on the home grid.
             if let type = HealthMetricType(rawValue: id) {
                 SimpleMetricCard(
                     type: type,
@@ -657,15 +675,20 @@ public struct DashboardView: View {
     }
     
     // MARK: - Helper Methods
+
+    private static let dateFmt: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "EEEE, MMM d"
+        return f
+    }()
+
     private func avatarInitials() -> String {
         let words = athleteName.components(separatedBy: " ")
         let initials = words.compactMap { $0.first }.map { String($0) }.joined()
         return String(initials.prefix(2)).uppercased()
     }
-    
+
     private func currentDateString() -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEEE, MMM d"
-        return formatter.string(from: Date())
+        Self.dateFmt.string(from: Date())
     }
 }

@@ -71,10 +71,6 @@ public struct DailyChallengeCard: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                challengeColor.opacity(0.07)
-                    .clipShape(RoundedRectangle(cornerRadius: 20))
-            )
             .glassEffect(
                 .regular.tint(challengeColor.opacity(0.12)).interactive(),
                 in: .rect(cornerRadius: 20)

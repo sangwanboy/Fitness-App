@@ -108,7 +108,7 @@ public struct ContentView: View {
             }
         }
         .preferredColorScheme(isDark ? .dark : .light)
-        .onChange(of: prefillBus.pendingPrompt) { newValue in
+        .onChange(of: prefillBus.pendingPrompt) { _, newValue in
             // A prediction-card action chip or Why-sheet quick action queued a
             // prompt. If the user isn't on Coach, switch — ChatView's onAppear
             // observer will then consume the bus and auto-send.
@@ -118,7 +118,7 @@ public struct ContentView: View {
                 }
             }
         }
-        .onChange(of: prefillBus.composerSeed) { newValue in
+        .onChange(of: prefillBus.composerSeed) { _, newValue in
             // Why-sheet "Continue in Coach" — pre-fill composer (no auto-send).
             // Also need to switch tabs so ChatView's onAppear consumes the seed.
             if newValue != nil && selectedTab != "chat" {
@@ -171,7 +171,7 @@ public struct ContentView: View {
             Task { await healthKitManager.fetchTodayData() }
         }
         // Also sync the moment the app returns to the foreground.
-        .onChange(of: scenePhase) { phase in
+        .onChange(of: scenePhase) { _, phase in
             guard phase == .active, isOnboarded, isLoggedIn, didFinishInitialLoad else { return }
             Task { await healthKitManager.fetchTodayData() }
         }

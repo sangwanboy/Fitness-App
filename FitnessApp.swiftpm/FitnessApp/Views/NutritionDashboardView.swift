@@ -95,6 +95,7 @@ public struct NutritionDashboardView: View {
                         .glassEffect(.regular.interactive(), in: .circle)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Edit macro goals")
 
                 // Dismiss
                 Button { dismiss() } label: {
@@ -105,6 +106,7 @@ public struct NutritionDashboardView: View {
                         .glassEffect(.regular.interactive(), in: .circle)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Close")
             }
         }
         .padding(.top, 8)
@@ -142,7 +144,7 @@ public struct NutritionDashboardView: View {
                     color: Color(red: 0.36, green: 0.61, blue: 1.0),
                     icon: "bolt.fill",
                     animate: animateRings
-                ) { /* protein has no DetailedMetricView type; tap shows nothing extra */ }
+                ) { showGoalsEditor = true }
 
                 MacroRingCard(
                     label: "Carbs",
@@ -152,7 +154,7 @@ public struct NutritionDashboardView: View {
                     color: Color(.systemGreen),
                     icon: "leaf.fill",
                     animate: animateRings
-                ) {}
+                ) { showGoalsEditor = true }
 
                 MacroRingCard(
                     label: "Fat",
@@ -162,7 +164,7 @@ public struct NutritionDashboardView: View {
                     color: Color(.systemYellow),
                     icon: "drop.fill",
                     animate: animateRings
-                ) {}
+                ) { showGoalsEditor = true }
             }
         }
     }
@@ -367,7 +369,8 @@ public struct NutritionDashboardView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
         }
-        .background(.regularMaterial, ignoresSafeAreaEdges: .bottom)
+        .glassEffect(.regular, in: .rect(cornerRadius: 0))
+        .ignoresSafeArea(edges: .bottom)
     }
 
     // MARK: - Helpers
@@ -531,12 +534,16 @@ private struct CalorieTrendChart: View {
     @AppStorage("theme_mode") private var themeMode = "dark"
     private var isDark: Bool { themeMode == "dark" }
 
+    private static let dayLetterFormatter: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "EEEEE"; return f
+    }()
+
     private var dayLetters: [String] {
         let cal = Calendar.current
-        let f = DateFormatter(); f.dateFormat = "EEEEE"
         let today = Date()
         return (0..<7).reversed().compactMap { offset in
-            cal.date(byAdding: .day, value: -offset, to: today).map { f.string(from: $0) }
+            cal.date(byAdding: .day, value: -offset, to: today)
+                .map { Self.dayLetterFormatter.string(from: $0) }
         }
     }
 

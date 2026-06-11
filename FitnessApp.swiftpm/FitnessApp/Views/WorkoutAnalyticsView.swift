@@ -193,6 +193,24 @@ public struct WorkoutAnalyticsView: View {
 
     // MARK: - Section 2: 28-Day Load Chart
 
+    private struct RollingPoint: Identifiable {
+        let id: Date
+        let date: Date
+        let acute: Double
+        let chronic: Double
+    }
+
+    private var precomputedRollingSeries: [RollingPoint] {
+        engine.dailyLoads.enumerated().map { idx, point in
+            RollingPoint(
+                id: point.date,
+                date: point.date,
+                acute: rollingMean(upTo: idx, window: 7),
+                chronic: rollingMean(upTo: idx, window: 28)
+            )
+        }
+    }
+
     private var loadChartSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             sectionHeader(title: "28-Day Training Load", icon: "chart.line.uptrend.xyaxis")
@@ -204,6 +222,7 @@ public struct WorkoutAnalyticsView: View {
                     .frame(height: 160)
                     .frame(maxWidth: .infinity)
             } else {
+                let rollingSeries = precomputedRollingSeries
                 Chart {
                     // Area fill under chronic line for depth
                     ForEach(engine.dailyLoads) { point in
@@ -233,11 +252,10 @@ public struct WorkoutAnalyticsView: View {
                     }
 
                     // Acute line (7-day rolling) — accent color
-                    ForEach(Array(engine.dailyLoads.enumerated()), id: \.offset) { idx, point in
-                        let acuteVal = rollingMean(upTo: idx, window: 7)
+                    ForEach(rollingSeries) { point in
                         LineMark(
                             x: .value("Date", point.date, unit: .day),
-                            y: .value("Acute (7d)", acuteVal),
+                            y: .value("Acute (7d)", point.acute),
                             series: .value("Series", "Acute")
                         )
                         .foregroundStyle(accentColor)
@@ -246,11 +264,10 @@ public struct WorkoutAnalyticsView: View {
                     }
 
                     // Chronic line (28-day rolling) — gray
-                    ForEach(Array(engine.dailyLoads.enumerated()), id: \.offset) { idx, point in
-                        let chronicVal = rollingMean(upTo: idx, window: 28)
+                    ForEach(rollingSeries) { point in
                         LineMark(
                             x: .value("Date", point.date, unit: .day),
-                            y: .value("Chronic (28d)", chronicVal),
+                            y: .value("Chronic (28d)", point.chronic),
                             series: .value("Series", "Chronic")
                         )
                         .foregroundStyle(Color.gray.opacity(0.7))

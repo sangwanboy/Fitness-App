@@ -36,11 +36,14 @@ public struct HeartRateZonesView: View {
     }
 
     // This-week workouts (Mon–Sun).
+    private let currentWeekStart: Date = {
+        let cal = Calendar.current
+        return cal.date(from: cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))
+            ?? Date().addingTimeInterval(-7 * 86400)
+    }()
+
     private var weeklyBreakdowns: [WorkoutZoneBreakdown] {
-        let weekStart = Calendar.current.date(
-            from: Calendar.current.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date())
-        ) ?? Date().addingTimeInterval(-7 * 86400)
-        return zonesWithData.filter { $0.workoutDate >= weekStart }
+        return zonesWithData.filter { $0.workoutDate >= currentWeekStart }
     }
 
     // Aggregate seconds per zone across the current week.
@@ -139,12 +142,6 @@ public struct HeartRateZonesView: View {
                     .foregroundColor(isDark ? .white.opacity(0.7) : .black.opacity(0.7))
                     .padding(12)
                     .glassEffect(.regular.interactive(), in: .circle)
-                    .overlay(
-                        Circle().stroke(
-                            isDark ? Color.white.opacity(0.2) : Color.black.opacity(0.12),
-                            lineWidth: 0.5
-                        )
-                    )
             }
             .buttonStyle(PlainButtonStyle())
         }
@@ -333,7 +330,13 @@ public struct HeartRateZonesView: View {
                         Image(systemName: "info.circle")
                             .font(.caption)
                             .foregroundColor(isDark ? .white.opacity(0.4) : .black.opacity(0.4))
-                        Text("Resting HR: \(Int((hk.metricSummaries[.restingHeartRate]?.currentValue ?? 60).rounded())) bpm  ·  Formula: Karvonen")
+                        let rhrDisplay: String = {
+                            if let rhr = hk.metricSummaries[.restingHeartRate]?.currentValue, rhr > 0 {
+                                return "\(Int(rhr.rounded())) bpm"
+                            }
+                            return "— (estimated)"
+                        }()
+                        Text("Resting HR: \(rhrDisplay)  ·  Formula: Karvonen")
                             .font(.caption2)
                             .foregroundColor(isDark ? .white.opacity(0.4) : .black.opacity(0.4))
                     }

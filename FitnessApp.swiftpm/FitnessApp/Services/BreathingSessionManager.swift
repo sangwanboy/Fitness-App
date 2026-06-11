@@ -169,8 +169,14 @@ public final class BreathingSessionManager: ObservableObject {
     // MARK: Private state
 
     private var sessionTask: Task<Void, Never>?
+    private var mindfulTask: Task<Void, Never>?
     private var sessionStart: Date?
     private let healthStore = HKHealthStore()
+    private let hapticGenerator: UIImpactFeedbackGenerator = {
+        let g = UIImpactFeedbackGenerator(style: .light)
+        g.prepare()
+        return g
+    }()
     private static let tickInterval: Double = 0.05   // 50 ms → smooth 0→1 per phase
 
     private let notificationCenter = UNUserNotificationCenter.current()
@@ -235,7 +241,8 @@ public final class BreathingSessionManager: ObservableObject {
                 colorHex: selectedProtocol.colorHex
             )
             persistRecord(record)
-            Task { await self.writeMindfulSession(start: startDate, end: endDate) }
+            mindfulTask?.cancel()
+            mindfulTask = Task { await self.writeMindfulSession(start: startDate, end: endDate) }
         }
 
         isRunning = false
@@ -291,8 +298,8 @@ public final class BreathingSessionManager: ObservableObject {
     // MARK: - Haptics
 
     private func fireHaptic() {
-        let generator = UIImpactFeedbackGenerator(style: .light)
-        generator.impactOccurred()
+        hapticGenerator.impactOccurred()
+        hapticGenerator.prepare()
     }
 
     // MARK: - HealthKit: write mindful session

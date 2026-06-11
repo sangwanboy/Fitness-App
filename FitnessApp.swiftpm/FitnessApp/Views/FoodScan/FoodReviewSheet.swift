@@ -119,7 +119,7 @@ struct FoodReviewSheet: View {
                     .padding(.bottom, 32)
             }
         }
-        .background(isDark ? Color.black : Color(red: 0.97, green: 0.97, blue: 0.97))
+        .background(AdaptiveBackground())
         .onAppear {
             editableItems = result.items.map { EditableItem(from: $0) }
         }

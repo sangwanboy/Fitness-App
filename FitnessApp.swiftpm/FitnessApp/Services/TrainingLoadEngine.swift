@@ -275,14 +275,15 @@ public final class TrainingLoadEngine: ObservableObject {
         guard activeWeeks.contains("\(thisYr)-W\(thisWOY)") else { return 0 }
 
         var streak = 1
-        var checkDate = calendar.date(byAdding: .weekOfYear, value: -1, to: now)!
+        guard var checkDate = calendar.date(byAdding: .weekOfYear, value: -1, to: now) else { return streak }
         // Only look back as far as our 28-day window (4 weeks).
         for _ in 0..<4 {
             let woy = calendar.component(.weekOfYear, from: checkDate)
             let yr = calendar.component(.yearForWeekOfYear, from: checkDate)
             if activeWeeks.contains("\(yr)-W\(woy)") {
                 streak += 1
-                checkDate = calendar.date(byAdding: .weekOfYear, value: -1, to: checkDate)!
+                guard let prev = calendar.date(byAdding: .weekOfYear, value: -1, to: checkDate) else { break }
+                checkDate = prev
             } else {
                 break
             }

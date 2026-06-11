@@ -174,12 +174,18 @@ public struct SettingsView: View {
         HStack(spacing: 10) {
             ProfileStatTile(value: "\(healthKitManager.dayStreak())", label: "Day streak", color: .orange)
             ProfileStatTile(
-                value: String(format: "%.0f", healthKitManager.metricSummaries[.heartRate]?.currentValue ?? 62),
+                value: {
+                    let v = healthKitManager.metricSummaries[.heartRate]?.currentValue ?? 0
+                    return v > 0 ? String(format: "%.0f", v) : "—"
+                }(),
                 label: "Resting HR",
                 color: .red
             )
             ProfileStatTile(
-                value: String(format: "%.0f", healthKitManager.metricSummaries[.hrv]?.currentValue ?? 74),
+                value: {
+                    let v = healthKitManager.metricSummaries[.hrv]?.currentValue ?? 0
+                    return v > 0 ? String(format: "%.0f", v) : "—"
+                }(),
                 label: "Recovery",
                 color: accentColor
             )

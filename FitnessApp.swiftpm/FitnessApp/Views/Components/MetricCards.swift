@@ -7,9 +7,18 @@ import SwiftUI
 enum MetricCardHelpers {
     /// Most-recent 7 values from the metric's history, oldest → newest.
     /// Empty array if no history yet (so callers can hide their chart).
+    /// History is already stored in chronological order by HealthKitManager,
+    /// so suffix(7) is sufficient; sort only when the array is non-empty and
+    /// not already ordered (defensive, one-time per call site).
     static func last7(_ summary: MetricSummary?) -> [Double] {
-        let sorted = (summary?.history ?? []).sorted { $0.date < $1.date }
-        return Array(sorted.suffix(7)).map { $0.value }
+        guard let history = summary?.history, !history.isEmpty else { return [] }
+        let ordered: [MetricValue]
+        if history.count > 1 && history.first!.date > history.last!.date {
+            ordered = history.sorted { $0.date < $1.date }
+        } else {
+            ordered = history
+        }
+        return Array(ordered.suffix(7)).map { $0.value }
     }
 
     /// Day-of-week single letter for the last N days ending today.
@@ -674,13 +683,17 @@ struct HydrationCard: View {
     @AppStorage("theme_mode") private var themeMode = "dark"
     private var isDark: Bool { themeMode == "dark" }
 
+    @State private var showWriteError = false
+
     var body: some View {
         let liters = summary?.currentValue ?? 0
         let goal = summary?.goal ?? 3.0
-        // Round instead of truncate — a single 250 ml glass (0.67 of the 8-box
-        // visualisation) was rendering as "0 of 8 glasses" before this fix.
-        let cups = goal > 0 ? Int(((liters / goal) * 8).rounded()) : 0
-        let total = 8
+        // 1 glass = 250 ml = 0.25 L. Derive the goal glass count from the
+        // actual goal so "X of Y glasses" is always truthful.
+        let glassVolume = 0.25
+        let totalGlasses = max(1, Int((goal / glassVolume).rounded()))
+        let cups = Int((liters / glassVolume).rounded())
+        let total = totalGlasses
 
         // ZStack overlay so the quick-add Menu sits on top of the card without
         // interfering with the outer card tap (SwiftUI routes the tap to the
@@ -721,13 +734,23 @@ struct HydrationCard: View {
             }
             .padding(10)
         }
+        .alert("Couldn't log water", isPresented: $showWriteError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Check Health write permission for Water in Settings > Health.")
+        }
     }
 
-    /// Writes a `dietaryWater` quantity sample via HealthKitManager. The
-    /// manager's `logMetricValue` re-runs `fetchTodayData()` on success so the
-    /// card updates without a manual reload.
+    /// Writes a `dietaryWater` quantity sample via HealthKitManager. On success
+    /// fires a light haptic; on failure surfaces a visible alert so the user
+    /// knows to grant Water write permission in Settings > Health.
     private func log(_ liters: Double) async {
-        _ = await HealthKitManager.shared.logMetricValue(type: .hydration, value: liters)
+        let ok = await HealthKitManager.shared.logMetricValue(type: .hydration, value: liters)
+        if ok {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        } else {
+            showWriteError = true
+        }
     }
 }
 

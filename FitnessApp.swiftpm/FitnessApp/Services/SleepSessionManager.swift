@@ -166,8 +166,8 @@ public final class SleepSessionManager: ObservableObject {
             let window = Array(samples[i..<i+samplesPerWindow])
             let sorted = window.map(\.rms).sorted()
             let median = sorted[sorted.count / 2]
-            if median < Self.onsetMaxMedianRMS {
-                return window.first!.at
+            if median < Self.onsetMaxMedianRMS, let first = window.first {
+                return first.at
             }
         }
         return sessionStart

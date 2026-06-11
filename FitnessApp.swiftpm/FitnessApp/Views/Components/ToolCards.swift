@@ -934,11 +934,13 @@ private struct ReminderToolCard: View {
         }
     }
 
+    private static let dueDateFormatter: DateFormatter = {
+        let f = DateFormatter(); f.dateStyle = .medium; f.timeStyle = .short; return f
+    }()
+
     private var dueText: String {
         guard let d = dueAt else { return "No due date" }
-        let f = DateFormatter()
-        f.dateStyle = .medium; f.timeStyle = .short
-        return f.string(from: d)
+        return Self.dueDateFormatter.string(from: d)
     }
 
     var body: some View {
@@ -983,11 +985,15 @@ private struct EventToolCard: View {
     @AppStorage("theme_mode") private var themeMode = "dark"
     private var isDark: Bool { themeMode == "dark" }
 
+    private static let startFormatter: DateFormatter = {
+        let f = DateFormatter(); f.dateStyle = .medium; f.timeStyle = .short; return f
+    }()
+    private static let endTimeFormatter: DateFormatter = {
+        let f = DateFormatter(); f.timeStyle = .short; return f
+    }()
+
     private var rangeText: String {
-        let f = DateFormatter()
-        f.dateStyle = .medium; f.timeStyle = .short
-        let t = DateFormatter(); t.timeStyle = .short
-        return "\(f.string(from: startsAt)) – \(t.string(from: endsAt))"
+        "\(Self.startFormatter.string(from: startsAt)) – \(Self.endTimeFormatter.string(from: endsAt))"
     }
 
     var body: some View {

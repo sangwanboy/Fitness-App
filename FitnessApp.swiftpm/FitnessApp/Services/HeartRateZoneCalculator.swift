@@ -166,7 +166,18 @@ public final class HeartRateZoneCalculator: ObservableObject {
     ///   - userAge: years, used for "220 − age" when no override is set.
     ///   - restingHR: fallback 60 bpm when HealthKit doesn't have data.
     public func makeThresholds(userAge: Int) -> ZoneThresholds {
-        let rhr = HealthKitManager.shared.metricSummaries[.restingHeartRate]?.currentValue ?? 60
+        let summary = HealthKitManager.shared.metricSummaries[.restingHeartRate]
+        // Prefer the most recent daily reading from history; fall back to the
+        // 30-day average stored in currentValue, then to 60 bpm.
+        let rhr: Double = {
+            if let history = summary?.history, !history.isEmpty,
+               let latest = history.max(by: { $0.date < $1.date }),
+               latest.value > 0 {
+                return latest.value
+            }
+            if let avg = summary?.currentValue, avg > 0 { return avg }
+            return 60
+        }()
         let maxHR: Double = maxHROverride > 0
             ? Double(maxHROverride)
             : Double(max(220 - userAge, 120))

@@ -88,9 +88,7 @@ public struct SleepModeView: View {
                     .foregroundColor(.white.opacity(0.7))
                     .padding(.horizontal, 20)
                     .padding(.vertical, 12)
-                    .background(
-                        Capsule().stroke(Color.white.opacity(0.2), lineWidth: 1)
-                    )
+                    .glassEffect(.regular.interactive(), in: .capsule)
                 }
                 .padding(.bottom, 48)
             }

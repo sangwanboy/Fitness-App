@@ -61,7 +61,7 @@ public struct SleepTrackingCard: View {
                 Text(snoreEnabled ? "On-device classifier (Apple Sound Analysis)" : "Off · saves ~1–2% battery / night")
                     .font(.system(size: 10, weight: .medium))
                     .foregroundColor(isDark ? .white.opacity(0.5) : .black.opacity(0.5))
-                    .lineLimit(1)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
             Toggle("", isOn: $snoreEnabled).labelsHidden().tint(.indigo)

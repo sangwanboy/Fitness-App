@@ -18,11 +18,14 @@ public struct WorkoutTrackerView: View {
     @State private var currentHeartRate = 0
     @State private var estimatedCalories = 0.0
     @State private var estimatedDistance = 0.0
+    enum ActiveSheet: Identifiable {
+        case analytics, hrZones, summary
+        var id: Int { hashValue }
+    }
+
     @State private var showSaveAlert = false
-    @State private var showSummary = false
+    @State private var activeSheet: ActiveSheet? = nil
     @State private var recentWorkouts: [HKWorkout] = []
-    @State private var showHRZones  = false
-    @State private var showAnalytics = false
 
     // Timer publisher
     @State private var timer: Timer.TimerPublisher = Timer.publish(every: 1, on: .main, in: .common)
@@ -36,6 +39,7 @@ public struct WorkoutTrackerView: View {
     @State private var peakHeartRate = 0
     @State private var hrSampleCount = 0
     @State private var hrSum = 0.0
+    @State private var hapticTrigger = 0
 
     /// Relative date formatter reused across rows. Building a DateFormatter is
     /// expensive (locale/calendar setup) and the recent-workouts ForEach can
@@ -240,7 +244,7 @@ public struct WorkoutTrackerView: View {
                         // Play / Pause / Finish controls
                         HStack(spacing: 20) {
                             if !isRunning {
-                                Button(action: startWorkout) {
+                                Button(action: { startWorkout(); hapticTrigger += 1 }) {
                                     HStack {
                                         Image(systemName: "play.fill")
                                         Text("Start Activity")
@@ -254,7 +258,7 @@ public struct WorkoutTrackerView: View {
                                     .shadow(color: selectedWorkoutType.themeColor.opacity(0.3), radius: 8)
                                 }
                             } else {
-                                Button(action: pauseWorkout) {
+                                Button(action: { pauseWorkout(); hapticTrigger += 1 }) {
                                     HStack {
                                         Image(systemName: "pause.fill")
                                         Text("Pause")
@@ -264,8 +268,8 @@ public struct WorkoutTrackerView: View {
                                     .frame(width: 120, height: 50)
                                     .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 12))
                                 }
-                                
-                                Button(action: { showSaveAlert = true }) {
+
+                                Button(action: { showSaveAlert = true; hapticTrigger += 1 }) {
                                     HStack {
                                         Image(systemName: "stop.fill")
                                         Text("Finish")
@@ -280,8 +284,9 @@ public struct WorkoutTrackerView: View {
                                 }
                             }
                         }
+                        .sensoryFeedback(.impact(weight: .medium), trigger: hapticTrigger)
                         .padding(.horizontal, 20)
-                        
+
                         // History list
                         VStack(alignment: .leading, spacing: 14) {
                             HStack {
@@ -291,7 +296,7 @@ public struct WorkoutTrackerView: View {
 
                                 Spacer()
 
-                                Button(action: { showHRZones = true }) {
+                                Button(action: { activeSheet = .hrZones }) {
                                     HStack(spacing: 5) {
                                         Image(systemName: "heart.fill")
                                             .font(.system(size: 11, weight: .bold))
@@ -306,7 +311,7 @@ public struct WorkoutTrackerView: View {
                                 }
                                 .buttonStyle(PlainButtonStyle())
 
-                                Button(action: { showAnalytics = true }) {
+                                Button(action: { activeSheet = .analytics }) {
                                     HStack(spacing: 5) {
                                         Image(systemName: "chart.line.uptrend.xyaxis")
                                             .font(.system(size: 11, weight: .bold))
@@ -373,23 +378,24 @@ public struct WorkoutTrackerView: View {
         } message: {
             Text("Do you want to save this workout details to Apple Health?")
         }
-        .sheet(isPresented: $showAnalytics) {
-            WorkoutAnalyticsView()
-        }
-        .sheet(isPresented: $showHRZones) {
-            HeartRateZonesView()
-        }
-        .sheet(isPresented: $showSummary) {
-            WorkoutSummaryView(
-                type: selectedWorkoutType,
-                duration: timeString(from: secondsElapsed),
-                calories: estimatedCalories,
-                distance: estimatedDistance,
-                avgHeartRate: hrSampleCount > 0 ? Int((hrSum / Double(hrSampleCount)).rounded()) : 0,
-                peakHeartRate: peakHeartRate
-            ) {
-                showSummary = false
-                resetWorkout()
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .analytics:
+                WorkoutAnalyticsView()
+            case .hrZones:
+                HeartRateZonesView()
+            case .summary:
+                WorkoutSummaryView(
+                    type: selectedWorkoutType,
+                    duration: timeString(from: secondsElapsed),
+                    calories: estimatedCalories,
+                    distance: estimatedDistance,
+                    avgHeartRate: hrSampleCount > 0 ? Int((hrSum / Double(hrSampleCount)).rounded()) : 0,
+                    peakHeartRate: peakHeartRate
+                ) {
+                    activeSheet = nil
+                    resetWorkout()
+                }
             }
         }
         .task {
@@ -542,9 +548,10 @@ public struct WorkoutTrackerView: View {
             // Step count isn't part of HKWorkout's totals; write separately for
             // run / walk so the daily steps tile reflects the activity.
             if stepsToLog > 0 {
-                _ = await healthKitManager.logMetricValue(type: .steps, value: stepsToLog, date: end)
+                _ = await healthKitManager.logMetricValue(type: .steps, value: stepsToLog, start: start, end: end)
             }
-            showSummary = true
+            NotificationCenter.default.post(name: .init("fg.workout.saved"), object: nil)
+            activeSheet = .summary
         }
     }
     
