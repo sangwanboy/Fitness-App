@@ -2265,16 +2265,16 @@ StreakView badge fill (decorative icon, not fake glass), StreakEngine UserDefaul
 
 ### Build / deploy
 - Simulator **BUILD SUCCEEDED**, zero errors, zero deprecation warnings.
-- **Device deploy PENDING** — iPhone reported `unavailable` (asleep/disconnected) at session end.
-  Last build on the phone remains seq **2644** (Health Meter fix). Deploy this commit when reachable:
-  device build → `xcrun devicectl device install` → launch → record new sequence number.
+- Device was `unavailable` at first; came back online — device **BUILD SUCCEEDED**, installed AND
+  launched via `xcrun devicectl`. **databaseSequenceNumber: 2652**.
 
 ### Still open
-- Device deploy of this commit (above).
 - Hydration logging: code-level fix shipped (error surfacing + haptic). Needs one on-device check —
   if the alert appears, grant Water write permission in Settings > Health; if no menu appears at all,
   report back (hit-testing would then be the suspect, though none was found in audit).
+- On-device verify of the two freshly-unbroken workout sheets (Analytics / Zones buttons during a
+  workout) and the chained-read-tool chat flow.
 - Rotate GCP key `4d33d3bc…` for project `vertexi-ai-493516` (longstanding).
 
-Latest deployed sequence: **2644** (this session's fixes not yet on device).
+Latest deployed sequence: **2652**.
 
