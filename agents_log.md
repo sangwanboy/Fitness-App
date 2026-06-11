@@ -2387,3 +2387,16 @@ No font/layout/spacing changes — protections only (+215 insertions, 0 deletion
 
 Latest deployed sequence: **2676**.
 
+---
+
+## Session 37b — 2026-06-12 (Detail popup card insets)
+
+User screenshot review of the fixed Steps popup: charts/bars/texts all render correctly now, but the
+two popup glass sections sat flush against their card edges ("Weekly Analytics"/"Historical Insights"
+titles hugging the corner; chart's y-axis labels riding the right edge). Root cause: `glassCard` applies
+NO interior padding (by design — Home cards pad before the glass), and `DetailedMetricView`'s two
+sections never added their own. Fix (orchestrator, 2 lines): `.padding(16)` before `.glassCard(...)` on
+both sections. Device **BUILD SUCCEEDED**, installed + launched. **databaseSequenceNumber: 2692**.
+
+Latest deployed sequence: **2692**.
+

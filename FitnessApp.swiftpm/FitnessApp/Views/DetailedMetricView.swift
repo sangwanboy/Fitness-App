@@ -135,6 +135,7 @@ public struct DetailedMetricView: View {
                         
                         MetricChart(type: summary.type, history: weeklyHistory)
                     }
+                    .padding(16)
                     .glassCard(glowColor: summary.type.themeColor.opacity(0.1))
                     .padding(.horizontal)
                     .opacity(animateEntry ? 1.0 : 0.0)
@@ -167,6 +168,7 @@ public struct DetailedMetricView: View {
                                 .foregroundColor(isDark ? .white : .black)
                         }
                     }
+                    .padding(16)
                     .glassCard()
                     .padding(.horizontal)
                     .opacity(animateEntry ? 1.0 : 0.0)
