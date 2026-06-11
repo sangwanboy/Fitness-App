@@ -180,6 +180,8 @@ struct CardHead: View {
             Text(title)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundColor(color)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
             Spacer()
             if let trailing { trailing }
         }
@@ -205,16 +207,21 @@ struct BigNum: View {
                     .monospacedDigit()
                     .contentTransition(.numericText())
                     .animation(.spring(response: 0.35, dampingFraction: 0.8), value: value)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
                 if let unit {
                     Text(unit)
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundColor(isDark ? .white.opacity(0.6) : .black.opacity(0.6))
+                        .fixedSize()
                 }
             }
             if let caption {
                 Text(caption)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(isDark ? .white.opacity(0.55) : .black.opacity(0.55))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(2)
             }
         }
     }
@@ -262,16 +269,21 @@ struct MetricHeaderValue: View {
                     .monospacedDigit()
                     .contentTransition(.numericText())
                     .animation(.spring(response: 0.35, dampingFraction: 0.8), value: value)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
                 if let unit {
                     Text(unit)
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundColor(isDark ? .white.opacity(0.6) : .black.opacity(0.6))
+                        .fixedSize()
                 }
             }
             if let caption {
                 Text(caption)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(isDark ? .white.opacity(0.55) : .black.opacity(0.55))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(2)
             }
         }
     }
@@ -451,15 +463,19 @@ struct SleepCard: View {
                         Text(hasData ? "\(hours)h \(mins)m" : "No sleep logged")
                             .font(.system(size: 15, weight: .semibold))
                             .foregroundColor(isDark ? .white : .black)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
                         if hasData, let nightDate {
                             Text(nightLabel(for: nightDate))
                                 .font(.system(size: 11, weight: .medium))
                                 .foregroundColor(.purple.opacity(0.85))
                                 .lineLimit(1)
+                                .minimumScaleFactor(0.75)
                         }
                         Text("Goal: \(Int(goal))h")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundColor(isDark ? .white.opacity(0.55) : .black.opacity(0.55))
+                            .lineLimit(1)
                     }
                     Spacer(minLength: 0)
                 }
@@ -506,6 +522,8 @@ struct CaloriesCard: View {
                 Text(v > 0 ? "\(Int(pct * 100))% of goal" : "Burn calories to see progress")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(isDark ? .white.opacity(0.55) : .black.opacity(0.55))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
             }
             .padding(14)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -547,6 +565,8 @@ struct MealsCard: View {
                     .font(.system(size: 11, weight: .bold))
                     .foregroundColor(isDark ? .white.opacity(0.5) : .black.opacity(0.5))
                     .tracking(0.5)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
                 Spacer()
                 if let onViewDetails {
                     Button(action: onViewDetails) {
@@ -573,6 +593,8 @@ struct MealsCard: View {
                     .font(.system(size: 13, weight: .regular))
                     .foregroundColor(isDark ? .white.opacity(0.6) : .black.opacity(0.6))
                     .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(3)
             } else {
                 // Totals
                 HStack(alignment: .firstTextBaseline, spacing: 14) {
@@ -580,18 +602,24 @@ struct MealsCard: View {
                         Text("\(Int(totalKcal.rounded()))")
                             .font(.system(size: 22, weight: .bold, design: .rounded))
                             .foregroundColor(.orange)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.6)
                         Text("kcal")
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundColor(isDark ? .white.opacity(0.5) : .black.opacity(0.5))
+                            .fixedSize()
                     }
                     if totalProtein > 0 {
                         HStack(alignment: .firstTextBaseline, spacing: 4) {
                             Text("\(Int(totalProtein.rounded()))")
                                 .font(.system(size: 18, weight: .bold, design: .rounded))
                                 .foregroundColor(.pink)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.6)
                             Text("g protein")
                                 .font(.system(size: 11, weight: .semibold))
                                 .foregroundColor(isDark ? .white.opacity(0.5) : .black.opacity(0.5))
+                                .fixedSize()
                         }
                     }
                     Spacer(minLength: 0)
@@ -642,16 +670,20 @@ private struct MealRow: View {
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(isDark ? .white : .black)
                     .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 6) {
                     Text(timeString)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(isDark ? .white.opacity(0.5) : .black.opacity(0.5))
+                        .fixedSize()
                     if entry.protein > 0 || entry.carbs > 0 || entry.fat > 0 {
                         Text("·")
                             .foregroundColor(.gray)
                         Text("P \(Int(entry.protein.rounded()))g · C \(Int(entry.carbs.rounded()))g · F \(Int(entry.fat.rounded()))g")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundColor(isDark ? .white.opacity(0.55) : .black.opacity(0.55))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
                     }
                 }
             }
@@ -659,6 +691,8 @@ private struct MealRow: View {
             Text("\(Int(entry.calories.rounded())) kcal")
                 .font(.system(size: 13, weight: .semibold, design: .rounded))
                 .foregroundColor(.orange)
+                .lineLimit(1)
+                .fixedSize()
         }
         .padding(.vertical, 8)
     }
@@ -698,6 +732,8 @@ struct DistanceCard: View {
                 Text(v > 0 ? "\(Int(pct * 100))% of goal" : "Move outside to see progress")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(isDark ? .white.opacity(0.55) : .black.opacity(0.55))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
             }
             .padding(14)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -838,9 +874,13 @@ struct RecoveryCard: View {
                             .font(.system(size: 11, weight: .bold))
                             .foregroundColor(.green)
                             .tracking(0.4)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
                         Text(status)
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundColor(isDark ? .white : .black)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
                     }
                     Spacer(minLength: 0)
                 }
@@ -1010,14 +1050,20 @@ struct ActivityRingsCard: View {
                 .font(.system(size: 11, weight: .bold))
                 .foregroundColor(color)
                 .tracking(0.5)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
             HStack(alignment: .lastTextBaseline, spacing: 4) {
                 Text(value)
                     .font(.system(size: 19, weight: .bold, design: .rounded))
                     .foregroundColor(color)
                     .tracking(-0.4)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
                 Text(unit)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(isDark ? .white.opacity(0.5) : .black.opacity(0.5))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
                 Spacer()
             }
         }

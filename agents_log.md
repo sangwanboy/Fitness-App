@@ -2350,3 +2350,40 @@ dispatched to a Sonnet workflow (`detail-popup-polish`).
 
 Latest deployed sequence: **2668**.
 
+---
+
+## Session 37 — 2026-06-12 (Text-overflow sweep across all health cards)
+
+### User report
+Texts escaping their card/container boundaries throughout the health cards ("same everywhere" —
+pointing at the shared card components). Scout confirmed: 968-line `MetricCards.swift` had ONE
+`minimumScaleFactor` and three `lineLimit`s total; 30pt value texts on half-width tiles had no
+overflow protection anywhere.
+
+### Process
+One Sonnet workflow (`card-text-overflow-sweep`), 2 fixers on disjoint files, applying a frozen
+standard treatment per text role — values: `.lineLimit(1) + .minimumScaleFactor(0.6)` (+ `.fixedSize()`
+on unit siblings); titles/uppercase headers: `.lineLimit(1) + .minimumScaleFactor(0.75)`;
+captions/sentences: `.fixedSize(horizontal: false, vertical: true)` (+ bounded lineLimit in fixed-height
+tiles); HStack text-vs-chip competition: flexible frames so text scales instead of pushing siblings out.
+No font/layout/spacing changes — protections only (+215 insertions, 0 deletions).
+
+### Coverage (~190 modifiers, 8 files)
+- `MetricCards.swift` — CardHead, BigNum, MetricHeaderValue value block (protects Steps/Heart/Energy/
+  Distance/Hydration/SimpleMetricCard in both half-width and wide layouts), SleepCard, CaloriesCard,
+  MealsCard + MealRow, DistanceCard, RecoveryCard, ActivityRingsCard ring rows.
+- `PredictionsCard.swift` (59) — header, baseline/quiet states, Health Meter row + SubScoreBars,
+  Recovery/NextWorkout/Trajectory/Sedentary rows, AnomalyBanner, DailyInsight, action chips.
+- `WidgetsCard.swift` (48) — widget tile titles, KPI/progress/ring/comparison/delta block values,
+  RampingNumber, detail sheet rows, preview confirm card.
+- `ToolCards.swift` (48) — list/mutation/food/reminder/event/chart/custom tool cards.
+- `StreakCard.swift`, `DailyChallengeCard.swift`, `SleepTrackingCard.swift`, `DashboardView.swift`
+  (coach teaser, upcoming card, show-more button).
+- Honest skips: fixed-frame ring scores, single-char day letters, system alert text.
+
+### Build / deploy
+- Simulator + device **BUILD SUCCEEDED**, zero errors. Installed AND launched via `xcrun devicectl`.
+- **databaseSequenceNumber: 2676**.
+
+Latest deployed sequence: **2676**.
+

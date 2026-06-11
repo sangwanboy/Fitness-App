@@ -343,6 +343,7 @@ public struct DashboardView: View {
         } label: {
             HStack(spacing: 6) {
                 Text(showMoreMetrics ? "Show less" : "Show more health data")
+                    .lineLimit(1)
                 Image(systemName: showMoreMetrics ? "chevron.up" : "chevron.down")
             }
             .font(.system(size: 14, weight: .semibold))
@@ -501,12 +502,14 @@ public struct DashboardView: View {
                     .font(.system(size: 11, weight: .bold))
                     .foregroundColor(isDark ? .white.opacity(0.5) : .black.opacity(0.5))
                     .tracking(0.5)
+                    .lineLimit(1)
             }
             
             Text(coachTeaserText)
                 .font(.system(size: 14, weight: .medium))
                 .foregroundColor(isDark ? .white.opacity(0.9) : .black.opacity(0.9))
                 .lineSpacing(4)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(paddingVal)
@@ -541,9 +544,12 @@ public struct DashboardView: View {
                     .font(.system(size: 15, weight: .bold, design: .rounded))
                     .foregroundColor(isDark ? .white : .black)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.75)
                 Text(subtitle)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(isDark ? .white.opacity(0.6) : .black.opacity(0.6))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
             }
 
             Spacer()
@@ -627,6 +633,7 @@ public struct DashboardView: View {
             Text("Workouts This Week")
                 .font(.system(size: 14, weight: .bold))
                 .foregroundColor(isDark ? .white : .black)
+                .lineLimit(1)
 
             HStack(spacing: 12) {
                 ForEach(days, id: \.self) { day in
@@ -662,6 +669,7 @@ public struct DashboardView: View {
                         .font(.system(size: 12, weight: .semibold))
                     Text("View Training Analytics")
                         .font(.system(size: 12, weight: .semibold))
+                        .lineLimit(1)
                     Spacer()
                     Image(systemName: "chevron.right")
                         .font(.system(size: 11))

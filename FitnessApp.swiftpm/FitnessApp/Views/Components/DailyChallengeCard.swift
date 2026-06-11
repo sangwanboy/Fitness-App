@@ -114,11 +114,13 @@ public struct DailyChallengeCard: View {
                     .foregroundColor(isDark ? .white.opacity(0.5) : .black.opacity(0.45))
                     .textCase(.uppercase)
                     .kerning(0.5)
+                    .lineLimit(1)
 
                 Text(challenge.title)
                     .font(.system(size: 16, weight: .bold))
                     .foregroundColor(isDark ? .white : .black)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.75)
             }
 
             Spacer()
@@ -168,15 +170,21 @@ public struct DailyChallengeCard: View {
                 Label("Completed!", systemImage: "checkmark.circle.fill")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(color)
+                    .lineLimit(1)
             } else {
                 Text(progressText(current: current, target: target, unit: unit))
                     .font(.system(size: 13, weight: .medium))
                     .foregroundColor(isDark ? .white.opacity(0.75) : .black.opacity(0.6))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
             }
             Spacer()
             Text("\(Int(engine.progress * 100))%")
                 .font(.system(size: 13, weight: .bold))
                 .foregroundColor(color)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+                .fixedSize()
         }
     }
 
@@ -196,10 +204,14 @@ public struct DailyChallengeCard: View {
             Label(timeRemaining(until: challenge.expiresAt), systemImage: "clock")
                 .font(.system(size: 11, weight: .medium))
                 .foregroundColor(isDark ? .white.opacity(0.4) : .black.opacity(0.35))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
             Spacer()
             Text("View Details")
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundColor(color.opacity(0.9))
+                .lineLimit(1)
+                .fixedSize()
         }
     }
 
@@ -232,6 +244,8 @@ public struct DailyChallengeCard: View {
             Text("Loading today's challenge…")
                 .font(.system(size: 14, weight: .medium))
                 .foregroundColor(isDark ? .white.opacity(0.6) : .black.opacity(0.5))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)

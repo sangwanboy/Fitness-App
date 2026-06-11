@@ -105,6 +105,7 @@ public struct PredictionsCard: View {
                 .font(.system(size: 11, weight: .bold))
                 .foregroundColor(isDark ? .white.opacity(0.5) : .black.opacity(0.5))
                 .tracking(0.5)
+                .lineLimit(1)
             if let p = predictions, p.aiEnrichmentStatus == .pending,
                p.insufficientHistoryDays == nil {
                 PulsingThinkingLabel()
@@ -133,10 +134,13 @@ public struct PredictionsCard: View {
             Text("Building your baseline")
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundColor(isDark ? .white : .black)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
             Text("Day \(have) of \(totalNeeded). Predictions unlock once we have a week of history to compare against.")
                 .font(.system(size: 13, weight: .regular))
                 .foregroundColor(isDark ? .white.opacity(0.7) : .black.opacity(0.7))
                 .lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
             ProgressView(value: progress)
                 .progressViewStyle(.linear)
                 .tint(.indigo)
@@ -151,6 +155,7 @@ public struct PredictionsCard: View {
             .font(.system(size: 13, weight: .regular))
             .foregroundColor(isDark ? .white.opacity(0.65) : .black.opacity(0.65))
             .lineSpacing(3)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     // MARK: - Retry row
@@ -163,6 +168,7 @@ public struct PredictionsCard: View {
             Text("AI insights unavailable")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundColor(isDark ? .white.opacity(0.7) : .black.opacity(0.7))
+                .lineLimit(1)
             Spacer()
             Button(action: { HealthKitManager.shared.retryAIEnrichment() }) {
                 HStack(spacing: 4) {
@@ -195,9 +201,11 @@ public struct PredictionsCard: View {
                 Text("Guided Breathing")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(isDark ? .white : .black)
+                    .lineLimit(1)
                 Text("Box · 4-7-8 · Coherent · Custom")
                     .font(.system(size: 10, weight: .medium))
                     .foregroundColor(isDark ? .white.opacity(0.5) : .black.opacity(0.5))
+                    .lineLimit(1)
             }
             Spacer()
             Button(action: action) {
@@ -365,17 +373,24 @@ private struct HealthMeterRow: View {
                     Text("\(meter.score)")
                         .font(.system(size: 18, weight: .bold, design: .rounded))
                         .foregroundColor(isDark ? .white : .black)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
                 }
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
                         Text("Health Meter")
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundColor(.indigo)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
                         Text("·")
                             .foregroundColor(.gray)
+                            .fixedSize()
                         Text(meter.label.headline)
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundColor(labelColor)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
                         Spacer()
                         WhyButton(onTap: onWhy)
                     }
@@ -390,19 +405,23 @@ private struct HealthMeterRow: View {
                         Text(meter.confidence.displayLabel.lowercased())
                             .font(.system(size: 10, weight: .medium))
                             .foregroundColor(isDark ? .white.opacity(0.45) : .black.opacity(0.45))
+                            .lineLimit(1)
                         if !meter.usedNutrition {
                             Text("· no meals logged")
                                 .font(.system(size: 10, weight: .medium))
                                 .foregroundColor(isDark ? .white.opacity(0.45) : .black.opacity(0.45))
+                                .lineLimit(1)
                         } else if !meter.mealsLoggedToday {
                             Text("· no meals today")
                                 .font(.system(size: 10, weight: .medium))
                                 .foregroundColor(isDark ? .white.opacity(0.45) : .black.opacity(0.45))
+                                .lineLimit(1)
                         }
                         if !meter.usedBMI {
                             Text("· no height/weight")
                                 .font(.system(size: 10, weight: .medium))
                                 .foregroundColor(isDark ? .white.opacity(0.45) : .black.opacity(0.45))
+                                .lineLimit(1)
                         }
                     }
                 }
@@ -441,6 +460,8 @@ private struct SubScoreBar: View {
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundColor(isDark ? .white.opacity(0.7) : .black.opacity(0.7))
                 .frame(width: 64, alignment: .leading)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule()
@@ -460,6 +481,8 @@ private struct SubScoreBar: View {
                 .font(.system(size: 10, weight: .semibold, design: .rounded))
                 .foregroundColor(isDark ? .white.opacity(0.55) : .black.opacity(0.55))
                 .frame(width: 42, alignment: .trailing)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
         }
     }
 }
@@ -496,17 +519,23 @@ private struct RecoveryRow: View {
                 Text("\(reading.score)")
                     .font(.system(size: 15, weight: .bold, design: .rounded))
                     .foregroundColor(isDark ? .white : .black)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
             }
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text("Recovery")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(.indigo)
+                        .lineLimit(1)
                     Text("·")
                         .foregroundColor(.gray)
+                        .fixedSize()
                     Text(reading.label.headline)
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(labelColor)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                     Spacer()
                     WhyButton(onTap: onWhy)
                 }
@@ -521,6 +550,8 @@ private struct RecoveryRow: View {
                     Text("Estimated from sleep + load · \(reading.confidence.displayLabel.lowercased())")
                         .font(.system(size: 10, weight: .medium))
                         .foregroundColor(isDark ? .white.opacity(0.45) : .black.opacity(0.45))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                 }
             }
             Spacer(minLength: 0)
@@ -570,6 +601,8 @@ private struct NextWorkoutRow: View {
                     Text("Likely workout · \(forecast.weekdayLabel)")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(.indigo)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                     Spacer()
                     WhyButton(onTap: onWhy)
                 }
@@ -578,9 +611,13 @@ private struct NextWorkoutRow: View {
                      : "\(forecast.category.displayName) · \(timeLabel)")
                     .font(.system(size: 13, weight: .regular))
                     .foregroundColor(isDark ? .white.opacity(0.85) : .black.opacity(0.85))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
                 Text("\(forecast.confidence.displayLabel) · \(Int(forecast.support * 100))% of recent weeks")
                     .font(.system(size: 10, weight: .medium))
                     .foregroundColor(isDark ? .white.opacity(0.45) : .black.opacity(0.45))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
             }
             Spacer(minLength: 0)
         }
@@ -628,17 +665,24 @@ private struct TrajectoryRow: View {
                     Text(trajectory.metric.displayName)
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(trajectory.metric.themeColor)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                     Text("·")
                         .foregroundColor(.gray)
+                        .fixedSize()
                     Text(trajectory.status.headline)
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(statusColor)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                     Spacer()
                     WhyButton(onTap: onWhy)
                 }
                 Text("Projected \(format(trajectory.projectedEOD, for: trajectory.metric)) \(trajectory.metric.unit) · avg \(format(trajectory.baselineEOD, for: trajectory.metric))")
                     .font(.system(size: 13, weight: .regular))
                     .foregroundColor(isDark ? .white.opacity(0.85) : .black.opacity(0.85))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
         }
@@ -695,12 +739,15 @@ private struct SedentaryRow: View {
                     Text("Move reminder")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(severityColor)
+                        .lineLimit(1)
                     Spacer()
                     WhyButton(onTap: onWhy)
                 }
                 Text(headline)
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(isDark ? .white : .black)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
                 Text(subtext)
                     .font(.system(size: 12, weight: .regular))
                     .foregroundColor(isDark ? .white.opacity(0.7) : .black.opacity(0.7))
@@ -741,15 +788,20 @@ private struct AnomalyBanner: View {
                 Text(headline)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(isDark ? .white : .black)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
                 if let text = anomaly.interpretation {
                     Text(text)
                         .font(.system(size: 12, weight: .regular))
                         .foregroundColor(isDark ? .white.opacity(0.8) : .black.opacity(0.8))
                         .lineSpacing(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 } else {
                     Text("Today: \(String(format: "%.1f", anomaly.today)) \(anomaly.metric.unit) · 28-day baseline: \(String(format: "%.1f", anomaly.baseline)) \(anomaly.metric.unit)")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(isDark ? .white.opacity(0.55) : .black.opacity(0.55))
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             Spacer(minLength: 0)
@@ -786,6 +838,7 @@ private struct DailyInsightRow: View {
                 Text("Today's insight")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(.indigo)
+                    .lineLimit(1)
                 Text(insight.headline)
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(isDark ? .white : .black)
@@ -824,6 +877,7 @@ private struct ActionChipsRow: View {
             Text("Suggested moves")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundColor(.indigo)
+                .lineLimit(1)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(actions) { action in

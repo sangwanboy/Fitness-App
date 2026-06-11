@@ -50,6 +50,7 @@ public struct StreakCard: View {
             Text("Streak")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundColor(flameColor)
+                .lineLimit(1)
         }
     }
 
@@ -62,6 +63,8 @@ public struct StreakCard: View {
                 Text("\(engine.longestStreak)")
                     .font(.system(size: 11, weight: .bold, design: .rounded))
                     .foregroundColor(isDark ? .white.opacity(0.7) : .black.opacity(0.7))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
             }
         }
     }
@@ -75,9 +78,12 @@ public struct StreakCard: View {
                 .monospacedDigit()
                 .contentTransition(.numericText())
                 .animation(.spring(response: 0.5, dampingFraction: 0.7), value: engine.currentStreak)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
             Text("week\(engine.currentStreak == 1 ? "" : "s")")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundColor(isDark ? .white.opacity(0.6) : .black.opacity(0.6))
+                .fixedSize()
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(engine.currentStreak) week streak")

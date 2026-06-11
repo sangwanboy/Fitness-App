@@ -40,10 +40,12 @@ public struct WidgetsCard: View {
                     Text("No widgets yet")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundColor(.white.opacity(0.4))
+                        .lineLimit(1)
                     Text("Ask Astra to pin a widget to your Home.")
                         .font(.system(size: 12, weight: .regular))
                         .foregroundColor(.white.opacity(0.28))
                         .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 20)
@@ -159,6 +161,8 @@ struct AstraWidgetTile: View {
                 Text(widget.title)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(color)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
                 if widget.isComposed, let blocks = widget.blocks {
                     composedContent(blocks: blocks)
                 } else {
@@ -189,10 +193,13 @@ struct AstraWidgetTile: View {
                 Text(displayHeadline)
                     .font(.system(size: 22, weight: .bold, design: .rounded))
                     .foregroundColor(isDark ? .white : .black)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
                 if let unit = liveUnit {
                     Text(unit)
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundColor(isDark ? .white.opacity(0.5) : .black.opacity(0.5))
+                        .fixedSize()
                 }
             }
             if let body = widget.body, !body.isEmpty {
@@ -240,13 +247,17 @@ struct AstraWidgetTile: View {
                 Text(formatNum(value))
                     .font(.system(size: 18, weight: .bold, design: .rounded))
                     .foregroundColor(color)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
                 Text("/ \(formatNum(goal))")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(isDark ? .white.opacity(0.55) : .black.opacity(0.55))
+                    .fixedSize()
                 if let unit = liveUnit {
                     Text(unit)
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundColor(isDark ? .white.opacity(0.5) : .black.opacity(0.5))
+                        .fixedSize()
                 }
             }
             GeometryReader { geo in
@@ -360,9 +371,13 @@ private struct WidgetDetailSheet: View {
                         Text(widget.title)
                             .font(.system(size: 22, weight: .bold, design: .rounded))
                             .foregroundColor(isDark ? .white : .black)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
                         Text(widget.layout.rawValue.capitalized + (widget.metricRef.map { " · live \($0)" } ?? ""))
                             .font(.system(size: 11, weight: .medium))
                             .foregroundColor(isDark ? .white.opacity(0.5) : .black.opacity(0.5))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
                     }
                     Spacer()
                 }
@@ -413,6 +428,8 @@ private struct WidgetDetailSheet: View {
                 Text(title)
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(isDark ? .white : .black)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
                 Text(subtitle)
                     .font(.system(size: 11, weight: .regular))
                     .foregroundColor(isDark ? .white.opacity(0.55) : .black.opacity(0.55))
@@ -669,10 +686,13 @@ private struct RampingNumber: View {
                 .foregroundColor(color)
                 .monospacedDigit()
                 .contentTransition(.numericText())
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
             if let unit {
                 Text(unit)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(unitColor)
+                    .fixedSize()
             }
         }
         .onAppear {
@@ -716,6 +736,8 @@ private struct MetricValueBlockView: View {
                     .font(.system(size: 9, weight: .bold))
                     .tracking(0.5)
                     .foregroundColor(isDark ? .white.opacity(0.45) : .black.opacity(0.45))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
             }
             RampingNumber(target: resolvedValue,
                           font: .system(size: 26, weight: .bold, design: .rounded),
@@ -766,16 +788,22 @@ private struct RingBlockView: View {
                     .font(.system(size: 12, weight: .bold, design: .rounded))
                     .foregroundColor(isDark ? .white : .black)
                     .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
             }
             VStack(alignment: .leading, spacing: 2) {
                 if let label, !label.isEmpty {
                     Text(label)
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundColor(isDark ? .white.opacity(0.75) : .black.opacity(0.75))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                 }
                 Text("\(WidgetMetric.formatNum(resolvedCurrent)) / \(WidgetMetric.formatNum(resolvedGoal))")
                     .font(.system(size: 12, weight: .medium, design: .rounded))
                     .foregroundColor(isDark ? .white.opacity(0.55) : .black.opacity(0.55))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
             }
             Spacer(minLength: 0)
         }
@@ -929,9 +957,12 @@ private struct ComparisonBlockView: View {
                 Text(pct >= 0 ? "+\(String(format: "%.0f", pct))%" : "\(String(format: "%.0f", pct))%")
                     .font(.system(size: 14, weight: .bold, design: .rounded))
                     .foregroundColor(pct >= 0 ? .green : .red)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
                 Text("vs")
                     .font(.system(size: 9, weight: .medium))
                     .foregroundColor(isDark ? .white.opacity(0.45) : .black.opacity(0.45))
+                    .fixedSize()
             }
         }
         .frame(height: 40)
@@ -946,6 +977,8 @@ private struct ComparisonBlockView: View {
                 .font(.system(size: 11, weight: .semibold, design: .rounded))
                 .foregroundColor(emphasised ? color : (isDark ? .white.opacity(0.7) : .black.opacity(0.7)))
                 .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
             Capsule()
                 .fill(emphasised ? color : color.opacity(0.4))
                 .frame(width: 36 * max(frac, 0.05), height: 6)
@@ -953,6 +986,8 @@ private struct ComparisonBlockView: View {
             Text(label)
                 .font(.system(size: 9, weight: .medium))
                 .foregroundColor(isDark ? .white.opacity(0.5) : .black.opacity(0.5))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
         }
     }
 }
@@ -988,6 +1023,8 @@ private struct DeltaBlockView: View {
                 .font(.system(size: 9, weight: .semibold))
             Text("\(up ? "+" : "")\(String(format: "%.0f", pct))% vs last \(vsDays)d")
                 .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
         }
         .foregroundColor(up ? .green : .red)
         .padding(.horizontal, 8)

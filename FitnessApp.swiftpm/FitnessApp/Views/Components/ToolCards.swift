@@ -322,9 +322,13 @@ private struct ListSummaryCard: View {
                 Text(title)
                     .font(.system(size: 14, weight: .bold))
                     .foregroundColor(isDark ? .white : .black)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
                 Text(subtitle)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(isDark ? .white.opacity(0.55) : .black.opacity(0.55))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
             }
             Spacer()
         }
@@ -365,15 +369,20 @@ private struct MutationConfirmCard: View {
                         .font(.system(size: 10, weight: .bold))
                         .foregroundColor(isDark ? .white.opacity(0.5) : .black.opacity(0.5))
                         .tracking(0.6)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                     Text(summary)
                         .font(.system(size: 15, weight: .bold))
                         .foregroundColor(isDark ? .white : .black)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                 }
                 Spacer()
             }
             Text(detail)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundColor(isDark ? .white.opacity(0.6) : .black.opacity(0.6))
+                .fixedSize(horizontal: false, vertical: true)
             ConfirmFooterShim(status: status, accentColor: accentColor,
                               confirmLabel: confirmLabel, onConfirm: onConfirm, onCancel: onCancel)
         }
@@ -549,6 +558,8 @@ private struct FoodToolCard: View {
                 Text(name)
                     .font(.system(size: 14, weight: .bold))
                     .foregroundColor(isDark ? .white : .black)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
                 if let badge = estimateBadgeText {
                     Text(badge)
                         .font(.system(size: 9, weight: .bold))
@@ -563,6 +574,8 @@ private struct FoodToolCard: View {
                     Text(serving)
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundColor(isDark ? .white.opacity(0.55) : .black.opacity(0.55))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                 }
             }
 
@@ -638,8 +651,11 @@ private struct FoodToolCard: View {
     private func macro(_ label: String, _ value: String, _ color: Color) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label).font(.system(size: 9, weight: .bold)).foregroundColor(color).tracking(0.4)
+                .lineLimit(1)
             Text(value).font(.system(size: 14, weight: .bold, design: .rounded))
                 .foregroundColor(isDark ? .white : .black).tracking(-0.3)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -676,6 +692,8 @@ private struct WidgetPreviewConfirmCard: View {
                     .font(.system(size: 10, weight: .bold))
                     .tracking(0.6)
                     .foregroundColor(isDark ? .white.opacity(0.5) : .black.opacity(0.5))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
                 Spacer()
                 if status == .done {
                     HStack(spacing: 4) {
@@ -896,9 +914,13 @@ private struct ComparisonChartToolCard: View {
                     .font(.system(size: 9, weight: .bold))
                     .foregroundColor(isDark ? .white.opacity(0.5) : .black.opacity(0.5))
                     .tracking(0.3)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
                 Text("\(formatNumber(avg)) \(unit)")
                     .font(.system(size: 11, weight: .bold, design: .rounded))
                     .foregroundColor(isDark ? .white : .black)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
             }
         }
         .frame(maxWidth: .infinity)
@@ -951,6 +973,7 @@ private struct ReminderToolCard: View {
                 Text("New reminder")
                     .font(.system(size: 12, weight: .bold))
                     .foregroundColor(categoryColor).tracking(0.4)
+                    .lineLimit(1)
                 Spacer()
             }
             VStack(alignment: .leading, spacing: 4) {
@@ -961,6 +984,8 @@ private struct ReminderToolCard: View {
                 Text(dueText)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(isDark ? .white.opacity(0.55) : .black.opacity(0.55))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
             }
             ConfirmFooter(status: status, accentColor: accentColor,
                           confirmLabel: "Add reminder",
@@ -1004,6 +1029,7 @@ private struct EventToolCard: View {
                 Text("New event")
                     .font(.system(size: 12, weight: .bold))
                     .foregroundColor(.blue).tracking(0.4)
+                    .lineLimit(1)
                 Spacer()
             }
             VStack(alignment: .leading, spacing: 4) {
@@ -1014,6 +1040,8 @@ private struct EventToolCard: View {
                 Text(rangeText)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(isDark ? .white.opacity(0.55) : .black.opacity(0.55))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
                 if let n = notes, !n.isEmpty {
                     Text(inlineMD(n))
                         .font(.system(size: 12, weight: .medium))
@@ -1077,10 +1105,14 @@ private struct MetricChartToolCard: View {
                 Text("\(displayName) · last \(days) days")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(color)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
                 Spacer()
                 Text("avg \(format(average)) \(unit)")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(isDark ? .white.opacity(0.55) : .black.opacity(0.55))
+                    .lineLimit(1)
+                    .fixedSize()
             }
             if values.isEmpty {
                 Text("No data yet")
@@ -1144,6 +1176,8 @@ private struct CustomToolCard: View {
                 Text(title)
                     .font(.system(size: 13, weight: .bold))
                     .foregroundColor(color)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
                 Spacer()
             }
             if let headline {
@@ -1172,9 +1206,12 @@ private struct CustomToolCard: View {
                             Text(s.label.uppercased())
                                 .font(.system(size: 9, weight: .bold))
                                 .foregroundColor(color).tracking(0.4)
+                                .lineLimit(1)
                             Text(s.value)
                                 .font(.system(size: 14, weight: .bold, design: .rounded))
                                 .foregroundColor(isDark ? .white : .black)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.6)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
