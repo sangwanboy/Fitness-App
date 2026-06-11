@@ -508,6 +508,7 @@ public struct DashboardView: View {
                 .foregroundColor(isDark ? .white.opacity(0.9) : .black.opacity(0.9))
                 .lineSpacing(4)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(paddingVal)
         .glassCard(glowColor: accentColor.opacity(0.06))
     }
@@ -670,10 +671,11 @@ public struct DashboardView: View {
             }
             .buttonStyle(PlainButtonStyle())
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(paddingVal)
         .glassCard()
     }
-    
+
     // MARK: - Helper Methods
 
     private static let dateFmt: DateFormatter = {

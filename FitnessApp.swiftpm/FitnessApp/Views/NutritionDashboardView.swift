@@ -564,34 +564,30 @@ private struct CalorieTrendChart: View {
 
                 let goalY = h - CGFloat(goalLine / maxV) * h
 
+                let smoothCurve = Path.smoothLine(through: pts)
+                let fillPath: Path = {
+                    guard let first = pts.first, let last = pts.last else { return Path() }
+                    var p = smoothCurve
+                    p.addLine(to: CGPoint(x: last.x, y: h))
+                    p.addLine(to: CGPoint(x: first.x, y: h))
+                    p.closeSubpath()
+                    return p
+                }()
                 return AnyView(
                     ZStack {
-                        // Area fill
-                        Path { p in
-                            guard let first = pts.first else { return }
-                            p.move(to: CGPoint(x: first.x, y: h))
-                            p.addLine(to: first)
-                            for pt in pts.dropFirst() { p.addLine(to: pt) }
-                            if let last = pts.last {
-                                p.addLine(to: CGPoint(x: last.x, y: h))
-                            }
-                            p.closeSubpath()
-                        }
-                        .fill(
-                            LinearGradient(
-                                colors: [Color.orange.opacity(0.35), Color.orange.opacity(0)],
-                                startPoint: .top,
-                                endPoint: .bottom
+                        // Area fill under smooth curve
+                        fillPath
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color.orange.opacity(0.35), Color.orange.opacity(0)],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
                             )
-                        )
 
-                        // Line
-                        Path { p in
-                            guard let first = pts.first else { return }
-                            p.move(to: first)
-                            for pt in pts.dropFirst() { p.addLine(to: pt) }
-                        }
-                        .stroke(Color.orange, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                        // Smooth trend line
+                        smoothCurve
+                            .stroke(Color.orange, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
 
                         // Goal dashed line
                         Path { p in

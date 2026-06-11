@@ -32,6 +32,42 @@ enum MetricCardHelpers {
     }
 }
 
+// MARK: - Smooth path helper
+
+extension Path {
+    /// Catmull-Rom spline through all points, converted to cubic Bézier segments.
+    /// Control-point formula: c1 = p1 + (p2 - p0)/6, c2 = p2 - (p3 - p1)/6.
+    /// Endpoints are clamped by duplicating the first/last point so the curve
+    /// still passes through them without overshooting.
+    /// Handles 0, 1, or 2 input points gracefully (empty / dot / straight line).
+    static func smoothLine(through pts: [CGPoint]) -> Path {
+        var path = Path()
+        guard pts.count >= 2 else {
+            if let only = pts.first { path.move(to: only) }
+            return path
+        }
+        if pts.count == 2 {
+            path.move(to: pts[0])
+            path.addLine(to: pts[1])
+            return path
+        }
+        // Clamp by duplicating endpoints
+        var p = pts
+        p.insert(p.first!, at: 0)
+        p.append(p.last!)
+        path.move(to: p[1])
+        for i in 1..<(p.count - 2) {
+            let p0 = p[i - 1], p1 = p[i], p2 = p[i + 1], p3 = p[i + 2]
+            let c1 = CGPoint(x: p1.x + (p2.x - p0.x) / 6,
+                             y: p1.y + (p2.y - p0.y) / 6)
+            let c2 = CGPoint(x: p2.x - (p3.x - p1.x) / 6,
+                             y: p2.y - (p3.y - p1.y) / 6)
+            path.addCurve(to: p2, control1: c1, control2: c2)
+        }
+        return path
+    }
+}
+
 // MARK: - Chart Primitives
 
 struct SparkChart: View {
@@ -52,25 +88,23 @@ struct SparkChart: View {
                 return CGPoint(x: x, y: y)
             }
 
+            let smoothCurve = Path.smoothLine(through: pts)
+            let fillPath: Path = {
+                guard let first = pts.first, let last = pts.last else { return Path() }
+                var p = smoothCurve
+                p.addLine(to: CGPoint(x: last.x, y: h))
+                p.addLine(to: CGPoint(x: first.x, y: h))
+                p.closeSubpath()
+                return p
+            }()
             ZStack {
-                // Fill under line
-                Path { p in
-                    guard let first = pts.first else { return }
-                    p.move(to: CGPoint(x: first.x, y: h))
-                    p.addLine(to: first)
-                    for pt in pts.dropFirst() { p.addLine(to: pt) }
-                    p.addLine(to: CGPoint(x: pts.last?.x ?? w, y: h))
-                    p.closeSubpath()
-                }
-                .fill(LinearGradient(colors: [color.opacity(0.32), color.opacity(0)], startPoint: .top, endPoint: .bottom))
+                // Fill under smooth curve
+                fillPath
+                    .fill(LinearGradient(colors: [color.opacity(0.32), color.opacity(0)], startPoint: .top, endPoint: .bottom))
 
-                // Line
-                Path { p in
-                    guard let first = pts.first else { return }
-                    p.move(to: first)
-                    for pt in pts.dropFirst() { p.addLine(to: pt) }
-                }
-                .stroke(color, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                // Smooth line
+                smoothCurve
+                    .stroke(color, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
 
                 if dots, let last = pts.last {
                     Circle()

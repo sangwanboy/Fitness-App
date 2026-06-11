@@ -2278,3 +2278,40 @@ StreakView badge fill (decorative icon, not fake glass), StreakEngine UserDefaul
 
 Latest deployed sequence: **2652**.
 
+---
+
+## Session 35 — 2026-06-11 (Chart smoothing app-wide + HR detail chart + AI Coach card width)
+
+### User reports (screenshots)
+(1) Heart Rate detail screen: jagged chart with dense overlapping point dots, unreadable x-axis on the
+weekly view; (2) AI Coach card on Home renders narrower than the Predictions card; (3) follow-up ask:
+make ALL graphs in the app smoother. (The "TODAY'S TOTAL" label in the screenshot was already fixed in
+seq 2652 — screenshot predated the install by a minute.)
+
+### Process
+Two small Sonnet workflows (orchestrator: scouting, frozen designs, review, build, deploy):
+- `hr-chart-coach-card-fix` (2 agents, disjoint files)
+- `smooth-all-graphs` (1 agent, 3 files) — ran in parallel with the first, disjoint file sets.
+
+### Changes
+- **`MetricChart.swift`** — span-aware HR/HRV chart: intraday (≤36h) keeps raw readings; multi-day
+  buckets into 1-hour (≤3-day span) or 3-hour windows, averaged, targeting ~40–80 points. Interpolation
+  `.catmullRom` → `.monotone`. Per-point circle symbols suppressed when >40 points. X-axis now has a
+  multi-day HR branch (daily weekday ticks) vs the old always-2-hourly assumption. Drag-to-inspect
+  nearest-time lookup extended to `.hrv`; selected-date format adapts to bucketed multi-day data.
+- **`DashboardView.swift`** — `coachCardView` and `weeklyWorkoutsCardView` got
+  `.frame(maxWidth: .infinity, alignment: .leading)` before their glass so wide cards fill the row
+  (they were content-hugging). `upcomingWorkoutCardView` verified already-correct (internal Spacer).
+- **`MetricCards.swift`** — new shared `Path.smoothLine(through:)` (Catmull-Rom → cubic Bézier,
+  ÷6 control points, endpoint clamping, 0/1/2-point safe). `SparkChart` line + area fill now smooth.
+- **`WidgetsCard.swift`** — `SparklineBlockView` line + area use the smooth path; `.trim` draw-in
+  animation preserved; horizontal baseline rule intentionally stays straight.
+- **`NutritionDashboardView.swift`** — `CalorieTrendChart` line + area smooth; dashed goal line stays
+  straight. (`WorkoutAnalyticsView` already used `.catmullRom`; bars/rings untouched by design.)
+
+### Build / deploy
+- Simulator + device **BUILD SUCCEEDED**, zero errors. Installed AND launched via `xcrun devicectl`.
+- **databaseSequenceNumber: 2660**.
+
+Latest deployed sequence: **2660**.
+

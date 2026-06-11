@@ -814,6 +814,19 @@ private struct SparklineBlockView: View {
             let range = max(maxV - minV, 0.0001)
             let w = geo.size.width
             let h = geo.size.height
+            let pts: [CGPoint] = values.enumerated().map { (i, v) in
+                CGPoint(x: w * CGFloat(i) / CGFloat(max(values.count - 1, 1)),
+                        y: h - h * CGFloat((v - minV) / range))
+            }
+            let smoothCurve = Path.smoothLine(through: pts)
+            let fillPath: Path = {
+                guard let first = pts.first, let last = pts.last else { return Path() }
+                var p = smoothCurve
+                p.addLine(to: CGPoint(x: last.x, y: h))
+                p.addLine(to: CGPoint(x: first.x, y: h))
+                p.closeSubpath()
+                return p
+            }()
             ZStack {
                 // baseline
                 Path { p in
@@ -822,32 +835,16 @@ private struct SparklineBlockView: View {
                 }
                 .stroke(color.opacity(0.12), lineWidth: 1)
 
-                // area fill (lighter than line)
-                Path { p in
-                    p.move(to: CGPoint(x: 0, y: h))
-                    for (i, v) in values.enumerated() {
-                        let x = w * CGFloat(i) / CGFloat(max(values.count - 1, 1))
-                        let y = h - h * CGFloat((v - minV) / range)
-                        p.addLine(to: CGPoint(x: x, y: y))
-                    }
-                    p.addLine(to: CGPoint(x: w, y: h))
-                    p.closeSubpath()
-                }
-                .fill(LinearGradient(colors: [color.opacity(0.25), color.opacity(0.02)],
-                                     startPoint: .top, endPoint: .bottom))
-                .mask(Rectangle().frame(width: w * drawProgress, height: h).offset(x: -w * (1 - drawProgress) / 2))
+                // area fill under smooth curve
+                fillPath
+                    .fill(LinearGradient(colors: [color.opacity(0.25), color.opacity(0.02)],
+                                         startPoint: .top, endPoint: .bottom))
+                    .mask(Rectangle().frame(width: w * drawProgress, height: h).offset(x: -w * (1 - drawProgress) / 2))
 
-                // line
-                Path { p in
-                    for (i, v) in values.enumerated() {
-                        let x = w * CGFloat(i) / CGFloat(max(values.count - 1, 1))
-                        let y = h - h * CGFloat((v - minV) / range)
-                        if i == 0 { p.move(to: CGPoint(x: x, y: y)) }
-                        else { p.addLine(to: CGPoint(x: x, y: y)) }
-                    }
-                }
-                .trim(from: 0, to: drawProgress)
-                .stroke(color, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                // smooth line with draw-in animation
+                smoothCurve
+                    .trim(from: 0, to: drawProgress)
+                    .stroke(color, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
             }
         }
         .frame(height: 36)
