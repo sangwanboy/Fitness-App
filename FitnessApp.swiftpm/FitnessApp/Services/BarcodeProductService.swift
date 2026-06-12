@@ -9,6 +9,7 @@
 // ============================================================
 
 import Foundation
+import UIKit
 
 public enum BarcodeLookupError: LocalizedError {
     case notFound          // OFF status 0, or HTTP 404 — no product for this GTIN
@@ -28,7 +29,7 @@ public actor BarcodeProductService {
     public static let shared = BarcodeProductService()
     private init() {}
 
-    private let fields = "product_name,brands,serving_size,nutriments"
+    private let fields = "product_name,brands,serving_size,nutriments,image_front_url,image_url,image_front_small_url"
     private let userAgent = "FitnessGuru-iOS/1.0 (personal project)"
 
     /// Looks up a single barcode. `barcode` should be the bare GTIN digits.
@@ -76,5 +77,26 @@ public actor BarcodeProductService {
             // OFF effectively has nothing usable for this code.
             throw BarcodeLookupError.notFound
         }
+    }
+
+    /// Downloads the product photo at `url`. Returns nil on ANY failure — network
+    /// error, non-image body, or decoding failure. Never throws, never retries.
+    /// Downscales to ≤1200 px max dimension before returning (mirrors the
+    /// existing image-staging approach in the app).
+    public func fetchProductImage(url: URL) async -> UIImage? {
+        var request = URLRequest(url: url, timeoutInterval: 10)
+        request.httpMethod = "GET"
+        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse,
+              (200..<300).contains(http.statusCode),
+              let image = UIImage(data: data) else {
+            return nil
+        }
+
+        return await Task.detached(priority: .userInitiated) {
+            image.resizedForUpload(maxDimension: 1200)
+        }.value
     }
 }

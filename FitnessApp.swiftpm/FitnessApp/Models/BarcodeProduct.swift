@@ -20,6 +20,9 @@ public struct BarcodeProduct: Codable {
     public let name: String
     public let brand: String?
     public let servingDescription: String?
+    /// Best available product photo from Open Food Facts. Nil when absent or
+    /// the URL string is empty/invalid.
+    public let imageURL: URL?
 
     // All four macros are expressed on the chosen `basis`.
     public let calories: Double   // kcal
@@ -34,6 +37,7 @@ public struct BarcodeProduct: Codable {
                 name: String,
                 brand: String?,
                 servingDescription: String?,
+                imageURL: URL? = nil,
                 calories: Double,
                 protein: Double,
                 carbs: Double,
@@ -43,6 +47,7 @@ public struct BarcodeProduct: Codable {
         self.name = name
         self.brand = brand
         self.servingDescription = servingDescription
+        self.imageURL = imageURL
         self.calories = calories
         self.protein = protein
         self.carbs = carbs
@@ -57,10 +62,13 @@ public struct BarcodeProduct: Codable {
     }
 
     private enum ProductKeys: String, CodingKey {
-        case productName = "product_name"
+        case productName         = "product_name"
         case brands
-        case servingSize = "serving_size"
+        case servingSize         = "serving_size"
         case nutriments
+        case imageFrontURL       = "image_front_url"
+        case imageURL            = "image_url"
+        case imageFrontSmallURL  = "image_front_small_url"
     }
 
     private enum NutrimentKeys: String, CodingKey {
@@ -108,6 +116,21 @@ public struct BarcodeProduct: Codable {
         let rawServing = (try product.decodeIfPresent(String.self, forKey: .servingSize))?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         self.servingDescription = (rawServing?.isEmpty == false) ? rawServing : nil
+
+        // Prefer image_front_url, then image_url, then image_front_small_url.
+        // Absent, empty, or non-URL strings all map to nil — never throw.
+        let imageKeys: [ProductKeys] = [.imageFrontURL, .imageURL, .imageFrontSmallURL]
+        var resolvedImageURL: URL? = nil
+        for key in imageKeys {
+            if let raw = try? product.decodeIfPresent(String.self, forKey: key),
+               !raw.isEmpty,
+               let candidate = URL(string: raw),
+               candidate.scheme?.hasPrefix("http") == true {
+                resolvedImageURL = candidate
+                break
+            }
+        }
+        self.imageURL = resolvedImageURL
 
         let n = try product.nestedContainer(keyedBy: NutrimentKeys.self, forKey: .nutriments)
 

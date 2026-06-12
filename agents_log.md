@@ -2778,3 +2778,28 @@ Remaining for the human: GCP key rotation (`4d33d3bc…`); on-device UX feel-che
 
 Latest deployed sequence: **2828**.
 
+---
+
+## Session 46 — 2026-06-12 (Barcode scan shows the real product photo)
+
+### User report
+After scanning a barcode, the review sheet showed the neutral barcode-glyph placeholder — it should
+show the actual product image from Open Food Facts.
+
+### Changes (1 Sonnet workflow agent)
+- `BarcodeProduct`: optional `imageURL` decoded from `image_front_url` → `image_url` →
+  `image_front_small_url` (invalid/absent → nil, never throws).
+- `BarcodeProductService`: image fields added to the lookup query; new best-effort
+  `fetchProductImage(url:)` (same User-Agent, 10s timeout, nil on any failure, ≤1200px downscale
+  via the existing `resizedForUpload` extension).
+- `FoodScanView.handleBarcode`: downloads the photo during the existing "Looking up product…"
+  state; Task-cancellation respected; falls back to the honest glyph placeholder when OFF has no
+  image. The real photo also flows into the Astra correction chat (refineFood sends the displayed
+  image to Gemini), so corrections now reason over the actual product.
+
+### Build / deploy
+- Simulator + device **BUILD SUCCEEDED**, zero errors. Installed AND launched.
+- **databaseSequenceNumber: 2836**.
+
+Latest deployed sequence: **2836**.
+

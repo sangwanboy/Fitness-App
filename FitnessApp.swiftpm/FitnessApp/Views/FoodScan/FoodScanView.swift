@@ -224,6 +224,19 @@ public struct FoodScanView: View {
             do {
                 let product = try await BarcodeProductService.shared.lookup(barcode: code)
                 guard !Task.isCancelled else { return }
+
+                // Download product photo while still in the loading state.
+                // fetchProductImage is best-effort with a 10 s timeout; falls
+                // back to the placeholder on any failure.
+                let reviewImage: UIImage
+                if let imgURL = product.imageURL {
+                    let downloaded = await BarcodeProductService.shared.fetchProductImage(url: imgURL)
+                    guard !Task.isCancelled else { return }
+                    reviewImage = downloaded ?? Self.barcodePlaceholderImage()
+                } else {
+                    reviewImage = Self.barcodePlaceholderImage()
+                }
+
                 // Build a single-item result so the EXISTING review pipeline
                 // handles it exactly like a vision result.
                 let item = product.asRecognizedFoodItem()
@@ -234,7 +247,7 @@ public struct FoodScanView: View {
                     plateNote: nil
                 )
                 await MainActor.run {
-                    phase = .review(Self.barcodePlaceholderImage(), result)
+                    phase = .review(reviewImage, result)
                 }
             } catch let error as BarcodeLookupError {
                 guard !Task.isCancelled else { return }
