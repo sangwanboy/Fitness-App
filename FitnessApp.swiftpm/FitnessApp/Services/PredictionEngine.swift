@@ -108,6 +108,13 @@ public enum PredictionEngine {
         // CORROBORATE the illness early-warning — they never trigger it alone.
         public let recentSymptoms: [SymptomEntry]
 
+        // Goal-suggestion inputs. `goalHistories28` maps a metric rawValue to 28
+        // zero-filled daily values (oldest → newest); `userGoals` maps the same
+        // rawValue to the user's current daily goal. Only isUserConfigurableGoal
+        // metrics are populated.
+        public let goalHistories28: [String: [Double]]
+        public let userGoals: [String: Double]
+
         public init(now: Date,
                     hasWatchClassData: Bool,
                     lastNightSleepHours: Double,
@@ -146,7 +153,9 @@ public enum PredictionEngine {
                     vo2Max: Double? = nil,
                     walkingSpeedToday: Double? = nil,
                     walkingAsymmetryToday: Double? = nil,
-                    recentSymptoms: [SymptomEntry] = []) {
+                    recentSymptoms: [SymptomEntry] = [],
+                    goalHistories28: [String: [Double]] = [:],
+                    userGoals: [String: Double] = [:]) {
             self.now = now
             self.hasWatchClassData = hasWatchClassData
             self.lastNightSleepHours = lastNightSleepHours
@@ -186,6 +195,8 @@ public enum PredictionEngine {
             self.walkingSpeedToday = walkingSpeedToday
             self.walkingAsymmetryToday = walkingAsymmetryToday
             self.recentSymptoms = recentSymptoms
+            self.goalHistories28 = goalHistories28
+            self.userGoals = userGoals
         }
     }
 
@@ -211,6 +222,7 @@ public enum PredictionEngine {
         let illnessWarning = computeIllnessWarning(snapshot: s)
         let correlations = computeCorrelations(snapshot: s)
         let periodization = computePeriodization(snapshot: s)
+        let goalSuggestions = computeGoalSuggestions(snapshot: s)
         return Predictions(
             generatedAt: s.now,
             recovery: recovery,
@@ -222,6 +234,7 @@ public enum PredictionEngine {
             illnessWarning: illnessWarning,
             correlations: correlations,
             periodization: periodization,
+            goalSuggestions: goalSuggestions,
             aiEnrichmentStatus: .pending,
             insufficientHistoryDays: nil
         )
@@ -1136,6 +1149,184 @@ public enum PredictionEngine {
         default:          return 3
         }
     }
+
+    // MARK: - Goal Suggestions
+
+    /// Recommends raising or lowering each user-configurable daily goal based on
+    /// 28 days of attainment. For every metric with a goal + history:
+    ///   • use non-zero days only; require ≥ 14 of them (honest gate),
+    ///   • attainment per day = value / goal; take the median,
+    ///   • LOWER when median < 0.55 → suggest the 70th-percentile daily value
+    ///     (a reachable stretch the user actually hits most days),
+    ///   • RAISE when median ≥ 1.25 → suggest the median daily value,
+    ///   • skip when the suggestion moves the goal < 10% (not worth churning).
+    /// Suggestions are sorted by how far median attainment sits from 1.0 and
+    /// capped at 3. Confidence is high with ≥ 21 non-zero days, else medium.
+    public static func computeGoalSuggestions(snapshot s: Snapshot) -> [GoalSuggestion] {
+        let epsilon = 1e-6
+        var out: [GoalSuggestion] = []
+
+        for (rawValue, currentGoal) in s.userGoals {
+            guard currentGoal > epsilon, currentGoal.isFinite else { continue }
+            guard let metric = HealthMetricType(rawValue: rawValue) else { continue }
+            guard let history = s.goalHistories28[rawValue] else { continue }
+
+            let nonZero = history.filter { $0 > 0 && $0.isFinite }
+            guard nonZero.count >= 14 else { continue }
+
+            let attainments = nonZero.map { $0 / max(currentGoal, epsilon) }
+            let medianAttain = median(attainments)
+            guard medianAttain.isFinite else { continue }
+
+            let direction: String
+            let rawSuggested: Double
+            if medianAttain < 0.55 {
+                direction = "lower"
+                rawSuggested = percentile(nonZero, 0.70)
+            } else if medianAttain >= 1.25 {
+                direction = "raise"
+                rawSuggested = percentile(nonZero, 0.50)
+            } else {
+                continue
+            }
+            guard rawSuggested.isFinite, rawSuggested > 0 else { continue }
+
+            let suggested = roundedGoal(rawSuggested, for: metric)
+            guard suggested > 0, suggested.isFinite else { continue }
+
+            // Not worth churning if the move is under 10% of the current goal.
+            guard abs(suggested - currentGoal) >= 0.10 * currentGoal else { continue }
+
+            let medianPct = medianAttain * 100.0
+            guard medianPct.isFinite else { continue }
+
+            let confidence: PredictionConfidence = nonZero.count >= 21 ? .high : .medium
+            let rationale = goalRationale(metric: metric,
+                                          currentGoal: currentGoal,
+                                          suggested: suggested,
+                                          medianPct: medianPct,
+                                          direction: direction)
+
+            out.append(GoalSuggestion(
+                metric: metric,
+                currentGoal: currentGoal,
+                suggestedGoal: suggested,
+                direction: direction,
+                medianAttainmentPct: medianPct,
+                rationale: rationale,
+                confidence: confidence
+            ))
+        }
+
+        return Array(out.sorted { abs($0.medianAttainmentPct / 100.0 - 1.0) > abs($1.medianAttainmentPct / 100.0 - 1.0) }.prefix(3))
+    }
+
+    /// Rounds a suggested goal to a clean, metric-appropriate step.
+    private static func roundedGoal(_ value: Double, for metric: HealthMetricType) -> Double {
+        func nearest(_ step: Double) -> Double { (value / step).rounded() * step }
+        switch metric {
+        case .steps:           return nearest(500)
+        case .activeEnergy:    return nearest(25)
+        case .sleep:           return nearest(0.25)
+        case .distance:        return nearest(0.25)
+        case .hydration:       return nearest(0.1)
+        case .exerciseMinutes: return nearest(5)
+        case .standHours:      return nearest(1)
+        case .mindfulMinutes:  return nearest(5)
+        case .flightsClimbed:  return nearest(1)
+        default:               return value.rounded()
+        }
+    }
+
+    /// Formats a goal/value for a metric's rationale sentence using its native
+    /// units (e.g. "10,000-step", "1.5 L water", "30-min exercise").
+    private static func goalValuePhrase(_ value: Double, for metric: HealthMetricType) -> String {
+        switch metric {
+        case .steps:
+            return "\(intGrouped(value))-step"
+        case .activeEnergy:
+            return "\(intGrouped(value)) kcal"
+        case .sleep:
+            return "\(trimDecimal(value)) h sleep"
+        case .distance:
+            return "\(trimDecimal(value)) mi"
+        case .hydration:
+            return "\(trimDecimal(value)) L water"
+        case .exerciseMinutes:
+            return "\(intGrouped(value))-min exercise"
+        case .standHours:
+            return "\(intGrouped(value))-hour stand"
+        case .mindfulMinutes:
+            return "\(intGrouped(value))-min mindfulness"
+        case .flightsClimbed:
+            return "\(intGrouped(value))-flight"
+        default:
+            return "\(trimDecimal(value)) \(metric.unit)"
+        }
+    }
+
+    /// Just the suggested number with its unit, for the back half of the sentence.
+    private static func goalTargetPhrase(_ value: Double, for metric: HealthMetricType) -> String {
+        switch metric {
+        case .steps:           return intGrouped(value)
+        case .activeEnergy:    return "\(intGrouped(value)) kcal"
+        case .sleep:           return "\(trimDecimal(value)) h"
+        case .distance:        return "\(trimDecimal(value)) mi"
+        case .hydration:       return "\(trimDecimal(value)) L"
+        case .exerciseMinutes: return "\(intGrouped(value)) min"
+        case .standHours:      return "\(intGrouped(value)) h"
+        case .mindfulMinutes:  return "\(intGrouped(value)) min"
+        case .flightsClimbed:  return "\(intGrouped(value)) flights"
+        default:               return trimDecimal(value)
+        }
+    }
+
+    private static func goalRationale(metric: HealthMetricType,
+                                      currentGoal: Double,
+                                      suggested: Double,
+                                      medianPct: Double,
+                                      direction: String) -> String {
+        let pct = Int(medianPct.rounded())
+        let goalPhrase = goalValuePhrase(currentGoal, for: metric)
+        let target = goalTargetPhrase(suggested, for: metric)
+        if direction == "lower" {
+            return "You hit a median \(pct)% of your \(goalPhrase) goal over 28 days — \(target) is a reachable stretch."
+        } else {
+            return "You beat your \(goalPhrase) goal most days (median \(pct)%) — \(target) matches what you actually do."
+        }
+    }
+
+    /// Integer with thousands separators ("10,000").
+    private static func intGrouped(_ value: Double) -> String {
+        let n = Int(value.rounded())
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.maximumFractionDigits = 0
+        return f.string(from: NSNumber(value: n)) ?? "\(n)"
+    }
+
+    /// Trims trailing zeros ("1.5", "2", "2.25").
+    private static func trimDecimal(_ value: Double) -> String {
+        if value == value.rounded() { return "\(Int(value.rounded()))" }
+        return String(format: "%g", (value * 100).rounded() / 100)
+    }
+
+    /// Linear-interpolated percentile (0...1) over a copy-sorted array.
+    private static func percentile(_ xs: [Double], _ p: Double) -> Double {
+        guard !xs.isEmpty else { return 0 }
+        let sorted = xs.sorted()
+        if sorted.count == 1 { return sorted[0] }
+        let clampedP = min(max(p, 0), 1)
+        let rank = clampedP * Double(sorted.count - 1)
+        let lo = Int(rank.rounded(.down))
+        let hi = Int(rank.rounded(.up))
+        if lo == hi { return sorted[lo] }
+        let frac = rank - Double(lo)
+        return sorted[lo] + (sorted[hi] - sorted[lo]) * frac
+    }
+
+    /// Median via the percentile helper.
+    private static func median(_ xs: [Double]) -> Double { percentile(xs, 0.5) }
 
     // MARK: - Helpers
 

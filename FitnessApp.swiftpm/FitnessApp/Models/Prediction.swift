@@ -376,6 +376,24 @@ public struct PeriodizationStatus: Codable, Equatable {
     public init(phase: String, weekLoad: Double, baselineWeekLoad: Double, loadTrendPct: Double, recommendation: String, confidence: PredictionConfidence) { self.phase = phase; self.weekLoad = weekLoad; self.baselineWeekLoad = baselineWeekLoad; self.loadTrendPct = loadTrendPct; self.recommendation = recommendation; self.confidence = confidence }
 }
 
+// MARK: - Goal Suggestion
+
+/// A deterministic recommendation to raise or lower a user-configurable daily
+/// goal, derived from 28 days of attainment. Honest: only surfaces when there
+/// are enough non-zero days and the median attainment is clearly off the goal.
+/// The rationale quotes the actual numbers — no vague nudges.
+public struct GoalSuggestion: Codable, Equatable, Identifiable {
+    public var id: String { metric.rawValue }
+    public let metric: HealthMetricType
+    public let currentGoal: Double
+    public let suggestedGoal: Double
+    public let direction: String            // "raise" | "lower"
+    public let medianAttainmentPct: Double  // median 28d attainment vs current goal, in percent
+    public let rationale: String            // deterministic sentence quoting the numbers
+    public let confidence: PredictionConfidence
+    public init(metric: HealthMetricType, currentGoal: Double, suggestedGoal: Double, direction: String, medianAttainmentPct: Double, rationale: String, confidence: PredictionConfidence) { self.metric = metric; self.currentGoal = currentGoal; self.suggestedGoal = suggestedGoal; self.direction = direction; self.medianAttainmentPct = medianAttainmentPct; self.rationale = rationale; self.confidence = confidence }
+}
+
 // MARK: - AI-generated layers
 
 public struct DailyInsight: Codable, Equatable {
@@ -491,6 +509,10 @@ public struct Predictions: Codable, Equatable {
     /// there isn't enough workout signal to classify honestly.
     public let periodization: PeriodizationStatus?
 
+    /// On-device daily-goal suggestions (raise / lower) from 28 days of
+    /// attainment. Empty when nothing clears the non-zero-day / margin gate.
+    public let goalSuggestions: [GoalSuggestion]
+
     /// Lifecycle of the AI layer for UI gating.
     public let aiEnrichmentStatus: EnrichmentStatus
 
@@ -511,6 +533,7 @@ public struct Predictions: Codable, Equatable {
                 illnessWarning: IllnessWarning? = nil,
                 correlations: [MetricCorrelation] = [],
                 periodization: PeriodizationStatus? = nil,
+                goalSuggestions: [GoalSuggestion] = [],
                 aiEnrichmentStatus: EnrichmentStatus = .pending,
                 insufficientHistoryDays: Int? = nil) {
         self.generatedAt = generatedAt
@@ -525,6 +548,7 @@ public struct Predictions: Codable, Equatable {
         self.illnessWarning = illnessWarning
         self.correlations = correlations
         self.periodization = periodization
+        self.goalSuggestions = goalSuggestions
         self.aiEnrichmentStatus = aiEnrichmentStatus
         self.insufficientHistoryDays = insufficientHistoryDays
     }
@@ -547,6 +571,7 @@ public struct Predictions: Codable, Equatable {
         let illnessWarning: IllnessWarning?
         let correlations: [MetricCorrelation]
         let periodization: PeriodizationStatus?
+        let goalSuggestions: [GoalSuggestion]
         let aiEnrichmentStatus: EnrichmentStatus
         let insufficientHistoryDays: Int?
     }
@@ -564,6 +589,7 @@ public struct Predictions: Codable, Equatable {
             illnessWarning: illnessWarning,
             correlations: correlations,
             periodization: periodization,
+            goalSuggestions: goalSuggestions,
             aiEnrichmentStatus: aiEnrichmentStatus,
             insufficientHistoryDays: insufficientHistoryDays
         )
@@ -575,7 +601,7 @@ public struct Predictions: Codable, Equatable {
             && healthMeter == nil
             && anomalies.isEmpty && dailyInsight == nil && actions.isEmpty
             && illnessWarning == nil && correlations.isEmpty
-            && periodization == nil
+            && periodization == nil && goalSuggestions.isEmpty
     }
 
     /// Return a copy with the AI layer fields swapped in (engine fields unchanged).
@@ -602,6 +628,7 @@ public struct Predictions: Codable, Equatable {
             illnessWarning: illnessWarning,
             correlations: correlations,
             periodization: periodization,
+            goalSuggestions: goalSuggestions,
             aiEnrichmentStatus: status,
             insufficientHistoryDays: insufficientHistoryDays
         )

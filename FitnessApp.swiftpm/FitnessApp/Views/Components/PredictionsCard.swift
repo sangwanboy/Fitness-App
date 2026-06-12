@@ -280,6 +280,9 @@ public struct PredictionsCard: View {
         case .midday:
             for t in p.trajectories.prefix(2) { rows.append(AnyView(TrajectoryRow(trajectory: t, onWhy: { openWhy(.trajectory) }))) }
             if let s = p.sedentary { rows.append(AnyView(SedentaryRow(alert: s, onWhy: { openWhy(.sedentary) }))) }
+            if !p.goalSuggestions.isEmpty {
+                rows.append(AnyView(GoalSuggestionsRow(suggestions: p.goalSuggestions)))
+            }
             if !p.correlations.isEmpty {
                 rows.append(AnyView(CorrelationsRow(correlations: p.correlations, onWhy: { openWhy(.correlations) })))
             }
@@ -288,6 +291,9 @@ public struct PredictionsCard: View {
             if let s = p.sedentary { rows.append(AnyView(SedentaryRow(alert: s, onWhy: { openWhy(.sedentary) }))) }
             if rows.count == 1, let r = p.recovery {
                 rows.append(AnyView(RecoveryRow(reading: r, onWhy: { openWhy(.recovery) })))
+            }
+            if !p.goalSuggestions.isEmpty {
+                rows.append(AnyView(GoalSuggestionsRow(suggestions: p.goalSuggestions)))
             }
             if let pz = p.periodization { rows.append(AnyView(PeriodizationRow(status: pz, onWhy: { openWhy(.periodization) }))) }
             if !p.correlations.isEmpty {
@@ -1072,6 +1078,108 @@ private struct CorrelationsRow: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Goal tune-up row
+
+private struct GoalSuggestionsRow: View {
+    let suggestions: [GoalSuggestion]
+    @AppStorage("theme_mode") private var themeMode = "dark"
+    private var isDark: Bool { themeMode == "dark" }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "target")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(.green)
+                Text("GOAL TUNE-UP")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(isDark ? .white.opacity(0.5) : .black.opacity(0.5))
+                    .tracking(0.5)
+                    .lineLimit(1)
+            }
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(suggestions) { suggestion in
+                    GoalSuggestionRow(suggestion: suggestion, isDark: isDark)
+                }
+            }
+        }
+    }
+}
+
+private struct GoalSuggestionRow: View {
+    let suggestion: GoalSuggestion
+    let isDark: Bool
+    @State private var applied = false
+
+    private func formatValue(_ v: Double, for metric: HealthMetricType) -> String {
+        switch metric {
+        case .sleep, .hydration, .distance:
+            return String(format: "%.1f", v)
+        default:
+            return String(format: "%.0f", v)
+        }
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            ZStack {
+                Circle()
+                    .fill(suggestion.metric.themeColor.opacity(0.15))
+                    .frame(width: 32, height: 32)
+                Image(systemName: suggestion.metric.icon)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(suggestion.metric.themeColor)
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 4) {
+                    Text(suggestion.metric.displayName)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(suggestion.metric.themeColor)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                    Text("·")
+                        .foregroundColor(.gray)
+                        .fixedSize()
+                    Text("\(formatValue(suggestion.currentGoal, for: suggestion.metric)) → \(formatValue(suggestion.suggestedGoal, for: suggestion.metric)) \(suggestion.metric.unit)")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(isDark ? .white.opacity(0.85) : .black.opacity(0.85))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                }
+                Text(suggestion.rationale)
+                    .font(.system(size: 12, weight: .regular))
+                    .foregroundColor(isDark ? .white.opacity(0.7) : .black.opacity(0.7))
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+            if applied {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.green)
+                    .transition(.scale.combined(with: .opacity))
+            } else {
+                Button(action: applyGoal) {
+                    Text("Apply")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.green)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .glassEffect(.regular.interactive(), in: .capsule)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .animation(.spring(response: 0.3, dampingFraction: 0.75), value: applied)
+    }
+
+    private func applyGoal() {
+        HealthKitManager.shared.setGoal(suggestion.suggestedGoal, for: suggestion.metric)
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        withAnimation { applied = true }
     }
 }
 

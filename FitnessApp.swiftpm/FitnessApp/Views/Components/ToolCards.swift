@@ -153,7 +153,30 @@ struct ToolCallCard: View {
             // under Swift's type-checker complexity limit. 4 widget cases
             // were pushing it over.
             widgetToolCardBody
+        case .updateGoal(let metric, let value):
+            MutationConfirmCard(icon: "target", color: .green,
+                                title: "Update daily goal",
+                                summary: updateGoalSummary(metric: metric, value: value),
+                                detail: "Streaks, challenges, and pace predictions adapt instantly.",
+                                confirmLabel: "Update",
+                                status: status, accentColor: .green,
+                                onConfirm: onConfirm, onCancel: onCancel)
         }
+    }
+
+    private func updateGoalSummary(metric: String, value: Double) -> String {
+        let displayName = HealthMetricType(rawValue: metric)?.displayName
+                        ?? metric.replacingOccurrences(of: "_", with: " ").capitalized
+        let unit = HealthMetricType(rawValue: metric)?.unit ?? ""
+        let formattedValue: String
+        switch metric {
+        case "sleep", "hydration", "distance":
+            formattedValue = String(format: "%.1f", value)
+        default:
+            formattedValue = String(format: "%.0f", value)
+        }
+        let suffix = unit.isEmpty ? "" : " \(unit)"
+        return "\(displayName) → \(formattedValue)\(suffix)"
     }
 
     @ViewBuilder

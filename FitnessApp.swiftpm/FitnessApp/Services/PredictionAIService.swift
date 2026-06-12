@@ -438,6 +438,22 @@ public actor PredictionAIService {
             let trendSign = pz.loadTrendPct >= 0 ? "+" : ""
             lines.append("Periodization: phase=\(pz.phase) weekLoad=\(String(format: "%.0f", pz.weekLoad)) kcal baselineWeekLoad=\(String(format: "%.0f", pz.baselineWeekLoad)) kcal trend=\(trendSign)\(String(format: "%.1f", pz.loadTrendPct))% confidence=\(pz.confidence.rawValue) recommendation=\"\(pz.recommendation)\"")
         }
+        if !p.goalSuggestions.isEmpty {
+            let parts = p.goalSuggestions.map { s -> String in
+                let cur: String
+                let sug: String
+                switch s.metric {
+                case .sleep, .hydration, .distance:
+                    cur = String(format: "%.1f", s.currentGoal)
+                    sug = String(format: "%.1f", s.suggestedGoal)
+                default:
+                    cur = String(format: "%.0f", s.currentGoal)
+                    sug = String(format: "%.0f", s.suggestedGoal)
+                }
+                return "\(s.metric.rawValue) \(cur)->\(sug)"
+            }
+            lines.append("Goal suggestions: \(parts.joined(separator: ", "))")
+        }
         return lines.isEmpty ? "—" : lines.joined(separator: "\n")
     }
 

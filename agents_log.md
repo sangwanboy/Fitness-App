@@ -2654,3 +2654,39 @@ closing line.**
 
 Latest deployed sequence: **2732**.
 
+---
+
+## Session 43 — 2026-06-12 (Loop iteration 5: adaptive goal suggestions + update_goal tool)
+
+### Process
+Workflow `astra-iter5-adaptive-goals`, 3 agents (Opus engine math, Fable chat tool, Sonnet surfaces),
+frozen GoalSuggestion contract. No git violations (rule now doubled in agent prompts — worked).
+One orchestrator repair: the card's Apply button called private `recomputePredictions()` — fixed
+architecturally by moving the recompute INTO `HealthKitManager.setGoal` (goals feed trajectories /
+Health Meter / suggestions, so every setGoal caller — incl. GoalsEditorSheet — now refreshes
+predictions instantly) and dropping the card's direct call.
+
+### Engine (Opus)
+`computeGoalSuggestions`: for each of the 9 user-configurable goal metrics with ≥14 non-zero days in
+28: median daily attainment vs current goal; median < 0.55 → suggest LOWER to the 70th percentile of
+actuals; median ≥ 1.25 → suggest RAISE to the median; skip when within 10% of current; per-metric
+honest rounding (steps 500 / kcal 25 / sleep 0.25 / distance 0.25 / hydration 0.1 / minutes 5);
+top 3 by distortion; confidence high at ≥21 days. Snapshot gained goalHistories28 + userGoals
+(built in recomputePredictions from existing summaries — no new HK queries).
+
+### Chat (Fable)
+New confirmation-gated `update_goal(metric, value)` tool (9-metric enum, goalRange clamping,
+setGoal write); goal-suggestion lines in predictionsFullBlock with an explicit "propose only when
+the user engages with goals — never unprompted" rule; TOOLS doc.
+
+### Surfaces (Sonnet)
+"GOAL TUNE-UP" row on PredictionsCard (midday/evening slots) — per suggestion: current→suggested,
+rationale, glass Apply capsule (setGoal + success haptic + checkmark animation); ToolCards
+MutationConfirmCard for update_goal; predictionsSummary line.
+
+### Build / deploy
+- Simulator + device **BUILD SUCCEEDED** after the one visibility repair. Installed AND launched.
+- **databaseSequenceNumber: 2740**.
+
+Latest deployed sequence: **2740**.
+

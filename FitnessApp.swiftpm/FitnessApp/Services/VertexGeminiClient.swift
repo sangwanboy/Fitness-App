@@ -386,6 +386,21 @@ public actor VertexGeminiClient {
                     ]
                 ],
                 [
+                    "name": "update_goal",
+                    "description": "Update one of the user's daily goals. Confirmation-gated — the user approves the change on a card before anything is written; streaks, challenges, and pace predictions adapt instantly after. Use it when the user agrees to adjust a goal or explicitly asks for a new target. Deterministic goal suggestions (with current goal, suggested goal, and median 28-day attainment) appear inline in the PREDICTIONS system-prompt block — propose them via this tool ONLY when the user engages with goals; never apply unprompted.",
+                    "parameters": [
+                        "type": "object",
+                        "properties": [
+                            "metric": ["type": "string",
+                                       "enum": ["steps", "activeEnergy", "sleep", "distance", "hydration",
+                                                "exerciseMinutes", "standHours", "mindfulMinutes", "flightsClimbed"],
+                                       "description": "Which user-configurable goal to change."],
+                            "value":  ["type": "number", "description": "The new daily goal in the metric's native unit (steps, kcal, hours, mi, L, min, hrs, min, flights respectively). Clamped to the metric's allowed range."]
+                        ],
+                        "required": ["metric", "value"]
+                    ]
+                ],
+                [
                     "name": "get_sleep_sessions",
                     "description": "Per-night detail for the user's last N on-device tracked sleep sessions, newest first. Auto-executes and feeds {nights: [{date, duration_h, onset (minutes to fall asleep), restlessness_pct, snore_episodes, snore_total_min, stages {deep_h, light_h, awake_h}}]} back via functionResponse. Call when the user asks about a specific night or wants night-by-night detail beyond the aggregate SLEEP PATTERN block / get_sleep_pattern. Returns available:false when no sessions are tracked yet.",
                     "parameters": [

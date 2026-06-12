@@ -97,6 +97,9 @@ public final class HealthKitManager: ObservableObject {
             summary.goal = value
             metricSummaries[type] = summary
         }
+        // Goals feed trajectories, the Health Meter, and goal suggestions —
+        // recompute so every surface adapts immediately.
+        recomputePredictions()
     }
 
     /// Reset a metric's goal back to its `defaultGoal`. Removes the stored
@@ -1788,6 +1791,16 @@ public final class HealthKitManager: ObservableObject {
         let hydrationHistoryAll = metricSummaries[.hydration]?.history ?? []
         let mindfulHistoryAll = metricSummaries[.mindfulMinutes]?.history ?? []
 
+        // Goal-suggestion inputs: 28 zero-filled daily values + current goal for
+        // each user-configurable metric.
+        var goalHistories28: [String: [Double]] = [:]
+        var userGoals: [String: Double] = [:]
+        for type in HealthMetricType.allCases where type.isUserConfigurableGoal {
+            let history = metricSummaries[type]?.history ?? []
+            goalHistories28[type.rawValue] = lastNDays(history, days: 28)
+            userGoals[type.rawValue] = Self.userGoal(for: type)
+        }
+
         let snapshot = PredictionEngine.Snapshot(
             now: now,
             hasWatchClassData: hasWatchClassData,
@@ -1827,7 +1840,9 @@ public final class HealthKitManager: ObservableObject {
             vo2Max: (metricSummaries[.vo2Max]?.currentValue).flatMap { $0 > 0 ? $0 : nil },
             walkingSpeedToday: (metricSummaries[.walkingSpeed]?.currentValue).flatMap { $0 > 0 ? $0 : nil },
             walkingAsymmetryToday: (metricSummaries[.walkingAsymmetry]?.currentValue).flatMap { $0 > 0 ? $0 : nil },
-            recentSymptoms: recentSymptoms14
+            recentSymptoms: recentSymptoms14,
+            goalHistories28: goalHistories28,
+            userGoals: userGoals
         )
 
         let newPredictions = PredictionEngine.computeAll(snapshot: snapshot)

@@ -96,6 +96,12 @@ public enum ToolCall: Codable, Equatable {
     // Auto-executes; payload feeds back via functionResponse.
     case getSleepSessions(nights: Int)
 
+    // Confirmation-gated write that updates a user-configurable daily goal
+    // (the 9 metrics in HealthMetricType.isUserConfigurableGoal). Streaks,
+    // challenges, and pace predictions all read the same stored goal, so
+    // they adapt instantly after the write.
+    case updateGoal(metric: String, value: Double)
+
     public struct Stat: Codable, Equatable {
         public let label: String
         public let value: String
@@ -117,7 +123,8 @@ public enum ToolCall: Codable, Equatable {
              .updateReminder, .updateCalendarEvent,
              .deleteReminder, .deleteCalendarEvent,
              .updateFoodLog, .deleteFoodLog,
-             .createWidget, .updateWidget, .deleteWidget:
+             .createWidget, .updateWidget, .deleteWidget,
+             .updateGoal:
             return true
         case .showMetricChart, .showComparisonChart, .renderCard,
              .listReminders, .listCalendarEvents, .getPredictions,
@@ -169,6 +176,7 @@ public enum ToolCall: Codable, Equatable {
         case .getSleepPattern: return "get_sleep_pattern"
         case .getMetricHistory: return "get_metric_history"
         case .getSleepSessions: return "get_sleep_sessions"
+        case .updateGoal: return "update_goal"
         }
     }
 
@@ -327,6 +335,10 @@ public enum ToolCall: Codable, Equatable {
         case "get_sleep_sessions":
             let nights = Int(doubleFrom(args["nights"]) ?? 7)
             return .getSleepSessions(nights: max(1, min(nights, 14)))
+        case "update_goal":
+            guard let metric = args["metric"] as? String,
+                  let value = doubleFrom(args["value"]) else { return nil }
+            return .updateGoal(metric: metric, value: value)
         default:
             return nil
         }
@@ -467,6 +479,8 @@ public enum ToolCall: Codable, Equatable {
             return ["metric": metric, "days": days]
         case .getSleepSessions(let nights):
             return ["nights": nights]
+        case .updateGoal(let metric, let value):
+            return ["metric": metric, "value": value]
         }
     }
 }

@@ -684,6 +684,17 @@ public final class ChatViewModel: ObservableObject {
             lines.append("• Training phase: \(pz.phase) (week \(Int(pz.weekLoad.rounded())) vs base \(Int(pz.baselineWeekLoad.rounded())) kcal-load, \(trendSign)\(String(format: "%.0f", pz.loadTrendPct))%) — \(pz.recommendation)")
         }
 
+        // Deterministic goal suggestions (28-day attainment vs current goal)
+        if !p.goalSuggestions.isEmpty {
+            func g(_ v: Double) -> String {
+                v == v.rounded() ? String(Int(v)) : String(format: "%.1f", v)
+            }
+            for s in p.goalSuggestions {
+                lines.append("• Goal suggestion: \(s.metric.displayName) \(g(s.currentGoal)) -> \(g(s.suggestedGoal)) \(s.metric.unit) (\(s.direction), median attainment \(String(format: "%.0f", s.medianAttainmentPct))%) — \(s.rationale)")
+            }
+            lines.append("• Goal suggestions are advisory: propose one via the update_goal tool ONLY when the user engages with goals (asks about them, mentions a target, or responds to a suggestion). NEVER apply a goal change unprompted.")
+        }
+
         if lines.isEmpty {
             return "All quiet — no notable signals from your last 28 days."
         }
@@ -1087,6 +1098,16 @@ public final class ChatViewModel: ObservableObject {
         case .deleteWidget(let id, _):
             guard let uuid = UUID(uuidString: id) else { return false }
             return AstraWidgetStore.shared.remove(id: uuid)
+        case .updateGoal(let metric, let value):
+            guard let type = Self.historyMetricType(from: metric),
+                  type.isUserConfigurableGoal,
+                  value > 0 else { return false }
+            let clamped: Double = {
+                guard let range = type.goalRange else { return value }
+                return min(max(value, range.min), range.max)
+            }()
+            HealthKitManager.shared.setGoal(clamped, for: type)
+            return true
         case .showMetricChart, .showComparisonChart, .renderCard,
              .listReminders, .listCalendarEvents, .getPredictions,
              .listFoodLog, .listWidgets, .updateNotes, .getSleepPattern,
@@ -1554,6 +1575,7 @@ public final class ChatViewModel: ObservableObject {
         - get_predictions : on-device PredictionEngine snapshot (recovery readiness, next-likely-workout, goal trajectory, sedentary alert). The full prediction data is already inline above in the PREDICTIONS block — use it directly for training and recovery questions. Call get_predictions ONLY when you need the raw JSON detail (e.g. full anomaly list, exact confidence scores) that isn't represented in the inline summary.
         - list_food_log / update_food_log / delete_food_log : READ + WRITE for today's logged meals. Use list_food_log FIRST when the user asks to fix, correct, rename, change, or delete a logged meal — you cannot guess the id. If list returns exactly ONE match for the user's description, proceed straight to update_/delete_ without asking. Pass `name` on deletes so the confirm card shows what's about to go.
         - create_widget / list_widgets / update_widget / delete_widget : ASTRA STUDIO — your creative canvas on the user's Home screen. See the WIDGET STUDIO block below for when and how to use it.
+        - update_goal : change a user-configurable daily goal (steps, activeEnergy, sleep, distance, hydration, exerciseMinutes, standHours, mindfulMinutes, flightsClimbed). Confirmation-gated — the user approves before the write. Use it when the user agrees to adjust a goal, or asks to. Deterministic "Goal suggestion" lines appear inline in the PREDICTIONS block when 28-day attainment warrants a change — propose them ONLY when the user engages with goals; never apply unprompted.
 
         WIDGET STUDIO (6-slot canvas on the user's Home — make every card surprising and useful)
         - TWO AUTHORING MODES — pick one per widget:
