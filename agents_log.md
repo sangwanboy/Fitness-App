@@ -2526,3 +2526,45 @@ predictionsSummary extended for both.
 
 Latest deployed sequence: **2708**.
 
+---
+
+## Session 40 — 2026-06-12 (Loop iteration 2: training load + HR zones + symptoms/cycle for Astra; symptom-aware illness warning; sleep-session tool)
+
+### Process
+Workflow `astra-data-engine-v2-iter2`, 4 agents (Haiku scout → Sonnet HK reads + tool cards, Opus
+engine, Fable chat core), frozen SymptomEntry/Snapshot/tool contract. ZERO integration errors —
+clean cross-agent build first try. Key scout finding: **TrainingLoadEngine is a view-local
+@StateObject in WorkoutAnalyticsView, NOT a shared singleton** — no populated instance exists
+outside that sheet.
+
+### Changes
+- **HealthKitManager (Sonnet)**: `fetchSymptomHistory()` — 15 authorized symptom HKCategoryTypes
+  over 14 days (severity-mapped, notPresent excluded) → `recentSymptoms14`; `fetchMenstrualFlowDays()`
+  → `menstrualFlowDays60`; both in the fetchTodayData task group; symptoms passed into the Snapshot.
+- **Engine (Opus)**: `SymptomEntry` per contract; illness warning is now symptom-aware — symptoms
+  inside the flagged window (or 2-day lead) add an honest "Logged symptoms: …" bullet (≤3, deduped,
+  most-recent-first) and ≥2 distinct symptom-days strictly inside the window bump .moderate → .high.
+  Vitals gate UNCHANGED (symptoms alone never trigger); watch-less bail unchanged.
+- **Chat core (Fable)**: four new self-omitting system-prompt blocks — TRAINING LOAD (acute/chronic/
+  ACWR computed INLINE from recentWorkouts28 mirroring TrainingLoadEngine's math, since no shared
+  engine instance exists), HR ZONES (5 Karvonen ranges via HeartRateZoneCalculator.makeThresholds),
+  CYCLE (last period start + days ago + median cycle length when ≥2 period starts; omitted when no
+  data), SYMPTOMS 14d (≤5, never-diagnose instruction). NEW `get_sleep_sessions(nights≤14)` tool —
+  per-night duration/onset/restlessness/snore/stages JSON from SleepSessionStore.
+- **ToolCards (Sonnet)**: ListSummaryCard for get_sleep_sessions.
+
+### Build / deploy
+- Simulator + device **BUILD SUCCEEDED**, zero errors, no orchestrator repairs needed.
+- **databaseSequenceNumber: 2716**.
+
+### Loop state
+Astra data coverage is now effectively complete (vs the Session 39 audit): workouts, training load,
+HR zones, streaks/challenges, all metric histories (via get_metric_history), sleep pattern + per-night
+sessions, symptoms, cycle, nutrition + goals, predictions incl. illness/correlations.
+Iteration 3 candidates: (a) TrainingLoadEngine → proper shared singleton (removes the duplicated
+inline math — refactor debt from this iteration), (b) feed correlations/illness into AI daily-insight
+enrichment prompt explicitly, (c) on-device verification pass of the new Astra blocks (token cost +
+correctness), (d) consider winding the loop down — core goal substantially met.
+
+Latest deployed sequence: **2716**.
+

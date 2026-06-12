@@ -91,6 +91,11 @@ public enum ToolCall: Codable, Equatable {
     // Auto-executes; payload feeds back via functionResponse.
     case getMetricHistory(metric: String, days: Int)
 
+    // Returns the last N tracked sleep sessions (clamped 1–14, default 7)
+    // in structured form: duration, snoring, restlessness, stage breakdown.
+    // Auto-executes; payload feeds back via functionResponse.
+    case getSleepSessions(nights: Int)
+
     public struct Stat: Codable, Equatable {
         public let label: String
         public let value: String
@@ -117,7 +122,7 @@ public enum ToolCall: Codable, Equatable {
         case .showMetricChart, .showComparisonChart, .renderCard,
              .listReminders, .listCalendarEvents, .getPredictions,
              .listFoodLog, .listWidgets, .updateNotes, .getSleepPattern,
-             .getMetricHistory:
+             .getMetricHistory, .getSleepSessions:
             return false
         }
     }
@@ -131,7 +136,7 @@ public enum ToolCall: Codable, Equatable {
         switch self {
         case .listReminders, .listCalendarEvents, .getPredictions,
              .listFoodLog, .listWidgets, .updateNotes, .getSleepPattern,
-             .getMetricHistory,
+             .getMetricHistory, .getSleepSessions,
              .showMetricChart, .showComparisonChart, .renderCard:
             return true
         default: return false
@@ -163,6 +168,7 @@ public enum ToolCall: Codable, Equatable {
         case .updateNotes: return "update_notes"
         case .getSleepPattern: return "get_sleep_pattern"
         case .getMetricHistory: return "get_metric_history"
+        case .getSleepSessions: return "get_sleep_sessions"
         }
     }
 
@@ -318,6 +324,9 @@ public enum ToolCall: Codable, Equatable {
             guard let metric = args["metric"] as? String else { return nil }
             let days = Int(doubleFrom(args["days"]) ?? 30)
             return .getMetricHistory(metric: metric, days: max(1, min(days, 90)))
+        case "get_sleep_sessions":
+            let nights = Int(doubleFrom(args["nights"]) ?? 7)
+            return .getSleepSessions(nights: max(1, min(nights, 14)))
         default:
             return nil
         }
@@ -456,6 +465,8 @@ public enum ToolCall: Codable, Equatable {
             return [:]
         case .getMetricHistory(let metric, let days):
             return ["metric": metric, "days": days]
+        case .getSleepSessions(let nights):
+            return ["nights": nights]
         }
     }
 }

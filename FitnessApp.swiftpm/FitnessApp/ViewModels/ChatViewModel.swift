@@ -291,9 +291,41 @@ public final class ChatViewModel: ObservableObject {
             return ["rendered": true, "title": title]
         case .getMetricHistory(let metric, let days):
             return Self.metricHistoryPayload(metric: metric, days: days)
+        case .getSleepSessions(let nights):
+            return Self.sleepSessionsPayload(nights: nights)
         default:
             return nil
         }
+    }
+
+    /// Per-night payload for `get_sleep_sessions` — the last N tracked
+    /// sessions from SleepSessionStore (newest first), each compressed to the
+    /// numbers Astra needs to discuss a concrete night. Honest
+    /// `{available: false}` when nothing has been tracked yet.
+    private static func sleepSessionsPayload(nights: Int) -> [String: Any] {
+        let sessions = SleepSessionStore.shared.sessions
+        guard !sessions.isEmpty else {
+            return ["available": false, "reason": "no tracked sessions"]
+        }
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        func hours(_ seconds: Double) -> Double { ((seconds / 3600) * 10).rounded() / 10 }
+        let items: [[String: Any]] = sessions.prefix(nights).map { s in
+            [
+                "date": f.string(from: s.startedAt),
+                "duration_h": hours(s.totalDurationSeconds),
+                "onset": Int(s.onsetLatencySeconds / 60),
+                "restlessness_pct": s.restlessnessScore,
+                "snore_episodes": s.snoreEpisodes.count,
+                "snore_total_min": Int(s.totalSnoreSeconds / 60),
+                "stages": [
+                    "deep_h":  hours(s.stageBreakdown.deep),
+                    "light_h": hours(s.stageBreakdown.light),
+                    "awake_h": hours(s.stageBreakdown.awake)
+                ]
+            ]
+        }
+        return ["available": true, "count": items.count, "nights": items]
     }
 
     /// Universal daily-history payload for `get_metric_history`. Clips the
@@ -754,6 +786,114 @@ public final class ChatViewModel: ObservableObject {
             .joined(separator: "\n")
     }
 
+    /// TRAINING LOAD one-liner — acute (7d) vs chronic (28d) load + ACWR +
+    /// zone label. Mirrors TrainingLoadEngine's math exactly (kcal per
+    /// workout, duration-min × 8 proxy when energy is missing, full 28-day
+    /// daily fill, mean over the window) so the numbers match the Workout
+    /// Analytics card. Computed inline because the engine is a view-local
+    /// @StateObject that publishes asynchronously — there is no shared,
+    /// already-populated instance to read here. Empty string when the user
+    /// has no workouts in the window (block omitted).
+    fileprivate static func trainingLoadBlock() -> String {
+        let workouts = HealthKitManager.shared.recentWorkouts28
+        guard !workouts.isEmpty else { return "" }
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        let windowStart = cal.date(byAdding: .day, value: -27, to: today) ?? today
+        var loadByDay: [Date: Double] = [:]
+        var minutes7 = 0.0
+        let cutoff7 = cal.date(byAdding: .day, value: -6, to: today) ?? today
+        for w in workouts {
+            let day = cal.startOfDay(for: w.startDate)
+            guard day >= windowStart else { continue }
+            let kcal = w.totalEnergyBurned?.doubleValue(for: .kilocalorie()) ?? 0
+            loadByDay[day, default: 0] += kcal > 0 ? kcal : (w.duration / 60.0) * 8.0
+            if day >= cutoff7 { minutes7 += w.duration / 60.0 }
+        }
+        var series: [Double] = []
+        var cursor = windowStart
+        while cursor <= today {
+            series.append(loadByDay[cursor] ?? 0)
+            guard let next = cal.date(byAdding: .day, value: 1, to: cursor) else { break }
+            cursor = next
+        }
+        func rollingAvg(_ days: Int) -> Double {
+            let slice = series.suffix(days)
+            guard slice.contains(where: { $0 > 0 }) else { return 0 }
+            return slice.reduce(0, +) / Double(slice.count)
+        }
+        let acute = rollingAvg(7)
+        let chronic = rollingAvg(28)
+        guard acute > 0 || chronic > 0 else { return "" }
+        let acwr = acute / max(chronic, 1.0)
+        let zone = ACWRZone(acwr: acwr)
+        return "- Acute (7d) \(Int(acute.rounded())) kcal-load/day vs chronic (28d) \(Int(chronic.rounded())) — ACWR \(String(format: "%.2f", acwr)) (\(zone.label)). \(Int(minutes7.rounded())) workout min last 7d."
+    }
+
+    /// HR ZONES one-liner — the five personalised Karvonen zone ranges from
+    /// HeartRateZoneCalculator, same thresholds the Workout Analytics view
+    /// shows. Caller gates injection on the user actually having HR data.
+    fileprivate static func hrZonesLine(userAge: Int) -> String {
+        let t = HeartRateZoneCalculator.shared.makeThresholds(userAge: userAge)
+        let ranges = HRZone.allCases.map { zone -> String in
+            let lo = Int(t.lowerBPM(for: zone).rounded())
+            let hi = zone == .zone5 ? "\(Int(t.maxHR.rounded()))+" : "\(Int(t.upperBPM(for: zone).rounded()))"
+            return "Z\(zone.rawValue) \(lo)–\(hi)"
+        }
+        return "- \(ranges.joined(separator: " · ")) bpm (Karvonen — RHR \(Int(t.restingHR.rounded())), max \(Int(t.maxHR.rounded()))). Use these for zone targets."
+    }
+
+    /// CYCLE block — last period start + median cycle length from HealthKit
+    /// menstrual-flow days (last 60 days). A period start = a flow day with no
+    /// flow the previous day. Median needs ≥2 starts, else just the last
+    /// start. Empty string when no flow samples (block omitted).
+    fileprivate static func cycleBlock() -> String {
+        let flowDays = HealthKitManager.shared.menstrualFlowDays60
+        guard !flowDays.isEmpty else { return "" }
+        let cal = Calendar.current
+        let sorted = flowDays.map { cal.startOfDay(for: $0) }.sorted()
+        let daySet = Set(sorted)
+        let starts = sorted.filter { d in
+            guard let prev = cal.date(byAdding: .day, value: -1, to: d) else { return true }
+            return !daySet.contains(cal.startOfDay(for: prev))
+        }
+        guard let lastStart = starts.last else { return "" }
+        let daysAgo = cal.dateComponents([.day], from: lastStart, to: cal.startOfDay(for: Date())).day ?? 0
+        let f = DateFormatter()
+        f.dateFormat = "MMM d"
+        var line = "- Last period started \(f.string(from: lastStart)) (\(daysAgo) day\(daysAgo == 1 ? "" : "s") ago)"
+        if starts.count >= 2 {
+            let gaps = zip(starts.dropFirst(), starts)
+                .compactMap { cal.dateComponents([.day], from: $1, to: $0).day }
+                .sorted()
+            if !gaps.isEmpty {
+                let mid = gaps.count / 2
+                let median = gaps.count % 2 == 1
+                    ? Double(gaps[mid])
+                    : Double(gaps[mid - 1] + gaps[mid]) / 2
+                line += "; median cycle ≈ \(Int(median.rounded())) days"
+            }
+        }
+        line += ". State only what this data shows — never speculate about phase, fertility, or pregnancy."
+        return line
+    }
+
+    /// SYMPTOMS one-liner — up to 5 most recent HealthKit symptom entries
+    /// from the last 14 days. Empty string when none (block omitted).
+    fileprivate static func symptomsBlock() -> String {
+        let symptoms = HealthKitManager.shared.recentSymptoms14
+        guard !symptoms.isEmpty else { return "" }
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        let parts = symptoms.suffix(5).reversed().map { s -> String in
+            let ago = cal.dateComponents([.day], from: cal.startOfDay(for: s.date), to: today).day ?? 0
+            let when = ago <= 0 ? "today" : "\(ago)d ago"
+            return "\(s.name) (\(s.severity), \(when))"
+        }
+        return "SYMPTOMS (14d, from HealthKit): " + parts.joined(separator: ", ")
+            + ". Factor these into coaching intensity and recovery advice — NEVER diagnose; suggest a clinician if persistent or severe."
+    }
+
     /// Coarse activity label — mirrors HealthKitManager.activityCategory
     /// (private there), kept tiny for prompt lines.
     private static func workoutLabel(_ t: HKWorkoutActivityType) -> String {
@@ -970,7 +1110,7 @@ public final class ChatViewModel: ObservableObject {
         case .showMetricChart, .showComparisonChart, .renderCard,
              .listReminders, .listCalendarEvents, .getPredictions,
              .listFoodLog, .listWidgets, .updateNotes, .getSleepPattern,
-             .getMetricHistory:
+             .getMetricHistory, .getSleepSessions:
             return true
         }
     }
@@ -1288,6 +1428,31 @@ public final class ChatViewModel: ObservableObject {
         let hydrationMindful = Self.hydrationMindfulBlock()
         let recentWorkouts  = Self.recentWorkoutsBlock()
 
+        // -- Conditional blocks: training load / HR zones / cycle / symptoms --
+        // Each omits itself entirely when there's no data (token hygiene).
+        let ageYears: Int = dobDate.map {
+            Calendar.current.dateComponents([.year], from: $0, to: Date()).year ?? 30
+        } ?? 30
+        var conditionalBlocks: [String] = []
+        let trainingLoad = Self.trainingLoadBlock()
+        if !trainingLoad.isEmpty {
+            conditionalBlocks.append("TRAINING LOAD (28-day window — same math as the Workout Analytics card)\n\(trainingLoad)")
+        }
+        if hk.hasWatchClassData || rhr > 0 {
+            conditionalBlocks.append("HR ZONES (personalised)\n\(Self.hrZonesLine(userAge: ageYears))")
+        }
+        let cycle = Self.cycleBlock()
+        if !cycle.isEmpty {
+            conditionalBlocks.append("CYCLE (from HealthKit menstrual-flow samples, last 60 days)\n\(cycle)")
+        }
+        let symptoms = Self.symptomsBlock()
+        if !symptoms.isEmpty {
+            conditionalBlocks.append(symptoms)
+        }
+        let conditionalSections = conditionalBlocks.isEmpty
+            ? ""
+            : "\n" + conditionalBlocks.joined(separator: "\n\n") + "\n"
+
         // -- 7-day histories --------------------------------------------------
         let stepsHistory = historySummary(for: .steps)
         let calsHistory  = historySummary(for: .activeEnergy)
@@ -1367,7 +1532,7 @@ public final class ChatViewModel: ObservableObject {
 
         RECENT WORKOUTS (last 3 of 28-day window — call get_metric_history for metric trends)
         \(recentWorkouts)
-
+        \(conditionalSections)
         DATA SEMANTICS
         - "—" or null = HealthKit returned no record. NEVER invent or imply a value.
         - 0 may be a genuine value depending on context: 0 steps at 6 AM is "early morning"; 0 sleep is almost certainly "not synced yet" — use judgement. When in doubt, state the ambiguity.
@@ -1398,6 +1563,7 @@ public final class ChatViewModel: ObservableObject {
         TOOLS — prefer over prose whenever they fit
         - update_notes : your cross-session memory. Call silently at the END of any turn where you learn something lasting — injury, preference, goal, pattern. Overwrite the full blob. Do NOT interrupt the conversation with a note about it.
         - get_sleep_pattern : on-device sleep pattern + the last 5 tracked nights with per-night motion/snore detail. Call FIRST whenever the user asks anything about sleep — "how's my sleep", "am I getting enough", "why am I tired", "is my snoring getting worse". Cite the user's personal numbers (typical bedtime, restlessness baseline, consistency) instead of generic guidance. If the user has fewer than 3 tracked nights, gently encourage them to use the Home > Sleep Tracker card before bed.
+        - get_sleep_sessions : per-night detail for the last N tracked nights (1-14, default 7) — date, duration, onset latency, restlessness, snore episodes/minutes, stage hours. Call when the user asks about a specific night or wants night-by-night detail beyond the SLEEP PATTERN block / get_sleep_pattern aggregate.
         - log_food : food photos or text. Fill ALL FOUR macros (calories, protein, carbs, fat) using your nutrition training data — never default to 0 unless the food genuinely has 0 of that macro (e.g. fat in a plain banana is ~0.4g, NOT 0). Fill tags / highlights / cautions. ALWAYS set is_estimate=true and pick a confidence level (low/medium/high) — only set is_estimate=false when the user supplied exact label nutrition. For ambiguous portions ASK rather than guess. For multi-item plates, emit ONE log_food per distinct item.
         - add_reminder / add_calendar_event : convert relative times to ISO8601 in the user's TZ. Default workout 30 min.
         - list_reminders / list_calendar_events : READ-ONLY. Use FIRST when asked to modify / postpone / delete — you cannot guess ids. If list returns exactly ONE match for the user's description, proceed straight to update_/delete_ without asking.

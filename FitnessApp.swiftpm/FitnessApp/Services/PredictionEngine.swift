@@ -100,6 +100,10 @@ public enum PredictionEngine {
         public let walkingSpeedToday: Double?
         public let walkingAsymmetryToday: Double?
 
+        // User-logged symptoms over the last 14 days (chronological). Used to
+        // CORROBORATE the illness early-warning — they never trigger it alone.
+        public let recentSymptoms: [SymptomEntry]
+
         public init(now: Date,
                     hasWatchClassData: Bool,
                     lastNightSleepHours: Double,
@@ -136,7 +140,8 @@ public enum PredictionEngine {
                     mindfulMinutes7Day: [Double] = [],
                     vo2Max: Double? = nil,
                     walkingSpeedToday: Double? = nil,
-                    walkingAsymmetryToday: Double? = nil) {
+                    walkingAsymmetryToday: Double? = nil,
+                    recentSymptoms: [SymptomEntry] = []) {
             self.now = now
             self.hasWatchClassData = hasWatchClassData
             self.lastNightSleepHours = lastNightSleepHours
@@ -174,6 +179,7 @@ public enum PredictionEngine {
             self.vo2Max = vo2Max
             self.walkingSpeedToday = walkingSpeedToday
             self.walkingAsymmetryToday = walkingAsymmetryToday
+            self.recentSymptoms = recentSymptoms
         }
     }
 
@@ -370,14 +376,54 @@ public enum PredictionEngine {
         guard bestDays >= 2 else { return nil }
         guard bestRhrDelta.isFinite, bestHrvDrop.isFinite, bestSleepDebt.isFinite else { return nil }
 
-        let severity: AnomalySeverity =
+        var severity: AnomalySeverity =
             (bestDays >= 3 || (bestRhrDelta >= 8 && bestHrvDrop >= 20)) ? .high : .moderate
+
+        // ---------- Symptom corroboration (never a trigger) ----------
+        // The flagged window covers the last `bestDays` calendar days ending
+        // today. Corroborate with symptoms logged inside that window or in the
+        // 2 days immediately before it. Distinct symptom-days INSIDE the window
+        // (>= 2) bump .moderate → .high. Symptoms alone never surface a warning —
+        // we only reach here because the RHR+HRV+sleep gate already held.
+        let cal = Calendar.current
+        let today0 = cal.startOfDay(for: s.now)
+        let windowStartDay = cal.date(byAdding: .day, value: -(bestDays - 1), to: today0) ?? today0
+        let corroborationStart = cal.date(byAdding: .day, value: -2, to: windowStartDay) ?? windowStartDay
+
+        var corroboratingSymptoms: [SymptomEntry] = []
+        var distinctInWindowDays = Set<Date>()
+        for entry in s.recentSymptoms {
+            let day = cal.startOfDay(for: entry.date)
+            // Inside corroboration range [windowStart - 2 days, today].
+            guard day >= corroborationStart, day <= today0 else { continue }
+            corroboratingSymptoms.append(entry)
+            // Distinct days strictly inside the flagged window drive the bump.
+            if day >= windowStartDay {
+                distinctInWindowDays.insert(day)
+            }
+        }
+
+        if distinctInWindowDays.count >= 2 && severity == .moderate {
+            severity = .high
+        }
 
         let todaySleep = sleepW[n - 1]
         var bullets: [String] = []
         bullets.append("RHR \(Int(bestRhrToday.rounded())) vs \(Int(bestRhrBase.rounded())) baseline (+\(Int(bestRhrDelta.rounded())))")
         bullets.append("HRV \(Int(bestHrvToday.rounded())) vs \(Int(bestHrvBase.rounded())) baseline (-\(Int(bestHrvDrop.rounded()))%)")
         bullets.append("Sleep \(formattedDuration(todaySleep)) vs \(formattedDuration(bestSleepBase)) baseline — \(formattedDuration(bestSleepDebt)) debt over \(bestDays) days")
+        if !corroboratingSymptoms.isEmpty {
+            // Most recent first, de-duplicate by name, cap at 3.
+            var seenNames = Set<String>()
+            var listed: [String] = []
+            for entry in corroboratingSymptoms.sorted(by: { $0.date > $1.date }) {
+                guard !seenNames.contains(entry.name) else { continue }
+                seenNames.insert(entry.name)
+                listed.append("\(entry.name) (\(entry.severity))")
+                if listed.count == 3 { break }
+            }
+            bullets.append("Logged symptoms: \(listed.joined(separator: ", "))")
+        }
         bullets.append("Pattern has held \(bestDays) days — these are early strain signals, not a diagnosis.")
 
         return IllnessWarning(

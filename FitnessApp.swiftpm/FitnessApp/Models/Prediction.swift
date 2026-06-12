@@ -24,6 +24,16 @@ public struct PredictionExplanation: Codable, Equatable {
     }
 }
 
+/// A single logged symptom — user-reported, used only to *corroborate*
+/// physiological strain signals in the illness early-warning, never to trigger
+/// one on its own.
+public struct SymptomEntry: Codable, Equatable {
+    public let date: Date
+    public let name: String        // display name, e.g. "Fatigue", "Headache"
+    public let severity: String    // "present" | "mild" | "moderate" | "severe"
+    public init(date: Date, name: String, severity: String) { self.date = date; self.name = name; self.severity = severity }
+}
+
 // MARK: - Recovery Readiness
 
 public enum RecoveryLabel: String, Codable {

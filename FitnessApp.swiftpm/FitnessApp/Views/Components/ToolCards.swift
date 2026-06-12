@@ -144,6 +144,10 @@ struct ToolCallCard: View {
             ListSummaryCard(icon: "chart.xyaxis.line", color: .teal,
                             title: "Looked up \(metric.replacingOccurrences(of: "_", with: " "))",
                             subtitle: "Last \(days) days · daily values + stats")
+        case .getSleepSessions(let nights):
+            ListSummaryCard(icon: "bed.double.fill", color: .indigo,
+                            title: "Checked your sleep sessions",
+                            subtitle: "Last \(nights) night\(nights == 1 ? "" : "s") · duration, snoring, restlessness")
         case .createWidget, .listWidgets, .updateWidget, .deleteWidget:
             // Extracted to a helper — keeps the main @ViewBuilder switch
             // under Swift's type-checker complexity limit. 4 widget cases

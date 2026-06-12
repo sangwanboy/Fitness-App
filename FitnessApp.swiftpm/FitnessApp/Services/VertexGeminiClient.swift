@@ -384,6 +384,16 @@ public actor VertexGeminiClient {
                         "type": "object",
                         "properties": [:]
                     ]
+                ],
+                [
+                    "name": "get_sleep_sessions",
+                    "description": "Per-night detail for the user's last N on-device tracked sleep sessions, newest first. Auto-executes and feeds {nights: [{date, duration_h, onset (minutes to fall asleep), restlessness_pct, snore_episodes, snore_total_min, stages {deep_h, light_h, awake_h}}]} back via functionResponse. Call when the user asks about a specific night or wants night-by-night detail beyond the aggregate SLEEP PATTERN block / get_sleep_pattern. Returns available:false when no sessions are tracked yet.",
+                    "parameters": [
+                        "type": "object",
+                        "properties": [
+                            "nights": ["type": "integer", "description": "1-14 (default 7)"]
+                        ]
+                    ]
                 ]
             ]
         ]

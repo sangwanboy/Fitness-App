@@ -49,6 +49,15 @@ public final class HealthKitManager: ObservableObject {
     /// Powers the Home meals card and the Coach's nutrition context.
     @Published public var todayFoodLog: [FoodLogEntry] = []
 
+    /// Last 14 days of HK symptom samples (fatigue, headache, nausea, etc.)
+    /// mapped to SymptomEntry with contract severity strings. Chronological.
+    /// Feeds the PredictionEngine.Snapshot and Astra's symptom-aware coaching.
+    @Published public var recentSymptoms14: [SymptomEntry] = []
+
+    /// Start-of-day dates for days with a menstrual flow sample in the last
+    /// 60 days. Chronological. Used by PredictionEngine for cycle-phase context.
+    @Published public var menstrualFlowDays60: [Date] = []
+
     private init() {
         seedEmptySummaries()
     }
@@ -349,6 +358,17 @@ public final class HealthKitManager: ObservableObject {
                     self.dietaryCalories7Day = history
                     self.todayFoodLog = log
                 }
+                return nil
+            }
+            // Symptom + menstrual history for prediction engine + Astra coaching.
+            group.addTask {
+                let symptoms = await self.fetchSymptomHistory()
+                await MainActor.run { self.recentSymptoms14 = symptoms }
+                return nil
+            }
+            group.addTask {
+                let flowDays = await self.fetchMenstrualFlowDays()
+                await MainActor.run { self.menstrualFlowDays60 = flowDays }
                 return nil
             }
 
@@ -1779,7 +1799,8 @@ public final class HealthKitManager: ObservableObject {
             mindfulMinutes7Day: lastNDays(mindfulHistoryAll, days: 7),
             vo2Max: (metricSummaries[.vo2Max]?.currentValue).flatMap { $0 > 0 ? $0 : nil },
             walkingSpeedToday: (metricSummaries[.walkingSpeed]?.currentValue).flatMap { $0 > 0 ? $0 : nil },
-            walkingAsymmetryToday: (metricSummaries[.walkingAsymmetry]?.currentValue).flatMap { $0 > 0 ? $0 : nil }
+            walkingAsymmetryToday: (metricSummaries[.walkingAsymmetry]?.currentValue).flatMap { $0 > 0 ? $0 : nil },
+            recentSymptoms: recentSymptoms14
         )
 
         let newPredictions = PredictionEngine.computeAll(snapshot: snapshot)
@@ -1941,6 +1962,89 @@ public final class HealthKitManager: ObservableObject {
         return MetricFetchResult(type: .mindfulMinutes, value: nil, history: fetched)
     }
 
+
+    /// Last 14 days of HK category symptom samples mapped to SymptomEntry.
+    /// Covers the authorized symptom identifiers confirmed by the scout.
+    /// Returns [] when no samples exist (honest empty). Chronological.
+    private func fetchSymptomHistory() async -> [SymptomEntry] {
+        let symptomIDs: [(HKCategoryTypeIdentifier, String)] = [
+            (.fatigue,       "Fatigue"),
+            (.headache,      "Headache"),
+            (.nausea,        "Nausea"),
+            (.dizziness,     "Dizziness"),
+            (.fever,         "Fever"),
+            (.vomiting,      "Vomiting"),
+            (.abdominalCramps, "Abdominal Cramps"),
+            (.bloating,      "Bloating"),
+            (.constipation,  "Constipation"),
+            (.diarrhea,      "Diarrhea"),
+            (.heartburn,     "Heartburn"),
+            (.acne,          "Acne"),
+            (.hotFlashes,    "Hot Flashes"),
+            (.moodChanges,   "Mood Changes"),
+            (.sleepChanges,  "Sleep Changes")
+        ]
+        let cal = Calendar.current
+        let now = Date()
+        guard let windowStart = cal.date(byAdding: .day, value: -14, to: now) else { return [] }
+        let predicate = HKQuery.predicateForSamples(withStart: windowStart, end: now, options: .strictStartDate)
+
+        var entries: [SymptomEntry] = []
+        for (identifier, displayName) in symptomIDs {
+            guard let type = HKCategoryType.categoryType(forIdentifier: identifier) else { continue }
+            let samples: [HKCategorySample] = await withCheckedContinuation { cont in
+                let q = HKSampleQuery(sampleType: type, predicate: predicate,
+                                      limit: HKObjectQueryNoLimit,
+                                      sortDescriptors: nil) { _, samples, _ in
+                    cont.resume(returning: (samples as? [HKCategorySample]) ?? [])
+                }
+                healthStore.execute(q)
+            }
+            for s in samples {
+                let severity: String
+                switch s.value {
+                case HKCategoryValueSeverity.notPresent.rawValue:
+                    continue
+                case HKCategoryValueSeverity.mild.rawValue:
+                    severity = "mild"
+                case HKCategoryValueSeverity.moderate.rawValue:
+                    severity = "moderate"
+                case HKCategoryValueSeverity.severe.rawValue:
+                    severity = "severe"
+                default:
+                    severity = "present"
+                }
+                entries.append(SymptomEntry(date: s.startDate, name: displayName, severity: severity))
+            }
+        }
+        return entries.sorted { $0.date < $1.date }
+    }
+
+    /// Start-of-day dates with a menstrualFlow sample in the last 60 days.
+    /// Returns [] when no samples exist. Chronological, unique per day.
+    private func fetchMenstrualFlowDays() async -> [Date] {
+        guard let type = HKCategoryType.categoryType(forIdentifier: .menstrualFlow) else { return [] }
+        let cal = Calendar.current
+        let now = Date()
+        guard let windowStart = cal.date(byAdding: .day, value: -60, to: now) else { return [] }
+        let predicate = HKQuery.predicateForSamples(withStart: windowStart, end: now, options: .strictStartDate)
+
+        let samples: [HKCategorySample] = await withCheckedContinuation { cont in
+            let q = HKSampleQuery(sampleType: type, predicate: predicate,
+                                  limit: HKObjectQueryNoLimit,
+                                  sortDescriptors: nil) { _, samples, _ in
+                cont.resume(returning: (samples as? [HKCategorySample]) ?? [])
+            }
+            healthStore.execute(q)
+        }
+        var seen: Set<Date> = []
+        var days: [Date] = []
+        for s in samples {
+            let day = cal.startOfDay(for: s.startDate)
+            if seen.insert(day).inserted { days.append(day) }
+        }
+        return days.sorted()
+    }
 
     // --- UI State Modifiers ---
 
