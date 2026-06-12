@@ -1718,7 +1718,9 @@ public final class HealthKitManager: ObservableObject {
         let activeEnergyHistoryAll = metricSummaries[.activeEnergy]?.history ?? []
         let exerciseHistoryAll = metricSummaries[.exerciseMinutes]?.history ?? []
 
-        let sleep28 = lastNDays(sleepHistoryAll, days: 28).filter { $0 > 0 }
+        // Drop today's slot (last entry) before building the sleep baseline so that
+        // a partial in-progress sleep session doesn't drag the 28-night mean down.
+        let sleep28 = lastNDays(sleepHistoryAll, days: 29).dropLast().filter { $0 > 0 }
         let hrv28 = lastNDays(hrvHistoryAll, days: 28).filter { $0 > 0 }
         let rhr28 = lastNDays(rhrHistoryAll, days: 28).filter { $0 > 0 }
 
@@ -1785,7 +1787,9 @@ public final class HealthKitManager: ObservableObject {
         }()
         let weightKg: Double? = {
             let v = ud.double(forKey: "athlete_weight_kg")
-            return v > 0 ? v : nil
+            if v > 0 { return v }
+            let hkW = metricSummaries[.bodyMass]?.currentValue ?? 0
+            return hkW > 0 ? hkW : nil
         }()
 
         let hydrationHistoryAll = metricSummaries[.hydration]?.history ?? []
@@ -1913,8 +1917,13 @@ public final class HealthKitManager: ObservableObject {
         let byDay = Dictionary(steps.history.map {
             (cal.startOfDay(for: $0.date), $0.value)
         }, uniquingKeysWith: max)
+        // Anchor the walk at YESTERDAY so an in-progress today (goal not hit
+        // yet) doesn't zero the streak every morning; today only adds once
+        // its goal is actually reached.
+        let today = cal.startOfDay(for: Date())
         var streak = 0
-        var day = cal.startOfDay(for: Date())
+        if let t = byDay[today], t >= steps.goal * goalRatio { streak += 1 }
+        var day = cal.date(byAdding: .day, value: -1, to: today) ?? today.addingTimeInterval(-86_400)
         while let v = byDay[day], v >= steps.goal * goalRatio {
             streak += 1
             guard let prev = cal.date(byAdding: .day, value: -1, to: day) else { break }

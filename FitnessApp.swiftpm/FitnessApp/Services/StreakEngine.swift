@@ -93,7 +93,8 @@ public final class StreakEngine: ObservableObject {
         stepsHistory: [MetricValue],
         stepGoal: Double
     ) -> [WeekActivity] {
-        let cal = Calendar(identifier: .gregorian)
+        // Use ISO 8601 so weeks always start on Monday regardless of device locale.
+        let cal = Calendar(identifier: .iso8601)
 
         // Determine the range: 28 days back → today's week end.
         let today = Date()
@@ -143,9 +144,11 @@ public final class StreakEngine: ObservableObject {
     }
 
     /// Returns the most-recent Monday that is <= `date`.
+    /// Must be called with an ISO 8601 calendar so weekday 2 always means
+    /// Monday regardless of device locale (en_US Gregorian starts on Sunday).
     private func mondayOnOrBefore(date: Date, cal: Calendar) -> Date {
         var comps = cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
-        comps.weekday = 2 // Monday (Gregorian: 1=Sun, 2=Mon)
+        comps.weekday = 2 // ISO 8601: 2 = Monday
         return cal.date(from: comps) ?? date
     }
 
@@ -163,7 +166,8 @@ public final class StreakEngine: ObservableObject {
         // penalise it — we exclude it from streak counting and start counting
         // from the previous complete week.
         var currentIdx = sorted.count - 1
-        let cal = Calendar(identifier: .gregorian)
+        // ISO 8601: weeks always start on Monday, locale-independent.
+        let cal = Calendar(identifier: .iso8601)
         let todayWeekStart = mondayOnOrBefore(date: Date(), cal: cal)
 
         // If the last entry is the current (incomplete) week, skip it for now.
@@ -208,12 +212,20 @@ public final class StreakEngine: ObservableObject {
     private func checkAndAwardBadges(currentStreak: Int) {
         let now = Date()
         var changed = false
+        // Award all newly-crossed milestones silently, but only send ONE
+        // notification — the highest newly-earned milestone — to avoid
+        // flooding the user with simultaneous alerts on a fresh install or
+        // UserDefaults reset where HealthKit history restores a non-zero streak.
+        var highestNewMilestone: Int? = nil
         for milestone in Self.milestoneMilestones where currentStreak >= milestone {
             if !earnedBadges.contains(where: { $0.id == milestone }) {
                 earnedBadges.append(StreakBadge(id: milestone, earnedDate: now))
                 changed = true
-                scheduleStreakNotification(for: milestone)
+                highestNewMilestone = milestone // milestones are ascending, so last wins
             }
+        }
+        if let m = highestNewMilestone {
+            scheduleStreakNotification(for: m)
         }
         if changed {
             persistBadges()

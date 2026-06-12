@@ -1163,12 +1163,14 @@ public enum PredictionEngine {
 
         // ---------- Activity sub-score (0...25) ----------
         // Steps avg (0...14), active energy avg (0...8), workout volume (0...3).
-        let stepsAvg = mean(s.stepsHistory14.filter { $0 > 0 })
-        let activeAvg = mean(s.activeEnergyHistory14.filter { $0 > 0 })
+        // Drop today's in-progress slot (last entry) so a partial day doesn't drag
+        // the 13-complete-day baseline down.
+        let stepsAvg = mean(s.stepsHistory14.dropLast().filter { $0 > 0 })
+        let activeAvg = mean(s.activeEnergyHistory14.dropLast().filter { $0 > 0 })
         let stepsComp = clamp(stepsAvg / 10000.0, 0, 1.2) * 14.0 / 1.2
         let energyComp = clamp(activeAvg / 500.0, 0, 1.2) * 8.0 / 1.2
-        // WHO recommends 150 min/week moderate activity.
-        let loadComp = clamp(s.chronicLoadMinutes / 150.0, 0, 1.5) * 3.0 / 1.5
+        // WHO recommends 150 min/week moderate activity = 600 min over 28 days.
+        let loadComp = clamp(s.chronicLoadMinutes / 600.0, 0, 1.5) * 3.0 / 1.5
         let activityScore = Int((stepsComp + energyComp + loadComp).rounded())
         let activityCapped = min(25, max(0, activityScore))
 
@@ -1183,17 +1185,22 @@ public enum PredictionEngine {
             let avgIntake = intake7.isEmpty ? s.dietaryCaloriesToday : mean(intake7)
             let tdee = estimateTDEE(heightCm: s.heightCm, weightKg: s.weightKg,
                                     activeAvg: activeAvg)
-            // Score peaks within ±15% of TDEE, decays beyond ±50%.
-            let ratio = tdee > 0 ? avgIntake / tdee : 1.0
-            let deviation = abs(ratio - 1.0)
-            let calComp: Double
-            switch deviation {
-            case ..<0.15: calComp = 16
-            case ..<0.30: calComp = 12
-            case ..<0.50: calComp = 7
-            default:      calComp = 3
+            if tdee > 0 {
+                // Score peaks within ±15% of TDEE, decays beyond ±50%.
+                let ratio = avgIntake / tdee
+                let deviation = abs(ratio - 1.0)
+                let calComp: Double
+                switch deviation {
+                case ..<0.15: calComp = 16
+                case ..<0.30: calComp = 12
+                case ..<0.50: calComp = 7
+                default:      calComp = 3
+                }
+                nutritionRaw = calComp
             }
-            nutritionRaw = calComp
+            // When TDEE cannot be estimated (no height/weight) nutritionRaw stays at
+            // the neutral default (12) — meals are acknowledged but not over-rewarded.
+
             // Protein bonus: ≥1.2g/kg if weight known is "good"; ≥1.6g/kg "great".
             if let w = s.weightKg, w > 0, s.dietaryProteinToday > 0 {
                 let perKg = s.dietaryProteinToday / w
@@ -1221,9 +1228,11 @@ public enum PredictionEngine {
         var vitalsRaw: Double = 0
         let sleepAvg = mean(s.sleepHistory28NonZero)
         if sleepAvg > 0 {
-            // Ideal 7-9h; quadratic penalty outside.
+            // Ideal 7-9h; quadratic penalty outside the range.
+            // Allow the component to go slightly negative (-2 floor) so that
+            // severe deprivation (4h) still scores lower than moderate short sleep (5h).
             let dev = abs(sleepAvg - 8.0)
-            vitalsRaw += max(0, 10 - dev * dev * 1.5)
+            vitalsRaw += max(-2, 10 - dev * dev * 1.5)
         } else {
             vitalsRaw += 5  // neutral when no sleep data
         }
@@ -1240,11 +1249,11 @@ public enum PredictionEngine {
             vitalsRaw += 2.5
         }
         if let hrv = s.lastNightHRV, hrv > 0 {
-            // Linearly score 0-100ms → 0-5.
+            // Linearly score 0-100ms → 0-5. Any real reading always earns >= 0,
+            // and no-data (nil) earns 0 so recording real HRV never penalises the user.
             vitalsRaw += clamp(hrv / 100.0, 0, 1.0) * 5
-        } else {
-            vitalsRaw += 2.5
         }
+        // No HRV data: no credit, no penalty — neutral is 0.
         let vitalsScore = min(20, max(0, Int(vitalsRaw.rounded())))
 
         // ---------- Redistribute (Lifestyle removed) ----------
@@ -1295,6 +1304,19 @@ public enum PredictionEngine {
         }
         if !usedNutrition {
             bullets.append("Logging meals would refine the nutrition score — ask Astra to log your last meal.")
+        } else if usedNutrition, let tdee = ({ () -> Double? in
+            let ae = mean(s.activeEnergyHistory14.filter { $0 > 0 })
+            let t = estimateTDEE(heightCm: s.heightCm, weightKg: s.weightKg, activeAvg: ae)
+            return t > 0 ? t : nil
+        }()) {
+            let intake7 = s.dietaryCalories7Day.filter { $0 > 0 }
+            let avgIntake = intake7.isEmpty ? s.dietaryCaloriesToday : mean(intake7)
+            let ratio = avgIntake / tdee
+            if ratio < 0.70 && intake7.count < 3 {
+                bullets.append("Only \(intake7.count) day(s) logged this week — partial logging shows a deficit. Log your full day for a more accurate picture.")
+            } else if ratio < 0.70 {
+                bullets.append("Logged intake is \(Int((1 - ratio) * 100))% below your estimated TDEE — a large deficit lowers the nutrition score.")
+            }
         }
         if !usedBMI {
             bullets.append("Add height + weight in Profile to factor body composition in.")

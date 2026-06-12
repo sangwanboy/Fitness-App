@@ -177,8 +177,9 @@ public struct CalendarView: View {
     // MARK: - Streak helpers
 
     /// Active week starts from StreakEngine (start-of-day, local).
+    /// Uses ISO 8601 calendar to match StreakEngine's week bucketing.
     private var activeWeekStarts: Set<Date> {
-        let cal = Calendar(identifier: .gregorian)
+        let cal = Calendar(identifier: .iso8601)
         return Set(
             streakEngine.weeklyActivity
                 .filter { $0.isActive }
@@ -187,9 +188,11 @@ public struct CalendarView: View {
     }
 
     /// True if `date` falls within a week that counts toward the streak.
+    /// Used ONLY for the subtle background tint on month-grid cells — the
+    /// per-day flame icon was removed because this flag is week-level and would
+    /// incorrectly light all 7 days even when only 3 had workouts.
     private func isInStreakWeek(_ date: Date) -> Bool {
-        let cal = Calendar(identifier: .gregorian)
-        // Find Monday on or before this date.
+        let cal = Calendar(identifier: .iso8601)
         var comps = cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
         comps.weekday = 2
         guard let monday = cal.date(from: comps) else { return false }
@@ -360,12 +363,11 @@ public struct CalendarView: View {
                                 Text("\(dayNumber)")
                                     .font(.system(size: 14, weight: (isToday || isSel) ? .bold : .medium))
                                     .foregroundColor(isSel ? .white : (isDark ? .white : .black))
+                                // Per-day flame icon removed: isStreak is a week-level
+                                // flag that would light all 7 days of an active week even
+                                // when only 3 days had workouts. The subtle background tint
+                                // (isStreak) still signals "this week was active".
                                 HStack(spacing: 2) {
-                                    if isStreak && !isSel {
-                                        Image(systemName: "flame.fill")
-                                            .font(.system(size: 5, weight: .bold))
-                                            .foregroundColor(flameColor.opacity(0.8))
-                                    }
                                     ForEach(0..<min(eventCount, 2), id: \.self) { _ in
                                         Circle()
                                             .fill(isSel ? Color.white : accentColor)

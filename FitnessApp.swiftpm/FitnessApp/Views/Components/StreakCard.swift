@@ -142,8 +142,9 @@ public struct StreakCard: View {
     // MARK: - 7-week dot row
 
     private var weekDotRow: some View {
-        let weeks = last7Weeks
-        let cal   = Calendar(identifier: .gregorian)
+        let weeks = last7Weeks  // already up to 7 elements, oldest → newest
+        // Use ISO 8601 calendar so today's Monday is locale-independent.
+        let cal   = Calendar(identifier: .iso8601)
         let todayMonday = {
             var c = cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date())
             c.weekday = 2
@@ -152,7 +153,10 @@ public struct StreakCard: View {
 
         return HStack(spacing: isWide ? 0 : 6) {
             ForEach(0..<7, id: \.self) { i in
-                let week: WeekActivity? = (i < weeks.count) ? weeks[max(0, weeks.count - 7 + i)] : nil
+                // Left-pad with nil for missing historical weeks; once past the
+                // padding zone, index into the real weeks array from the left.
+                let pad = 7 - weeks.count
+                let week: WeekActivity? = i < pad ? nil : weeks[i - pad]
                 let isThisWeek = week.map { cal.startOfDay(for: $0.weekStart) == cal.startOfDay(for: todayMonday) } ?? false
                 let isActive   = week?.isActive ?? false
                 let isEmpty    = week == nil

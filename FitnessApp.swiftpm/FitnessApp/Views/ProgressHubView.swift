@@ -237,14 +237,34 @@ public struct ProgressHubView: View {
 
                 // Mini dot row (last 5 weeks)
                 HStack(spacing: 5) {
-                    let weeks = Array(streakEngine.weeklyActivity
+                    let sortedWeeks = streakEngine.weeklyActivity
                         .sorted { $0.weekStart < $1.weekStart }
-                        .suffix(5))
+                    let weeks = Array(sortedWeeks.suffix(5))
+                    // Compute today's Monday with ISO 8601 to match StreakEngine bucketing.
+                    let isoCal = Calendar(identifier: .iso8601)
+                    let todayMon: Date = {
+                        var c = isoCal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date())
+                        c.weekday = 2
+                        return isoCal.date(from: c) ?? Date()
+                    }()
+                    let pad = 5 - weeks.count
                     ForEach(0..<5, id: \.self) { i in
-                        let active = (i < weeks.count) ? weeks[i].isActive : false
-                        Circle()
-                            .fill(active ? streakColor : (isDark ? Color.white.opacity(0.15) : Color.black.opacity(0.12)))
-                            .frame(width: 10, height: 10)
+                        let week: WeekActivity? = i < pad ? nil : weeks[i - pad]
+                        let active = week?.isActive ?? false
+                        let isThisWeek = week.map {
+                            isoCal.startOfDay(for: $0.weekStart) == isoCal.startOfDay(for: todayMon)
+                        } ?? false
+                        ZStack {
+                            Circle()
+                                .fill(active ? streakColor : (isDark ? Color.white.opacity(0.15) : Color.black.opacity(0.12)))
+                                .frame(width: 10, height: 10)
+                            // Ring: current incomplete week — not yet active but in progress.
+                            if isThisWeek && !active {
+                                Circle()
+                                    .stroke(streakColor.opacity(0.55), lineWidth: 1.5)
+                                    .frame(width: 10, height: 10)
+                            }
+                        }
                     }
                 }
 

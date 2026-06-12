@@ -41,9 +41,10 @@ public struct SettingsView: View {
     private var isDark: Bool { themeMode == "dark" }
     private var accentColor: Color { ThemeHelper.color(from: accentColorHex) }
 
-    /// "Joined Mar 2025 · 14 day streak". The joined date is read from
+    /// "Joined Mar 2025 · 14-day step streak". The joined date is read from
     /// AppStorage if set, else from HealthKit history (backfill for upgraders),
-    /// else today's date. Streak is real consecutive step-goal days.
+    /// else today's date. Streak is real consecutive step-goal days (distinct
+    /// from the weekly activity streak shown on all other surfaces).
     private var joinedAndStreakLine: String {
         let joinedDate: Date = {
             if accountCreatedDate > 0 {
@@ -53,7 +54,9 @@ public struct SettingsView: View {
         }()
         let f = DateFormatter(); f.dateFormat = "MMM yyyy"
         let streak = healthKitManager.dayStreak()
-        let streakLabel = streak == 1 ? "1 day streak" : "\(streak) day streak"
+        // Label explicitly says "step streak" so it is not confused with the
+        // weekly activity streak shown in StreakCard / ProgressHub / Calendar.
+        let streakLabel = streak == 1 ? "1-day step streak" : "\(streak)-day step streak"
         return "Joined \(f.string(from: joinedDate)) · \(streakLabel)"
     }
 
@@ -172,7 +175,7 @@ public struct SettingsView: View {
     // MARK: - Stat Tiles Row
     private var statRow: some View {
         HStack(spacing: 10) {
-            ProfileStatTile(value: "\(healthKitManager.dayStreak())", label: "Day streak", color: .orange)
+            ProfileStatTile(value: "\(healthKitManager.dayStreak())", label: "Daily step streak", color: .orange)
             ProfileStatTile(
                 value: {
                     let v = healthKitManager.metricSummaries[.heartRate]?.currentValue ?? 0

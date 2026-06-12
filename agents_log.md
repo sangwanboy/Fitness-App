@@ -2803,3 +2803,45 @@ show the actual product image from Open Food Facts.
 
 Latest deployed sequence: **2836**.
 
+---
+
+## Session 47 — 2026-06-12 (Health Meter + streak metrics verification: executable harnesses, 18 verified fixes)
+
+### Process
+Two parallel verification workflows (user asked "check the Health Meter is correct" + "fix the streak
+metrics"), each: Sonnet auditors (one EXECUTING the extracted pure-Swift math via `swift /tmp/*.swift`
+harnesses — engine has no HK imports, so real arithmetic runs) → Opus adversarial verification →
+Sonnet fixes. 34 agents, ~1.5M tokens. HealthKitManager ownership split cleanly (meter workflow owned
+it; streak workflow deferred its HKM fix to the orchestrator).
+
+### Health Meter (harness: 5 test suites, all monotonicity/boundary/label checks PASS)
+**The user's observed 52 (12/11/18/11) was PROVEN arithmetically correct** — exact reproduction;
+notably Nutrition 11/30 implies a logged meal at 30–50% below TDEE + low hydration (NOT the no-meals
+neutral 14). 8 confirmed defects fixed (10 refuted):
+- HRV < 50ms scored WORSE than no HRV (nil neutral +2.5 vs 42ms→2.1) — nil credit removed.
+- Any meal + no height/weight → TDEE=0 fell through to PERFECT calorie score (16) — now neutral.
+- Sleep ≤5.25h all identical (comp floored at 0) — floor lowered to −2 so chronic short sleep differentiates.
+- Today's partial sleep contaminated the 28-night baseline — `days:29 .dropLast()`.
+- HK bodyMass now falls back as weightKg (scale users get real BMI/TDEE without Profile visit).
+- Partial-day step/energy 14d averages, ACWR-vs-WHO comment mismatch, minor wiring — addressed.
+
+### Streak metrics (harness: 23 PASS, 1 FAIL → the real bug)
+- **[medium, REAL] Locale week-bucketing bug**: `Calendar(identifier:.gregorian)` with US firstWeekday=1
+  put SUNDAY workouts in the NEXT week. All streak math switched to `Calendar(identifier:.iso8601)`
+  (StreakEngine, StreakCard, StreakView, CalendarView).
+- StreakCard 7-dot row left-pad indexing fixed (duplicate/misplaced dots under 7 weeks of data).
+- CalendarView per-day flame markers removed (fabricated per-day activity from week-level state);
+  week-tint kept.
+- `dayStreak()` morning-zero fixed by ORCHESTRATOR (deferred from workflow): walk anchors at
+  yesterday; today adds only once its goal is hit — Profile streak no longer resets every morning.
+- Badge re-award now fires ONE notification (highest milestone) after UserDefaults reset.
+- StreakView footer disclosing that goal changes re-score history; ProgressHub in-progress week
+  affordance; day-vs-week streak labels disambiguated in Settings.
+- Refuted honestly: future-sample inflation, cold-open zero, 28-day cap claims (window is by design).
+
+### Build / deploy
+- Simulator + device **BUILD SUCCEEDED**, zero errors. Installed AND launched.
+- **databaseSequenceNumber: 2844**.
+
+Latest deployed sequence: **2844**.
+

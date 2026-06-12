@@ -198,6 +198,24 @@ public struct StreakView: View {
                 Spacer()
             }
             .padding(.top, 4)
+
+            // Goal-change notice: weeks are evaluated against your CURRENT step goal.
+            // If you recently raised your goal, past weeks that qualified at the old
+            // goal may now appear inactive.
+            let stepGoal = Int(HealthKitManager.userGoal(for: .steps))
+            if stepGoal > 0 {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(isDark ? .white.opacity(0.35) : .black.opacity(0.35))
+                        .padding(.top, 1)
+                    Text("Step-goal days use your current goal of \(stepGoal) steps. Changing your goal re-evaluates all past weeks.")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(isDark ? .white.opacity(0.35) : .black.opacity(0.35))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.top, 2)
+            }
         }
         .padding(16)
         .glassCard()
@@ -207,7 +225,8 @@ public struct StreakView: View {
     private func weekCell(for activity: WeekActivity?) -> some View {
         let isActive  = activity?.isActive ?? false
         let wDays     = activity?.workoutDays ?? 0
-        let cal       = Calendar(identifier: .gregorian)
+        // ISO 8601 so weekday 2 == Monday regardless of device locale.
+        let cal       = Calendar(identifier: .iso8601)
         let todayMon  = mondayOfCurrentWeek(cal: cal)
         let isThisWk  = activity.map { cal.startOfDay(for: $0.weekStart) == cal.startOfDay(for: todayMon) } ?? false
 
@@ -357,6 +376,8 @@ public struct StreakView: View {
     // MARK: - Helpers
 
     private func mondayOfCurrentWeek(cal: Calendar) -> Date {
+        // cal must be iso8601 (passed from weekCell callers) to guarantee
+        // weekday 2 == Monday regardless of device locale.
         var c = cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date())
         c.weekday = 2
         return cal.date(from: c) ?? Date()
