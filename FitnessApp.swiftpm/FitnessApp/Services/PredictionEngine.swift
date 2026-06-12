@@ -488,8 +488,8 @@ public enum PredictionEngine {
         let candidates: [CorrelationCandidate] = [
             .init(driver: .sleep,          outcome: .hrv,              lag: 1),
             .init(driver: .sleep,          outcome: .restingHeartRate, lag: 1),
-            .init(driver: .steps,          outcome: .sleep,            lag: 0),
-            .init(driver: .activeEnergy,   outcome: .sleep,            lag: 0),
+            .init(driver: .steps,          outcome: .sleep,            lag: 1),
+            .init(driver: .activeEnergy,   outcome: .sleep,            lag: 1),
             .init(driver: .mindfulMinutes, outcome: .hrv,              lag: 1),
             .init(driver: .hydration,      outcome: .steps,            lag: 0),
             .init(driver: .sleep,          outcome: .steps,            lag: 1)
@@ -723,10 +723,13 @@ public enum PredictionEngine {
         let p75 = percentile(scores, 0.75)
         let p25 = percentile(scores, 0.25)
         guard p75.isFinite, p25.isFinite else { return nil }
-
-        let highPairs = pairs.filter { $0.score >= p75 }
-        let lowPairs  = pairs.filter { $0.score <= p25 }
-        let midPairs  = pairs.filter { $0.score > p25 && $0.score < p75 }
+        // Degenerate: all scores are identical → strata are meaningless.
+        // Fall through to the "typical day" / overall-median path by keeping
+        // highPairs and lowPairs empty so the comparisons below never fire.
+        let stratified = p75 > p25
+        let highPairs = stratified ? pairs.filter { $0.score > p75 } : []
+        let lowPairs  = stratified ? pairs.filter { $0.score < p25 } : []
+        let midPairs  = stratified ? pairs.filter { $0.score >= p25 && $0.score <= p75 } : pairs
 
         let overallMedian = baseline
         func stratumMean(_ ps: [Pair]) -> Double? {
@@ -749,18 +752,26 @@ public enum PredictionEngine {
             energy: s.activeEnergyToday,
             kcal: kcalLastIsToday ? (kcalA.last ?? 0) : 0
         )
+        // Project today's partial score to a full-day estimate so it is
+        // comparable against the full-day percentile thresholds.  Cap the
+        // divisor at 0.5 so we never amplify by more than 2× (handles the
+        // edge case of computing right at 16:00 when ~67% has elapsed).
+        let projectedScore: Double? = todayScore.map { raw in
+            let frac = elapsedDayFraction(at: s.now)
+            return raw / max(frac, 0.5)
+        }
 
         let stratum: String       // "high" | "low" | "mid"
         let deltaDriver: String
         let matchedPairs: [Pair]
         let predictedRaw: Double
 
-        if nowHour >= 16, let ts = todayScore {
-            if ts >= p75 {
+        if nowHour >= 16, let ts = projectedScore, stratified {
+            if ts > p75 {
                 stratum = "high"; deltaDriver = "high load"
                 matchedPairs = highPairs
                 predictedRaw = highMean ?? overallMedian
-            } else if ts <= p25 {
+            } else if ts < p25 {
                 stratum = "low"; deltaDriver = "low activity"
                 matchedPairs = lowPairs
                 predictedRaw = lowMean ?? overallMedian
@@ -1383,6 +1394,11 @@ public enum PredictionEngine {
                 continue
             }
             guard rawSuggested.isFinite, rawSuggested > 0 else { continue }
+            // Direction-consistency guard: the suggested value must actually
+            // move the goal in the stated direction.  Bimodal distributions
+            // can produce, e.g., direction="lower" with P70 > currentGoal.
+            if direction == "lower", rawSuggested >= currentGoal { continue }
+            if direction == "raise", rawSuggested <= currentGoal { continue }
 
             let suggested = roundedGoal(rawSuggested, for: metric)
             guard suggested > 0, suggested.isFinite else { continue }
@@ -1543,7 +1559,6 @@ public enum PredictionEngine {
     /// emit NaN into Codable output).
     private static func pearson(_ xs: [Double], _ ys: [Double]) -> Double? {
         guard xs.count == ys.count, xs.count >= 2 else { return nil }
-        let n = Double(xs.count)
         let mx = mean(xs)
         let my = mean(ys)
         var cov = 0.0, vx = 0.0, vy = 0.0
@@ -1554,7 +1569,6 @@ public enum PredictionEngine {
             vx += dx * dx
             vy += dy * dy
         }
-        _ = n
         guard vx > 1e-9, vy > 1e-9 else { return nil }
         let r = cov / (sqrt(vx) * sqrt(vy))
         guard r.isFinite else { return nil }

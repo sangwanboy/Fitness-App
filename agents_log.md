@@ -2726,3 +2726,55 @@ over the five loop-built predictors (edge cases vs real data shapes) rather than
 
 Latest deployed sequence: **2748**.
 
+---
+
+## Session 45 — 2026-06-12 (Loop iteration 7 re-run: hardening pass — 9 verified defects fixed; LOOP CLOSED)
+
+### Process
+First run of `astra-iter7-hardening` (morning) silently no-oped — all 3 finders died on the session
+rate limit and the empty result rendered a hollow "CLEAN" verdict. Re-run after reset: 25 agents,
+~1.12M tokens — 3 Sonnet finders → 19 findings → **Opus adversarial verification refuted 10,
+confirmed 9** → Sonnet fixers applied all 9. Sim + device builds green first try.
+**Lesson: a workflow returning zero findings because its agents FAILED is not a clean verdict —
+always check the failures list before trusting an empty result.**
+
+### Confirmed + fixed (engine)
+1. **[medium] Causality bug in correlations**: steps→sleep and activeEnergy→sleep used lag:0, pairing
+   today's activity with the night that ended this MORNING (backwards). Now lag:1 (activity → next
+   night). The insight templates were silently describing the wrong relationship.
+2. **[medium] Sleep-forecast partial-day classification**: at 16:00 the raw partial-day activity
+   total was compared against full-day percentile thresholds (systematic LOW bias). Now projects a
+   full-day score via elapsed-day fraction (capped 2× amplification).
+3. **[low] Degenerate strata**: p25 == p75 put every pair in BOTH high and low strata. Now gated by
+   `stratified = p75 > p25` with strict boundary inequalities (mutually exclusive strata).
+4. **[medium] Goal-suggestion contradiction**: "lower" suggestions could land ABOVE the current goal
+   (P70 of actuals > goal while median attainment < 0.55 — bimodal data). Direction-consistency guard
+   skips contradictory candidates.
+5. **[low] Dead `n` variable in pearson()** removed.
+
+### Confirmed + fixed (surfaces)
+6. **[medium] Goal Apply had no confirmation** — a mis-tap silently rewrote a goal (and goals drive
+   streaks/challenges/meter). Now a confirmationDialog with metric, current → proposed.
+7. **[medium] GoalSuggestions/Correlations rows silently absent from night (and morning) slots** —
+   added to all four time-of-day arms.
+8. **[low] No Why button on GoalSuggestionsRow** — new `PredictionKind.goalSuggestions` case + wiring.
+9. **[medium] predictionsSummary omitted goal-suggestion direction/attainment/rationale** — fixed.
+
+### Notably REFUTED by Opus (findings that LOOKED real)
+merging() dropping new fields (it doesn't), isEmpty gaps (correct), illness baseline window bugs
+(all best* variables update together), sleep-pair in-progress-today contamination (gated), the
+"+" sign hardcoding (formatDelta handles signs). The adversarial stage killed 10/19 — without it,
+half the "fixes" would have been churn on correct code.
+
+### Build / deploy
+- Simulator + device **BUILD SUCCEEDED**, zero errors. Installed AND launched.
+- **databaseSequenceNumber: 2828**.
+
+### LOOP CLOSED (7 iterations, sessions 39–45)
+Goal delivered in full: Astra sees every data category the app holds; the on-device engine gained
+six predictors (illness early-warning w/ symptom corroboration, correlations, periodization, goal
+suggestions, sleep forecast — plus the earlier Health Meter line) — now adversarially verified.
+Remaining for the human: GCP key rotation (`4d33d3bc…`); on-device UX feel-check of the new rows.
+
+Latest deployed sequence: **2828**.
+

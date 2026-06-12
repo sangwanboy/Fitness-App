@@ -476,6 +476,7 @@ public enum PredictionKind: String, Codable, Identifiable {
     case correlations
     case periodization
     case sleepForecast = "sleep_forecast"
+    case goalSuggestions = "goal_suggestions"
 
     public var id: String { rawValue }
 }

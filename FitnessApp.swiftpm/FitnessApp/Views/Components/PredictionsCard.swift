@@ -277,11 +277,13 @@ public struct PredictionsCard: View {
             if let pz = p.periodization { rows.append(AnyView(PeriodizationRow(status: pz, onWhy: { openWhy(.periodization) }))) }
             if let n = p.nextWorkout { rows.append(AnyView(NextWorkoutRow(forecast: n, onWhy: { openWhy(.nextWorkout) }))) }
             if currentHour >= 9, let s = p.sedentary { rows.append(AnyView(SedentaryRow(alert: s, onWhy: { openWhy(.sedentary) }))) }
+            if !p.goalSuggestions.isEmpty { rows.append(AnyView(GoalSuggestionsRow(suggestions: p.goalSuggestions, onWhy: { openWhy(.goalSuggestions) }))) }
+            if !p.correlations.isEmpty { rows.append(AnyView(CorrelationsRow(correlations: p.correlations, onWhy: { openWhy(.correlations) }))) }
         case .midday:
             for t in p.trajectories.prefix(2) { rows.append(AnyView(TrajectoryRow(trajectory: t, onWhy: { openWhy(.trajectory) }))) }
             if let s = p.sedentary { rows.append(AnyView(SedentaryRow(alert: s, onWhy: { openWhy(.sedentary) }))) }
             if !p.goalSuggestions.isEmpty {
-                rows.append(AnyView(GoalSuggestionsRow(suggestions: p.goalSuggestions)))
+                rows.append(AnyView(GoalSuggestionsRow(suggestions: p.goalSuggestions, onWhy: { openWhy(.goalSuggestions) })))
             }
             if !p.correlations.isEmpty {
                 rows.append(AnyView(CorrelationsRow(correlations: p.correlations, onWhy: { openWhy(.correlations) })))
@@ -294,7 +296,7 @@ public struct PredictionsCard: View {
                 rows.append(AnyView(RecoveryRow(reading: r, onWhy: { openWhy(.recovery) })))
             }
             if !p.goalSuggestions.isEmpty {
-                rows.append(AnyView(GoalSuggestionsRow(suggestions: p.goalSuggestions)))
+                rows.append(AnyView(GoalSuggestionsRow(suggestions: p.goalSuggestions, onWhy: { openWhy(.goalSuggestions) })))
             }
             if let pz = p.periodization { rows.append(AnyView(PeriodizationRow(status: pz, onWhy: { openWhy(.periodization) }))) }
             if !p.correlations.isEmpty {
@@ -305,6 +307,8 @@ public struct PredictionsCard: View {
             if let n = p.nextWorkout { rows.append(AnyView(NextWorkoutRow(forecast: n, onWhy: { openWhy(.nextWorkout) }))) }
             if let r = p.recovery { rows.append(AnyView(RecoveryRow(reading: r, onWhy: { openWhy(.recovery) }))) }
             if let pz = p.periodization { rows.append(AnyView(PeriodizationRow(status: pz, onWhy: { openWhy(.periodization) }))) }
+            if !p.goalSuggestions.isEmpty { rows.append(AnyView(GoalSuggestionsRow(suggestions: p.goalSuggestions, onWhy: { openWhy(.goalSuggestions) }))) }
+            if !p.correlations.isEmpty { rows.append(AnyView(CorrelationsRow(correlations: p.correlations, onWhy: { openWhy(.correlations) }))) }
         }
         return Array(rows.prefix(4))
     }
@@ -1087,6 +1091,7 @@ private struct CorrelationsRow: View {
 
 private struct GoalSuggestionsRow: View {
     let suggestions: [GoalSuggestion]
+    let onWhy: () -> Void
     @AppStorage("theme_mode") private var themeMode = "dark"
     private var isDark: Bool { themeMode == "dark" }
 
@@ -1101,6 +1106,8 @@ private struct GoalSuggestionsRow: View {
                     .foregroundColor(isDark ? .white.opacity(0.5) : .black.opacity(0.5))
                     .tracking(0.5)
                     .lineLimit(1)
+                Spacer()
+                WhyButton(onTap: onWhy)
             }
             VStack(alignment: .leading, spacing: 10) {
                 ForEach(suggestions) { suggestion in
@@ -1115,6 +1122,7 @@ private struct GoalSuggestionRow: View {
     let suggestion: GoalSuggestion
     let isDark: Bool
     @State private var applied = false
+    @State private var confirmPending = false
 
     private func formatValue(_ v: Double, for metric: HealthMetricType) -> String {
         switch metric {
@@ -1164,7 +1172,7 @@ private struct GoalSuggestionRow: View {
                     .foregroundColor(.green)
                     .transition(.scale.combined(with: .opacity))
             } else {
-                Button(action: applyGoal) {
+                Button(action: { confirmPending = true }) {
                     Text("Apply")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundColor(.green)
@@ -1176,6 +1184,18 @@ private struct GoalSuggestionRow: View {
             }
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.75), value: applied)
+        .confirmationDialog(
+            "Update \(suggestion.metric.displayName) goal?",
+            isPresented: $confirmPending,
+            titleVisibility: .visible
+        ) {
+            Button("Set to \(formatValue(suggestion.suggestedGoal, for: suggestion.metric)) \(suggestion.metric.unit)") {
+                applyGoal()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Current goal: \(formatValue(suggestion.currentGoal, for: suggestion.metric)) \(suggestion.metric.unit)")
+        }
     }
 
     private func applyGoal() {

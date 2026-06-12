@@ -26,6 +26,7 @@ public struct PredictionWhySheet: View {
         case .healthMeter:    return "Why your health is \(predictions.healthMeter?.label.headline.lowercased() ?? "—")"
         case .illness:        return "What these strain signals mean"
         case .correlations:   return "Patterns found in your data"
+        case .goalSuggestions: return "Why these goal changes are suggested"
         case .periodization:
             let phase = predictions.periodization?.phase ?? "—"
             return "Why you're in a \(phase.prefix(1).uppercased() + phase.dropFirst()) phase"
@@ -42,6 +43,7 @@ public struct PredictionWhySheet: View {
         case .healthMeter:    return "What's driving your wellness score"
         case .illness:        return "Your RHR, HRV, and sleep debt vs your own baseline"
         case .correlations:   return "How your metrics tend to influence each other"
+        case .goalSuggestions: return "Your 28-day attainment vs your current targets"
         case .periodization:  return "Weekly load trend vs your 3-week baseline"
         case .sleepForecast:  return "Based on your activity pattern vs similar past nights"
         }
@@ -275,6 +277,16 @@ public struct PredictionWhySheet: View {
                     prompt: "I just saw the patterns found in my data. Walk me through what these correlations mean for how I should train and recover this week, and ask me anything you need to give me a specific plan."
                 )
             ]
+        case .goalSuggestions:
+            return [
+                QuickAction(
+                    icon: "target",
+                    color: .green,
+                    title: "Review all goal suggestions",
+                    subtitle: "Ask Astra to explain each one",
+                    prompt: "I just saw some goal tune-up suggestions. Walk me through each one — explain why the new targets make sense for my recent performance, and ask me anything you need to personalise them further."
+                )
+            ]
         case .periodization:
             guard let pz = predictions.periodization else { return [] }
             switch pz.phase {
@@ -403,6 +415,9 @@ public struct PredictionWhySheet: View {
             return "My vitals have been showing early strain signals for \(days) day\(days == "1" ? "" : "s"). Help me understand what my body is telling me and build a recovery plan for the next few days — ask me whatever you need."
         case .correlations:
             return "I just saw some patterns in my data. Walk me through what these relationships mean and help me use them to plan my next week — feel free to ask about my goals and schedule."
+        case .goalSuggestions:
+            let count = predictions.goalSuggestions.count
+            return "I just saw \(count) goal tune-up suggestion\(count == 1 ? "" : "s"). Walk me through the reasoning behind each one and help me decide which to apply — feel free to ask about my schedule, lifestyle, and what matters most to me right now."
         case .periodization:
             if let pz = predictions.periodization {
                 let trendSign = pz.loadTrendPct >= 0 ? "+" : ""

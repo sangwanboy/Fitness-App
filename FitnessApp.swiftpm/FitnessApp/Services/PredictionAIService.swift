@@ -455,7 +455,7 @@ public actor PredictionAIService {
                     cur = String(format: "%.0f", s.currentGoal)
                     sug = String(format: "%.0f", s.suggestedGoal)
                 }
-                return "\(s.metric.rawValue) \(cur)->\(sug)"
+                return "\(s.metric.rawValue) \(cur)->\(sug) (\(s.direction), median attainment \(String(format: "%.0f", s.medianAttainmentPct))%)"
             }
             lines.append("Goal suggestions: \(parts.joined(separator: ", "))")
         }
@@ -556,6 +556,24 @@ public actor PredictionAIService {
                 """
             } else {
                 detail = "No sleep forecast available."
+            }
+        case .goalSuggestions:
+            if p.goalSuggestions.isEmpty {
+                detail = "No goal suggestions available."
+            } else {
+                detail = p.goalSuggestions.map { s -> String in
+                    let cur: String
+                    let sug: String
+                    switch s.metric {
+                    case .sleep, .hydration, .distance:
+                        cur = String(format: "%.1f", s.currentGoal)
+                        sug = String(format: "%.1f", s.suggestedGoal)
+                    default:
+                        cur = String(format: "%.0f", s.currentGoal)
+                        sug = String(format: "%.0f", s.suggestedGoal)
+                    }
+                    return "• \(s.metric.displayName): current goal \(cur) \(s.metric.unit) → suggested \(sug) \(s.metric.unit) (\(s.direction)), 28-day median attainment \(String(format: "%.0f", s.medianAttainmentPct))% — \(s.rationale)"
+                }.joined(separator: "\n")
             }
         }
         let kindSpecificShape = whyOutputShape(for: kind)
@@ -690,6 +708,18 @@ public actor PredictionAIService {
             One pragmatic sentence: what to do with this forecast if it's above baseline (e.g. lean into it, plan something demanding tomorrow) vs below (e.g. start wind-down earlier).
 
             End with one `Next:` line: the single most effective thing to do in the next 30 minutes to support the best possible sleep tonight.
+            """
+        case .goalSuggestions:
+            return """
+            SHAPE FOR GOAL SUGGESTIONS:
+            For each goal suggestion in the data:
+            ### [Metric name]
+            - State the current goal and the suggested goal with units.
+            - Quote the 28-day median attainment percentage. Explain what it means: below 80% suggests the goal may be too ambitious; above 95% suggests headroom to push higher.
+            - Explain the direction of the change (e.g. "increasing your step goal from 8,000 to 9,500") and what recent behaviour supports it.
+            - One concrete implication: what would need to change day-to-day to hit the new target, expressed in specific, relatable terms (e.g. "about 10 extra minutes of walking per day").
+            Close with a brief paragraph on how to decide which suggestions to apply first — prioritise by impact on health metrics, not by which are easiest.
+            RULE: Never tell the user to apply the suggestion. The decision is theirs. Present the reasoning, not the instruction.
             """
         case .periodization:
             return """
