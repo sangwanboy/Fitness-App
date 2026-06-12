@@ -11,9 +11,15 @@ import PhotosUI
 struct FoodCameraView: View {
     let onImage: (UIImage) -> Void
     let onCancel: () -> Void
+    /// Fired once with a detected barcode/GTIN string. Optional so existing
+    /// call sites that only want photo capture stay unchanged.
+    var onBarcode: ((String) -> Void)? = nil
 
     @StateObject private var cam = FoodCameraModel()
     @State private var photoItem: PhotosPickerItem? = nil
+    /// Debounce: once a code is handled we ignore further reads until the view
+    /// reappears (reset in onAppear).
+    @State private var scanned = false
 
     var body: some View {
         ZStack {
@@ -43,19 +49,35 @@ struct FoodCameraView: View {
                 topBar
                 Spacer()
                 if cam.state == .ready {
-                    Text("Center your meal in the frame")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(.white.opacity(0.9))
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 7)
-                        .background(.black.opacity(0.35), in: Capsule())
-                        .padding(.bottom, 16)
+                    VStack(spacing: 8) {
+                        Text("Center your meal in the frame")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.white.opacity(0.9))
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 7)
+                            .background(.black.opacity(0.35), in: Capsule())
+
+                        Label("Point at a barcode to scan a product", systemImage: "barcode.viewfinder")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.white.opacity(0.7))
+                    }
+                    .padding(.bottom, 16)
                 }
                 bottomControls
             }
         }
         .onAppear {
             cam.onCapture = { img in onImage(img) }
+            // Reset the debounce so scanning resumes whenever we return to the
+            // camera (e.g. "Scan again" after a failed lookup).
+            scanned = false
+            cam.onBarcode = { code in
+                guard !scanned else { return }
+                scanned = true
+                // Success haptic on a real detection.
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                onBarcode?(code)
+            }
             cam.start()
         }
         .onDisappear { cam.stop() }
@@ -168,11 +190,14 @@ final class FoodCameraModel: NSObject, ObservableObject {
 
     let session = AVCaptureSession()
     private let output = AVCapturePhotoOutput()
+    private let metadataOutput = AVCaptureMetadataOutput()
     private let queue = DispatchQueue(label: "fitnessapp.food.camera")
     private var configured = false
 
     /// Called on the main thread with the captured/normalised still.
     var onCapture: ((UIImage) -> Void)?
+    /// Called on the main thread with a detected barcode/GTIN string.
+    var onBarcode: ((String) -> Void)?
 
     func start() {
         switch AVCaptureDevice.authorizationStatus(for: .video) {
@@ -206,6 +231,19 @@ final class FoodCameraModel: NSObject, ObservableObject {
                 }
                 self.session.addInput(input)
                 self.session.addOutput(self.output)
+
+                // Barcode / QR metadata scanning on the same session. Delegate
+                // callbacks land on the main queue. metadataObjectTypes can only
+                // be set AFTER the output is added to the session.
+                if self.session.canAddOutput(self.metadataOutput) {
+                    self.session.addOutput(self.metadataOutput)
+                    self.metadataOutput.setMetadataObjectsDelegate(self, queue: .main)
+                    let wanted: [AVMetadataObject.ObjectType] =
+                        [.ean13, .ean8, .upce, .code128, .qr]
+                    self.metadataOutput.metadataObjectTypes =
+                        wanted.filter { self.metadataOutput.availableMetadataObjectTypes.contains($0) }
+                }
+
                 self.session.commitConfiguration()
                 self.configured = true
             }
@@ -245,6 +283,32 @@ extension FoodCameraModel: AVCapturePhotoCaptureDelegate {
               let data = photo.fileDataRepresentation(),
               let image = UIImage(data: data) else { return }
         DispatchQueue.main.async { [weak self] in self?.onCapture?(image) }
+    }
+}
+
+// MARK: - Barcode / QR metadata
+
+extension FoodCameraModel: AVCaptureMetadataOutputObjectsDelegate {
+    func metadataOutput(_ output: AVCaptureMetadataOutput,
+                        didOutput metadataObjects: [AVMetadataObject],
+                        from connection: AVCaptureConnection) {
+        // Delegate already runs on the main queue. Take the first readable code.
+        for object in metadataObjects {
+            guard let readable = object as? AVMetadataMachineReadableCodeObject,
+                  let raw = readable.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !raw.isEmpty else { continue }
+
+            // QR codes may carry arbitrary payloads. Only treat a QR as a
+            // product code when it encodes a bare numeric GTIN (8–14 digits);
+            // ignore anything else without surfacing an error.
+            if readable.type == .qr {
+                let isBareGTIN = raw.allSatisfy(\.isNumber) && (8...14).contains(raw.count)
+                guard isBareGTIN else { continue }
+            }
+
+            onBarcode?(raw)
+            return
+        }
     }
 }
 

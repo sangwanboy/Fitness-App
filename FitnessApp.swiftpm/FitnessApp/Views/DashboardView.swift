@@ -300,6 +300,7 @@ public struct DashboardView: View {
                 Button { switchToTab("profile") } label: {
                     avatarView
                 }
+                .accessibilityLabel("Profile")
             }
         }
         .sheet(isPresented: $showSearchSheet) { HomeSearchSheet() }

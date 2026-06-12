@@ -25,7 +25,7 @@ public struct DailyChallengeCard: View {
         Button { showDetail = true } label: {
             cardContent
         }
-        .buttonStyle(PlainButtonStyle())
+        .buttonStyle(InteractiveButtonStyle())
         .sheet(isPresented: $showDetail) {
             DailyChallengeView()
         }

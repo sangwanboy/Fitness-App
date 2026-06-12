@@ -9,6 +9,7 @@ import EventKit
 public struct CalendarView: View {
     @AppStorage("accent_color") private var accentColorHex = "#30D158"
     @AppStorage("theme_mode") private var themeMode = "dark"
+    @AppStorage("training_goals") private var trainingGoals: String = ""
 
     @ObservedObject private var ek = EventKitManager.shared
     @ObservedObject private var streakEngine = StreakEngine.shared
@@ -462,14 +463,25 @@ public struct CalendarView: View {
         .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 20))
     }
 
+    private var weekPlanSubtitle: String {
+        let goals = trainingGoals
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        if let first = goals.first { return "AI-built · \(first)" }
+        return "AI-built plan"
+    }
+
     private var weekPlanCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 Image(systemName: "sparkles")
                     .foregroundColor(accentColor)
-                Text("AI-built · Endurance block")
+                Text(weekPlanSubtitle)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(accentColor)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
                 Spacer()
                 Text("\(weekEvents.reduce(0, +)) sessions")
                     .font(.system(size: 12, weight: .semibold))

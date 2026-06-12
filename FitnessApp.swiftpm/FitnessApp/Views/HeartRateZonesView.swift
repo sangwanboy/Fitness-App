@@ -153,7 +153,7 @@ public struct HeartRateZonesView: View {
         VStack(spacing: 14) {
             ProgressView()
                 .tint(accentColor)
-            Text("Analysing HR zones…")
+            Text("Analyzing HR zones…")
                 .font(.caption)
                 .foregroundColor(isDark ? .white.opacity(0.55) : .black.opacity(0.55))
         }
@@ -166,7 +166,7 @@ public struct HeartRateZonesView: View {
             Image(systemName: "heart.slash")
                 .font(.system(size: 40))
                 .foregroundColor(isDark ? .white.opacity(0.3) : .black.opacity(0.3))
-            Text("No HR Data Found")
+            Text("No HR data found")
                 .font(.headline)
                 .foregroundColor(isDark ? .white.opacity(0.7) : .black.opacity(0.7))
             Text("Complete workouts with an Apple Watch or heart-rate monitor. HR samples are required for zone analysis.")

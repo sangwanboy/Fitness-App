@@ -3,7 +3,10 @@ import Charts
 
 public struct HealthTrendsView: View {
     @ObservedObject private var healthKitManager = HealthKitManager.shared
-    
+
+    @AppStorage("theme_mode") private var themeMode = "dark"
+    private var isDark: Bool { themeMode == "dark" }
+
     @State private var timeRange: TimeRange = .week
     @State private var detailMetric: HealthMetricType?
     
@@ -102,11 +105,11 @@ public struct HealthTrendsView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Health Trends")
                                 .font(.system(size: 28, weight: .bold, design: .rounded))
-                                .foregroundColor(.white)
+                                .foregroundColor(isDark ? .white : .black)
 
                             Text("Long term health analytics")
                                 .font(.subheadline)
-                                .foregroundColor(.white.opacity(0.95))
+                                .foregroundColor(isDark ? .white.opacity(0.55) : .black.opacity(0.55))
                         }
                         Spacer()
 
@@ -128,7 +131,7 @@ public struct HealthTrendsView: View {
                                 Text(range.rawValue)
                                     .font(.subheadline)
                                     .fontWeight(isSelected ? .semibold : .regular)
-                                    .foregroundColor(isSelected ? .white : .white.opacity(0.85))
+                                    .foregroundColor(isSelected ? (isDark ? .white : .black) : (isDark ? .white.opacity(0.85) : .black.opacity(0.85)))
                                     .padding(.vertical, 8)
                                     .frame(maxWidth: .infinity)
                                     .background {
@@ -153,12 +156,12 @@ public struct HealthTrendsView: View {
 
                             Text("Weekly Insight")
                                 .font(.headline)
-                                .foregroundColor(.white)
+                                .foregroundColor(isDark ? .white : .black)
                         }
 
                         Text(insightNarrative)
                             .font(.subheadline)
-                            .foregroundColor(.white.opacity(0.95))
+                            .foregroundColor(isDark ? .white.opacity(0.85) : .black.opacity(0.85))
                             .lineSpacing(4)
 
                         HStack(spacing: 16) {
@@ -174,7 +177,7 @@ public struct HealthTrendsView: View {
                     VStack(alignment: .leading, spacing: 16) {
                         Text("Steps vs. Distance Compare")
                             .font(.headline)
-                            .foregroundColor(.white)
+                            .foregroundColor(isDark ? .white : .black)
                             .padding(.horizontal)
                         
                         VStack(spacing: 16) {
@@ -188,7 +191,7 @@ public struct HealthTrendsView: View {
                                             Image(systemName: "figure.walk")
                                                 .foregroundColor(.teal)
                                             Text("Daily Steps Trend")
-                                                .foregroundColor(.white)
+                                                .foregroundColor(isDark ? .white : .black)
                                         }
                                         .font(.subheadline)
                                         .fontWeight(.semibold)
@@ -210,7 +213,7 @@ public struct HealthTrendsView: View {
                                             Image(systemName: "arrow.triangle.turn.up.right.diamond.fill")
                                                 .foregroundColor(.green)
                                             Text("Walking & Running Distance")
-                                                .foregroundColor(.white)
+                                                .foregroundColor(isDark ? .white : .black)
                                         }
                                         .font(.subheadline)
                                         .fontWeight(.semibold)
@@ -230,7 +233,7 @@ public struct HealthTrendsView: View {
                         VStack(alignment: .leading, spacing: 16) {
                             Text("Heart Rate Range (Last 12h)")
                                 .font(.headline)
-                                .foregroundColor(.white)
+                                .foregroundColor(isDark ? .white : .black)
                                 .padding(.horizontal)
                             
                             Button {
@@ -241,7 +244,7 @@ public struct HealthTrendsView: View {
                                         Image(systemName: "heart.fill")
                                             .foregroundColor(.red)
                                         Text("Continuous HR Stream")
-                                            .foregroundColor(.white)
+                                            .foregroundColor(isDark ? .white : .black)
                                     }
                                     .font(.subheadline)
                                     .fontWeight(.semibold)
@@ -293,12 +296,15 @@ struct InsightMiniStat: View {
     let title: String
     let val: String
     let color: Color
-    
+
+    @AppStorage("theme_mode") private var themeMode = "dark"
+    private var isDark: Bool { themeMode == "dark" }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
                 .font(.system(size: 10, weight: .bold))
-                .foregroundColor(.white.opacity(0.95))
+                .foregroundColor(isDark ? .white.opacity(0.55) : .black.opacity(0.55))
             Text(val)
                 .font(.system(size: 16, weight: .bold, design: .rounded))
                 .foregroundColor(color)

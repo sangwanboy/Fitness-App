@@ -167,7 +167,7 @@ public struct LoginView: View {
                         withAnimation { isLoggedIn = true }
                     }) {
                         HStack(spacing: 8) {
-                            Image(systemName: "g.circle.fill")
+                            Image(systemName: "globe")
                                 .font(.system(size: 18))
                             Text("Continue with Google")
                                 .fontWeight(.semibold)

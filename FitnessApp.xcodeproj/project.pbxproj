@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		5F5F211080F1E2213A50C929 /* BarcodeProductService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3694B86BDFD5D6F886FBCEB /* BarcodeProductService.swift */; };
+		748D70BDC4208F158B6260BD /* BarcodeProduct.swift in Sources */ = {isa = PBXBuildFile; fileRef = 505C6156E8E4407885A990AB /* BarcodeProduct.swift */; };
 		27DAF6A37BEE4CC58CEF3E6B /* FoodCameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5789D9B726C54541BAC17502 /* FoodCameraView.swift */; };
 		63788247D8524E7F8E0037FF /* FoodVisionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4C9FE3743A0443E8282E381 /* FoodVisionModels.swift */; };
 		333F468222CE40C8834EF7BA /* FoodVisionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12B32B22C5E34D62B51EB9A9 /* FoodVisionService.swift */; };
@@ -93,6 +95,8 @@
 		/* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		A3694B86BDFD5D6F886FBCEB /* BarcodeProductService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarcodeProductService.swift; sourceTree = "<group>"; };
+		505C6156E8E4407885A990AB /* BarcodeProduct.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarcodeProduct.swift; sourceTree = "<group>"; };
 		5789D9B726C54541BAC17502 /* FoodCameraView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoodCameraView.swift; sourceTree = "<group>"; };
 		B4C9FE3743A0443E8282E381 /* FoodVisionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoodVisionModels.swift; sourceTree = "<group>"; };
 		12B32B22C5E34D62B51EB9A9 /* FoodVisionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoodVisionService.swift; sourceTree = "<group>"; };
@@ -294,6 +298,7 @@
 		8FFC23862DFFC84371A26B18 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				A3694B86BDFD5D6F886FBCEB /* BarcodeProductService.swift */,
 				12B32B22C5E34D62B51EB9A9 /* FoodVisionService.swift */,
 				D3CB93F8918C421FA0CE4A02 /* TokenMeter.swift */,
 				7A19260F32037834A5C4AB0D /* TrainingLoadEngine.swift */,
@@ -322,6 +327,7 @@
 		B3C6C47C211B441287027A4E /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				505C6156E8E4407885A990AB /* BarcodeProduct.swift */,
 				B4C9FE3743A0443E8282E381 /* FoodVisionModels.swift */,
 				4C270D683DF4981F05B54550 /* AstraWidget.swift */,
 				48E26CE3BC0A02FCF8F0937F /* ChatMessage.swift */,
@@ -438,6 +444,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5F5F211080F1E2213A50C929 /* BarcodeProductService.swift in Sources */,
+				748D70BDC4208F158B6260BD /* BarcodeProduct.swift in Sources */,
 				27DAF6A37BEE4CC58CEF3E6B /* FoodCameraView.swift in Sources */,
 				63788247D8524E7F8E0037FF /* FoodVisionModels.swift in Sources */,
 				333F468222CE40C8834EF7BA /* FoodVisionService.swift in Sources */,

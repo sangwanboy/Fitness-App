@@ -62,6 +62,7 @@ public struct GuidedBreathingView: View {
                             .glassEffect(.regular.interactive(), in: .circle)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Close")
 
                     Spacer()
 
@@ -81,6 +82,7 @@ public struct GuidedBreathingView: View {
                                 .glassEffect(.regular.interactive(), in: .circle)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("Edit breathing ratios")
                     } else {
                         Color.clear.frame(width: 36, height: 36)
                     }

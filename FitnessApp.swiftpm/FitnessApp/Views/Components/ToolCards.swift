@@ -429,7 +429,10 @@ private struct ConfirmFooterShim: View {
                 HStack { Spacer(); ProgressView().controlSize(.small); Spacer() }.frame(height: 36)
             case .pending, .autoExecuted:
                 HStack(spacing: 10) {
-                    Button(action: onCancel) {
+                    Button(action: {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        onCancel()
+                    }) {
                         Text("Cancel")
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundColor(.secondary)
@@ -438,7 +441,10 @@ private struct ConfirmFooterShim: View {
                             .glassEffect(.regular.interactive(), in: .capsule)
                     }
                     .buttonStyle(PlainButtonStyle())
-                    Button(action: onConfirm) {
+                    Button(action: {
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        onConfirm()
+                    }) {
                         Text(confirmLabel)
                             .font(.system(size: 13, weight: .bold))
                             .foregroundColor(.white)
@@ -476,7 +482,10 @@ private struct ConfirmFooter: View {
                 .frame(height: 36)
         case .pending, .autoExecuted:
             HStack(spacing: 10) {
-                Button(action: onCancel) {
+                Button(action: {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    onCancel()
+                }) {
                     Text("Cancel")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundColor(.secondary)
@@ -485,7 +494,10 @@ private struct ConfirmFooter: View {
                         .glassEffect(.regular.interactive(), in: .capsule)
                 }
                 .buttonStyle(PlainButtonStyle())
-                Button(action: onConfirm) {
+                Button(action: {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    onConfirm()
+                }) {
                     Text(confirmLabel)
                         .font(.system(size: 13, weight: .bold))
                         .foregroundColor(.white)

@@ -335,7 +335,7 @@ struct StepsCard: View {
             }
             .padding(14)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .glassCard(cornerRadius: 22)
+            .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 22))
         }
         .buttonStyle(PlainButtonStyle())
         .sensoryFeedback(.impact(weight: .light), trigger: tapped)
@@ -355,10 +355,12 @@ struct HeartCard: View {
     var isWide: Bool = false
     let action: () -> Void
 
+    @State private var tapped = false
+
     var body: some View {
         let v = summary?.currentValue ?? 0
         let series = MetricCardHelpers.last7(summary)
-        return Button(action: action) {
+        return Button(action: { tapped.toggle(); action() }) {
             VStack(alignment: .leading, spacing: 10) {
                 MetricHeaderValue(isWide: isWide, icon: "heart.fill", title: "Heart", color: .red,
                                   value: v > 0 ? String(format: "%.0f", v) : "—",
@@ -376,6 +378,7 @@ struct HeartCard: View {
             .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 22))
         }
         .buttonStyle(PlainButtonStyle())
+        .sensoryFeedback(.impact(weight: .light), trigger: tapped)
     }
 }
 
@@ -388,6 +391,8 @@ struct SleepCard: View {
 
     @AppStorage("theme_mode") private var themeMode = "dark"
     private var isDark: Bool { themeMode == "dark" }
+    @State private var ringProgress: CGFloat = 0
+    @State private var tapped = false
 
     private static let weekdayFmt: DateFormatter = {
         let f = DateFormatter()
@@ -435,7 +440,7 @@ struct SleepCard: View {
         let hasData = hrs > 0
         let nightDate = mostRecentNight?.date
 
-        return Button(action: action) {
+        return Button(action: { tapped.toggle(); action() }) {
             VStack(alignment: .leading, spacing: 10) {
                 CardHead(icon: "moon.fill", title: "Sleep", color: .purple)
                 HStack(spacing: 12) {
@@ -446,7 +451,7 @@ struct SleepCard: View {
                             .frame(width: 64, height: 64)
                         if hasData {
                             Circle()
-                                .trim(from: 0, to: CGFloat(score) / 100)
+                                .trim(from: 0, to: ringProgress * CGFloat(score) / 100)
                                 .stroke(Color.purple, style: StrokeStyle(lineWidth: 7, lineCap: .round))
                                 .frame(width: 64, height: 64)
                                 .rotationEffect(.degrees(-90))
@@ -485,6 +490,10 @@ struct SleepCard: View {
             .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 22))
         }
         .buttonStyle(PlainButtonStyle())
+        .sensoryFeedback(.impact(weight: .light), trigger: tapped)
+        .onAppear {
+            withAnimation(.spring(response: 0.9, dampingFraction: 0.75).delay(0.1)) { ringProgress = 1 }
+        }
     }
 }
 
@@ -497,16 +506,18 @@ struct CaloriesCard: View {
 
     @AppStorage("theme_mode") private var themeMode = "dark"
     private var isDark: Bool { themeMode == "dark" }
+    @State private var animatedPct: Double = 0
+    @State private var tapped = false
 
     var body: some View {
         let v = summary?.currentValue ?? 0
         let goal = summary?.goal ?? 600
         let pct = goal > 0 ? min(v / goal, 1.0) : 0
-        return Button(action: action) {
+        return Button(action: { tapped.toggle(); action() }) {
             VStack(alignment: .leading, spacing: 10) {
                 MetricHeaderValue(isWide: isWide, icon: "bolt.fill", title: "Active Energy", color: .orange,
                                   value: v > 0 ? String(format: "%.0f", v) : "—",
-                                  unit: v > 0 ? "KCAL" : nil,
+                                  unit: v > 0 ? "kcal" : nil,
                                   caption: v > 0 ? "Goal \(Int(goal)) kcal" : "No data yet",
                                   valueColor: .orange)
                 GeometryReader { geo in
@@ -515,7 +526,7 @@ struct CaloriesCard: View {
                             .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.08))
                         Capsule()
                             .fill(Color.orange)
-                            .frame(width: geo.size.width * CGFloat(pct))
+                            .frame(width: geo.size.width * CGFloat(animatedPct))
                     }
                 }
                 .frame(height: 6)
@@ -530,6 +541,11 @@ struct CaloriesCard: View {
             .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 22))
         }
         .buttonStyle(PlainButtonStyle())
+        .sensoryFeedback(.impact(weight: .light), trigger: tapped)
+        .onAppear { animatedPct = pct }
+        .onChange(of: pct) { _, v in
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) { animatedPct = v }
+        }
     }
 }
 
@@ -630,8 +646,10 @@ struct MealsCard: View {
                     ForEach(Array(entries.reversed().enumerated()), id: \.element.id) { idx, entry in
                         if idx > 0 { Divider().opacity(0.15) }
                         MealRow(entry: entry)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
                     }
                 }
+                .animation(.spring(response: 0.4, dampingFraction: 0.82), value: entries.count)
             }
         }
         .padding(16)
@@ -665,6 +683,7 @@ private struct MealRow: View {
                     .font(.system(size: 7))
                     .foregroundColor(.orange)
             }
+            .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
                 Text(entry.name)
                     .font(.system(size: 14, weight: .semibold))
@@ -707,12 +726,14 @@ struct DistanceCard: View {
 
     @AppStorage("theme_mode") private var themeMode = "dark"
     private var isDark: Bool { themeMode == "dark" }
+    @State private var animatedPct: Double = 0
+    @State private var tapped = false
 
     var body: some View {
         let v = summary?.currentValue ?? 0
         let goal = summary?.goal ?? 5.0
         let pct = goal > 0 ? min(v / goal, 1.0) : 0
-        return Button(action: action) {
+        return Button(action: { tapped.toggle(); action() }) {
             VStack(alignment: .leading, spacing: 10) {
                 MetricHeaderValue(isWide: isWide, icon: "arrow.triangle.turn.up.right.diamond.fill", title: "Distance", color: .green,
                                   value: v > 0 ? String(format: "%.2f", v) : "—",
@@ -725,7 +746,7 @@ struct DistanceCard: View {
                             .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.08))
                         Capsule()
                             .fill(Color.green)
-                            .frame(width: geo.size.width * CGFloat(pct))
+                            .frame(width: geo.size.width * CGFloat(animatedPct))
                     }
                 }
                 .frame(height: 6)
@@ -740,6 +761,11 @@ struct DistanceCard: View {
             .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 22))
         }
         .buttonStyle(PlainButtonStyle())
+        .sensoryFeedback(.impact(weight: .light), trigger: tapped)
+        .onAppear { animatedPct = pct }
+        .onChange(of: pct) { _, v in
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) { animatedPct = v }
+        }
     }
 }
 
@@ -803,6 +829,7 @@ struct HydrationCard: View {
                     .glassEffect(.regular.interactive(), in: .circle)
             }
             .padding(10)
+            .accessibilityLabel("Log water")
         }
         .alert("Couldn't log water", isPresented: $showWriteError) {
             Button("OK", role: .cancel) {}
@@ -833,6 +860,8 @@ struct RecoveryCard: View {
 
     @AppStorage("theme_mode") private var themeMode = "dark"
     private var isDark: Bool { themeMode == "dark" }
+    @State private var ringProgress: CGFloat = 0
+    @State private var tapped = false
 
     var body: some View {
         let hrv = summary?.currentValue ?? 0
@@ -845,7 +874,7 @@ struct RecoveryCard: View {
             return "Recover today"
         }()
 
-        return Button(action: action) {
+        return Button(action: { tapped.toggle(); action() }) {
             VStack(alignment: .leading, spacing: 10) {
                 CardHead(icon: "arrow.clockwise.heart", title: "Recovery", color: .green)
                 HStack(spacing: 12) {
@@ -856,7 +885,7 @@ struct RecoveryCard: View {
                             .frame(width: 64, height: 64)
                         if hasData {
                             Circle()
-                                .trim(from: 0, to: CGFloat(score) / 100)
+                                .trim(from: 0, to: ringProgress * CGFloat(score) / 100)
                                 .stroke(Color.green, style: StrokeStyle(lineWidth: 7, lineCap: .round))
                                 .frame(width: 64, height: 64)
                                 .rotationEffect(.degrees(-90))
@@ -871,9 +900,8 @@ struct RecoveryCard: View {
                     }
                     VStack(alignment: .leading, spacing: 2) {
                         Text(hasData ? "HRV \(Int(hrv))ms" : "HRV unavailable")
-                            .font(.system(size: 11, weight: .bold))
+                            .font(.system(size: 11, weight: .medium))
                             .foregroundColor(.green)
-                            .tracking(0.4)
                             .lineLimit(1)
                             .minimumScaleFactor(0.75)
                         Text(status)
@@ -890,6 +918,10 @@ struct RecoveryCard: View {
             .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 22))
         }
         .buttonStyle(PlainButtonStyle())
+        .sensoryFeedback(.impact(weight: .light), trigger: tapped)
+        .onAppear {
+            withAnimation(.spring(response: 0.85, dampingFraction: 0.75).delay(0.15)) { ringProgress = 1 }
+        }
     }
 }
 
@@ -1009,7 +1041,7 @@ struct ActivityRingsCard: View {
                     VStack(alignment: .leading, spacing: 10) {
                         ringRow(label: "MOVE",
                                 value: move > 0 ? String(format: "%.0f", move) : "—",
-                                unit: "/ \(Int(moveGoal)) CAL",
+                                unit: "/ \(Int(moveGoal)) kcal",
                                 color: .red)
                         ringRow(label: "EXERCISE",
                                 value: exercise > 0 ? String(format: "%.0f", exercise) : "—",

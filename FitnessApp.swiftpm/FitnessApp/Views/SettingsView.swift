@@ -285,7 +285,10 @@ public struct SettingsView: View {
                            title: "Run setup again",
                            action: { withAnimation { isOnboarded = false } })
             ProfileListDivider()
-            Button(action: { showSignOutConfirm = true }) {
+            Button(action: {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                showSignOutConfirm = true
+            }) {
                 HStack {
                     Text("Sign out")
                         .font(.system(size: 15, weight: .medium))

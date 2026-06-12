@@ -119,10 +119,13 @@ public enum ToolCall: Codable, Equatable {
     /// Read-tools that surface structured data back to the LLM via
     /// functionResponse. ChatViewModel auto-runs these and dispatches a
     /// follow-up Gemini turn so the model can reason on the payload.
+    /// Chart/card tools are included so Astra receives the series stats and
+    /// follows every visual with a brief grounded analysis.
     public var producesPayload: Bool {
         switch self {
         case .listReminders, .listCalendarEvents, .getPredictions,
-             .listFoodLog, .listWidgets, .updateNotes, .getSleepPattern:
+             .listFoodLog, .listWidgets, .updateNotes, .getSleepPattern,
+             .showMetricChart, .showComparisonChart, .renderCard:
             return true
         default: return false
         }

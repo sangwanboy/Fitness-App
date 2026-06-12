@@ -2400,3 +2400,74 @@ both sections. Device **BUILD SUCCEEDED**, installed + launched. **databaseSeque
 
 Latest deployed sequence: **2692**.
 
+---
+
+## Session 38 — 2026-06-12 (Barcode food scanner + 56-finding polish pass + chat history fix + chart analysis + feature ideation)
+
+### Process
+One large 3-stream workflow (`polish-barcode-ideas`, 16 agents) + one chat-core workflow
+(`chat-history-and-chart-analysis`, 1 Fable agent). First run's polish fixers died on the session
+rate limit mid-edit (again — left a compile break: dangling `weekPlanSubtitle` in CalendarView);
+resumed via `resumeFromRunId` with cached finders + drive-to-end-state fixer instructions. Models:
+Sonnet for polish finders/fixers + ideation; **Opus** for the barcode feature (AVFoundation/state
+machine); **Fable** for the chat core. Orchestrator: design contracts, pbxproj registration
+(rewrote `/tmp/register_pbx.py` — /tmp had been cleared), diff review, builds, deploy, git.
+
+### A. NEW FEATURE — Barcode/QR product scanning in food logging (Opus)
+- NEW `Models/BarcodeProduct.swift` — Codable OFF v2 decoder (per-serving preferred when all four
+  serving nutriments exist, else per-100g; Double-or-String nutriment tolerance);
+  `asRecognizedFoodItem()` → isEstimate **false**, confidence high, note "Label data · Open Food Facts".
+- NEW `Services/BarcodeProductService.swift` — actor; GET
+  `world.openfoodfacts.org/api/v2/product/{barcode}.json` (10s timeout, typed notFound/network/malformed,
+  no retries, no fallback data).
+- `FoodCameraView` — AVCaptureMetadataOutput ([.ean13,.ean8,.upce,.code128,.qr]) on the existing
+  session; debounced; success haptic; "Point at a barcode" hint. QR only counts when payload is a bare
+  numeric GTIN (8–14 digits). Photo flow untouched.
+- `FoodScanView` — new phases: lookingUpProduct / productNotFound / productError with honest cards
+  ("Scan Again" / "Take a Photo Instead" / "Retry"); success routes the product into the EXISTING
+  FoodReviewSheet as a single-item result.
+- `FoodReviewSheet` — fixed hardcoded `isEstimate: true` passthrough → barcode items write
+  `WasUserEntered=true` and show no EST badge.
+- Both new files registered in pbxproj via the rebuilt `/tmp/register_pbx.py` (idempotent).
+
+### B. Polish pass (6 Sonnet lenses → 56 findings → 6 Sonnet fixers)
+Animated rings/bars + tap haptics on Sleep/Recovery/Calories/Distance/Heart cards; meal-row insert
+transitions; staggered popup entrance (DetailedMetricView, per-section delays); confirm/cancel haptics
+on chat tool cards; invalid SF Symbol `g.circle.fill` → `globe` on LoginView Google button;
+`.padding(16)` interior insets on WorkoutAnalyticsView's four glass cards; honest empty-state copy;
+accessibility labels (GuidedBreathing close/edit, HydrationCard menu, MealRow decoration hidden);
+CalendarView hardcoded "AI-built · Endurance block" → real `training_goals`-derived subtitle
+(also healed the interrupted run's compile break). Many items reported "already applied" from the
+interrupted first run — fixers reconciled rather than duplicating.
+
+### C. Chat history fix (Fable) — root cause CONFIRMED
+Live conversation was memory-only: archived solely on scenePhase .background / onDisappear /
+startNewChat / loadSession, and `init` always reset to the greeting — force-quit lost the chat.
+**Compounding bug found: `archive()` inserted a NEW session every backgrounding of the same
+conversation → partial duplicates littered the history sheet.** TabView recreation hypothesis ruled
+out (native Tab keeps @StateObject alive).
+- `ChatHistoryStore` — live-session slot (`chat_live_session_v1`) with saveLive/loadLive/clearLive +
+  id-prefix-match dedupe in archive() (grown copy replaces, never duplicates).
+- `ChatViewModel` — init restores the live slot; `persistLiveSnapshot()` fires when a turn settles
+  (user append, sendMessage/sendFollowup/retryLast defers, tool payload stored, confirm done/failed,
+  cancel); startNewChat/loadSession/clearChat manage the slot; archived replays never re-persist.
+
+### D. Chart/card analysis text (Fable)
+`show_metric_chart` / `show_comparison_chart` / `render_card` added to `producesPayload` → they now
+auto-execute with REAL stats payloads (window-clipped points, avg/min/max/latest, change %, per-period
+deltas; honest `{available:false}` on empty history) and trigger the existing followup turn, so Astra
+writes a 2-3 sentence grounded analysis under every chart (single-sentence takeaway for render_card).
+System prompt + tools manifest updated to demand quoting actual numbers, never re-listing card contents.
+
+### E. Feature ideation (3 Sonnet researchers)
+23 grounded proposals collected (engagement / intelligence / platform angles) — ranked shortlist
+delivered to Tushar in chat; full list in the workflow output. Top picks: Workout Live Activity,
+Home/Lock-Screen widgets, App Intents (Siri log water), illness early-warning, correlation explorer,
+meal quality score, streak evolutions, menstrual-cycle intelligence.
+
+### Build / deploy
+- Simulator + device **BUILD SUCCEEDED**, zero errors. Installed AND launched.
+- **databaseSequenceNumber: 2700**.
+
+Latest deployed sequence: **2700**.
+

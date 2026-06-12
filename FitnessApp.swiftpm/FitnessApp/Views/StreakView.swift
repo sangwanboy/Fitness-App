@@ -196,9 +196,6 @@ public struct StreakView: View {
                 legendDot(color: accentColor, label: "Active")
                 legendDot(color: isDark ? .white.opacity(0.12) : .black.opacity(0.1), label: "Quiet")
                 Spacer()
-                Text("Tap a cell for details")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(isDark ? .white.opacity(0.35) : .black.opacity(0.35))
             }
             .padding(.top, 4)
         }

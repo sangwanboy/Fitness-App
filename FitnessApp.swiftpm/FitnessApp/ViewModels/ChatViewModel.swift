@@ -13,8 +13,25 @@ public final class ChatViewModel: ObservableObject {
         "Hey! I'm Astra, your AI health coach. I've synced with your HealthKit stats for today. How can I help you reach your goals?"
 
     public init() {
-        // Initial greeting
-        messages.append(ChatMessage(role: .model, text: Self.greetingText))
+        // Resume the live conversation if one was interrupted (force-quit,
+        // process termination). It stays LIVE — not an archived replay — so
+        // the user picks up exactly where they left off. Fresh installs and
+        // post-new-chat launches fall back to the greeting.
+        let restored = ChatHistoryStore.shared.loadLive()
+        if restored.isEmpty {
+            messages.append(ChatMessage(role: .model, text: Self.greetingText))
+        } else {
+            messages = restored.map { $0.toChatMessage() }
+        }
+    }
+
+    /// Snapshot the live conversation into the persistent live slot. Called
+    /// when a turn settles (message append, stream end, tool status change) —
+    /// NEVER per streaming delta. No-op while replaying an archived session,
+    /// so a read-only replay can't overwrite the slot.
+    private func persistLiveSnapshot() {
+        guard !isViewingArchivedSession else { return }
+        ChatHistoryStore.shared.saveLive(messages: messages)
     }
 
     /// Minimum gap between publishing accumulated streaming text to a message
@@ -67,6 +84,7 @@ public final class ChatViewModel: ObservableObject {
         isViewingArchivedSession = false
         let userMessage = ChatMessage(role: .user, text: trimmed, imageData: imageData)
         messages.append(userMessage)
+        persistLiveSnapshot()
 
         isGenerating = true
         currentStreamingText = ""
@@ -76,6 +94,7 @@ public final class ChatViewModel: ObservableObject {
         defer {
             isGenerating = false
             currentStreamingText = ""
+            persistLiveSnapshot()
         }
 
         let systemInstruction = await buildSystemInstruction()
@@ -160,6 +179,7 @@ public final class ChatViewModel: ObservableObject {
         if let payload, let json = encodeJSON(payload) {
             messages[idx].toolResultJSON = json
         }
+        persistLiveSnapshot()
         await sendFollowup()
     }
 
@@ -210,8 +230,104 @@ public final class ChatViewModel: ObservableObject {
             return ["items": items,
                     "count": items.count,
                     "remaining_slots": max(0, AstraWidgetStore.maxWidgets - widgets.count)]
+        case .showMetricChart(let metric, let days):
+            guard let type = Self.chartMetricType(from: metric),
+                  let history = HealthKitManager.shared.metricSummaries[type]?.history,
+                  !history.isEmpty else {
+                return ["available": false, "metric": metric,
+                        "reason": "No HealthKit history for this metric."]
+            }
+            // Clip to the requested window — same slice the rendered card shows.
+            let cal = Calendar.current
+            let cutoff = cal.date(byAdding: .day, value: -days, to: Date()) ?? Date()
+            let points = Array(history.filter { $0.date >= cutoff }.suffix(days).map(\.value))
+            guard let first = points.first, let last = points.last else {
+                return ["available": false, "metric": metric, "days": days,
+                        "reason": "No samples in the requested window."]
+            }
+            return ["available": true,
+                    "metric": metric,
+                    "unit": type.unit,
+                    "days": days,
+                    "points": points.map { Self.round1($0) },
+                    "avg": Self.round1(points.reduce(0, +) / Double(points.count)),
+                    "min": Self.round1(points.min() ?? 0),
+                    "max": Self.round1(points.max() ?? 0),
+                    "latest": Self.round1(last),
+                    "change_pct_first_to_last": first == 0 ? 0 : Self.round1((last - first) / first * 100)]
+        case .showComparisonChart(let metric, let periodA, let periodB, _):
+            guard let type = Self.chartMetricType(from: metric),
+                  let history = HealthKitManager.shared.metricSummaries[type]?.history,
+                  !history.isEmpty else {
+                return ["available": false, "metric": metric,
+                        "reason": "No HealthKit history for this metric."]
+            }
+            func stats(for period: String) -> [String: Any] {
+                let (start, end) = Self.chartPeriodRange(period)
+                let vals = history.filter { $0.date >= start && $0.date <= end }.map(\.value)
+                guard !vals.isEmpty else {
+                    return ["period": period, "available": false]
+                }
+                return ["period": period,
+                        "available": true,
+                        "points": vals.count,
+                        "avg": Self.round1(vals.reduce(0, +) / Double(vals.count)),
+                        "min": Self.round1(vals.min() ?? 0),
+                        "max": Self.round1(vals.max() ?? 0)]
+            }
+            let a = stats(for: periodA)
+            let b = stats(for: periodB)
+            var d: [String: Any] = ["available": true,
+                                    "metric": metric,
+                                    "unit": type.unit,
+                                    "period_a": a,
+                                    "period_b": b]
+            if let aAvg = a["avg"] as? Double, let bAvg = b["avg"] as? Double, bAvg != 0 {
+                d["delta_pct"] = Self.round1((aAvg - bAvg) / bAvg * 100)
+            }
+            return d
+        case .renderCard(let title, _, _, _, _, _):
+            return ["rendered": true, "title": title]
         default:
             return nil
+        }
+    }
+
+    private static func round1(_ v: Double) -> Double {
+        (v * 10).rounded() / 10
+    }
+
+    /// Mirror of the metric-name mapping the chart ToolCards use, so the stats
+    /// fed back to Gemini describe exactly the series the user is looking at.
+    private static func chartMetricType(from raw: String) -> HealthMetricType? {
+        switch raw.lowercased() {
+        case "steps": return .steps
+        case "heart_rate", "heart": return .heartRate
+        case "sleep": return .sleep
+        case "active_energy", "calories": return .activeEnergy
+        case "distance": return .distance
+        case "hrv": return .hrv
+        case "hydration", "water": return .hydration
+        default: return nil
+        }
+    }
+
+    /// Mirror of ComparisonChartToolCard's period resolver (start...end, both
+    /// startOfDay-inclusive) so payload stats match the rendered bars.
+    private static func chartPeriodRange(_ period: String) -> (start: Date, end: Date) {
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        func days(_ ago: Int) -> Date { cal.date(byAdding: .day, value: -ago, to: today) ?? today }
+        switch period.lowercased() {
+        case "today":             return (today, today)
+        case "yesterday":         return (days(1), days(1))
+        case "this_week":         return (days(6), today)
+        case "last_week":         return (days(13), days(7))
+        case "last_7_days":       return (days(6), today)
+        case "previous_7_days":   return (days(13), days(7))
+        case "this_month":        return (days(29), today)
+        case "last_month":        return (days(59), days(30))
+        default:                  return (days(6), today)
         }
     }
 
@@ -507,6 +623,7 @@ public final class ChatViewModel: ObservableObject {
             await self.executeWriteTool(call)
         } ?? false
         messages[idx].toolStatus = ok ? .done : .failed
+        persistLiveSnapshot()
         await sendFollowup()
     }
 
@@ -527,6 +644,7 @@ public final class ChatViewModel: ObservableObject {
     public func cancelToolCall(messageId: UUID) {
         guard let idx = messages.firstIndex(where: { $0.id == messageId }) else { return }
         messages[idx].toolStatus = .cancelled
+        persistLiveSnapshot()
         // Skip the acknowledgment turn while another stream is active — a
         // concurrent sendFollowup would append a doubled model message. The
         // cancelled status still round-trips as a functionResponse on the
@@ -547,6 +665,7 @@ public final class ChatViewModel: ObservableObject {
         defer {
             isGenerating = false
             currentStreamingText = ""
+            persistLiveSnapshot()
         }
 
         let systemInstruction = await buildSystemInstruction()
@@ -731,6 +850,7 @@ public final class ChatViewModel: ObservableObject {
         defer {
             isGenerating = false
             currentStreamingText = ""
+            persistLiveSnapshot()
         }
 
         let systemInstruction = await buildSystemInstruction()
@@ -802,6 +922,9 @@ public final class ChatViewModel: ObservableObject {
                 text: "Chat cleared! Let's start fresh. How can I help you with your fitness journey today?"
             )
         ]
+        // The cleared conversation is the new live state — a relaunch must not
+        // resurrect what the user just erased.
+        ChatHistoryStore.shared.clearLive()
     }
 
     // MARK: - Session history
@@ -832,6 +955,7 @@ public final class ChatViewModel: ObservableObject {
     /// the "compose new chat" affordance.
     public func startNewChat() {
         archiveCurrent()
+        ChatHistoryStore.shared.clearLive()
         isViewingArchivedSession = false
         messages = [ChatMessage(role: .model, text: Self.greetingText)]
         currentStreamingText = ""
@@ -842,6 +966,11 @@ public final class ChatViewModel: ObservableObject {
     /// tool cards render as plain text — only text + images are restored.
     public func loadSession(_ session: ChatSession) {
         archiveCurrent()
+        // The live conversation is safely archived; empty the live slot so a
+        // relaunch mid-replay doesn't resume the replaced conversation. If the
+        // user reactivates this replay by sending a message, sendMessage flips
+        // isViewingArchivedSession and re-fills the slot.
+        ChatHistoryStore.shared.clearLive()
         let restored = session.messages.map { $0.toChatMessage() }
         messages = restored.isEmpty
             ? [ChatMessage(role: .model, text: Self.greetingText)]
@@ -1089,8 +1218,8 @@ public final class ChatViewModel: ObservableObject {
         - add_reminder / add_calendar_event : convert relative times to ISO8601 in the user's TZ. Default workout 30 min.
         - list_reminders / list_calendar_events : READ-ONLY. Use FIRST when asked to modify / postpone / delete — you cannot guess ids. If list returns exactly ONE match for the user's description, proceed straight to update_/delete_ without asking.
         - update_reminder / update_calendar_event / delete_reminder / delete_calendar_event : by id from the prior list_* call. Always pass `title` on deletes.
-        - show_metric_chart / show_comparison_chart : visualize trends. Use comparison proactively when a 7-day pattern is interesting.
-        - render_card : structured visuals that don't fit other tools. SF Symbol icon, color ∈ {accent, red, green, blue, orange, purple, cyan, yellow}.
+        - show_metric_chart / show_comparison_chart : visualize trends. Use comparison proactively when a 7-day pattern is interesting. After either chart renders, you receive the series stats (avg/min/max/latest/change %) via functionResponse and you MUST reply with a brief grounded analysis — 2-3 sentences MAX: the trend, one notable high or low, one actionable takeaway — quoting the user's actual numbers from the stats. Never re-list the chart's contents point by point.
+        - render_card : structured visuals that don't fit other tools. SF Symbol icon, color ∈ {accent, red, green, blue, orange, purple, cyan, yellow}. After the card renders you get an ack via functionResponse — follow with a SINGLE-sentence takeaway; never re-list the card's contents.
         - get_predictions : on-device PredictionEngine snapshot (recovery readiness, next-likely-workout, goal trajectory, sedentary alert). Call FIRST whenever the user asks "how should I train", "am I recovered", "should I rest/run/lift", "on track for my goals". Always surface the structured confidence + why-bullets it returns — never quote raw numbers as gospel. Prefer this over re-deriving from raw 7-day history.
         - list_food_log / update_food_log / delete_food_log : READ + WRITE for today's logged meals. Use list_food_log FIRST when the user asks to fix, correct, rename, change, or delete a logged meal — you cannot guess the id. If list returns exactly ONE match for the user's description, proceed straight to update_/delete_ without asking. Pass `name` on deletes so the confirm card shows what's about to go.
         - create_widget / list_widgets / update_widget / delete_widget : ASTRA STUDIO — your creative canvas on the user's Home screen. See the WIDGET STUDIO block below for when and how to use it.

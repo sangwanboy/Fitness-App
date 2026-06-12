@@ -136,6 +136,7 @@ public struct ChatView: View {
                                         .font(.system(size: 18))
                                         .foregroundStyle(.secondary)
                                 }
+                                .accessibilityLabel("Remove attached photo")
                             }
                             .padding(.horizontal, 12)
                             .padding(.vertical, 6)

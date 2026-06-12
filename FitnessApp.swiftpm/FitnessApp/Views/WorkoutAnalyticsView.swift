@@ -167,6 +167,7 @@ public struct WorkoutAnalyticsView: View {
                 loadStatPill(label: "Active Days", value: "\(activeDaysCount)", unit: "of 28")
             }
         }
+        .padding(16)
         .glassCard()
     }
 
@@ -216,7 +217,7 @@ public struct WorkoutAnalyticsView: View {
             sectionHeader(title: "28-Day Training Load", icon: "chart.line.uptrend.xyaxis")
 
             if engine.dailyLoads.isEmpty {
-                Text("No data available")
+                Text("No load data for this period")
                     .font(.caption)
                     .foregroundColor(isDark ? .white.opacity(0.4) : .black.opacity(0.4))
                     .frame(height: 160)
@@ -307,6 +308,7 @@ public struct WorkoutAnalyticsView: View {
                 }
             }
         }
+        .padding(16)
         .glassCard()
     }
 
@@ -326,7 +328,7 @@ public struct WorkoutAnalyticsView: View {
             sectionHeader(title: "Weekly Volume", icon: "chart.bar.fill")
 
             if engine.weeklyVolumes.isEmpty {
-                Text("No weekly data yet")
+                Text("No workout weeks recorded yet")
                     .font(.caption)
                     .foregroundColor(isDark ? .white.opacity(0.4) : .black.opacity(0.4))
                     .frame(height: 120)
@@ -371,6 +373,7 @@ public struct WorkoutAnalyticsView: View {
                 .animation(.spring(response: 0.6, dampingFraction: 0.8), value: engine.weeklyVolumes.count)
             }
         }
+        .padding(16)
         .glassCard()
     }
 
@@ -417,6 +420,7 @@ public struct WorkoutAnalyticsView: View {
                 )
             }
         }
+        .padding(16)
         .glassCard()
     }
 

@@ -200,7 +200,7 @@ public struct SleepReportView: View {
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 22))
+        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 20))
     }
 
     private var snoreCard: some View {
@@ -274,14 +274,15 @@ public struct SleepReportView: View {
             }
             // Stacked bar
             GeometryReader { geo in
-                HStack(spacing: 2) {
-                    Capsule().fill(Color.cyan.opacity(0.9))
+                HStack(spacing: 0) {
+                    Rectangle().fill(Color.cyan.opacity(0.9))
                         .frame(width: geo.size.width * fraction(stages.deep))
-                    Capsule().fill(Color.cyan.opacity(0.55))
+                    Rectangle().fill(Color.cyan.opacity(0.55))
                         .frame(width: geo.size.width * fraction(stages.light))
-                    Capsule().fill(Color.orange.opacity(0.8))
+                    Rectangle().fill(Color.orange.opacity(0.8))
                         .frame(width: geo.size.width * fraction(stages.awake))
                 }
+                .clipShape(Capsule())
             }
             .frame(height: 12)
             HStack(spacing: 18) {

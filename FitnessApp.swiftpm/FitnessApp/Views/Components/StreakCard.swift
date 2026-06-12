@@ -120,14 +120,14 @@ public struct StreakCard: View {
         .buttonStyle(PlainButtonStyle())
         .onAppear {
             if engine.currentStreak > 0 {
-                withAnimation {
+                withAnimation(.easeInOut(duration: 0.55)) {
                     flameScale = 1.12
                 }
             }
         }
         .onChange(of: engine.currentStreak) { _, newVal in
             if newVal > 0 {
-                withAnimation {
+                withAnimation(.easeInOut(duration: 0.55)) {
                     flameScale = 1.12
                 }
             } else {

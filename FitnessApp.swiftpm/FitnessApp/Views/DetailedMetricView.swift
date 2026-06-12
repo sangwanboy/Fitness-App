@@ -43,7 +43,7 @@ public struct DetailedMetricView: View {
                                     .fontWeight(.bold)
                                     .foregroundColor(isDark ? .white : .black)
                                 
-                                Text("Overview & Trends")
+                                Text("Overview & trends")
                                     .font(.caption)
                                     .foregroundColor(isDark ? .white.opacity(0.6) : .black.opacity(0.6))
                             }
@@ -126,13 +126,14 @@ public struct DetailedMetricView: View {
                     .padding(.vertical, 8)
                     .opacity(animateEntry ? 1.0 : 0.0)
                     .offset(y: animateEntry ? 0 : 20)
-                    
+                    .animation(.spring(response: 0.5, dampingFraction: 0.82), value: animateEntry)
+
                     // Chart Component
                     VStack(alignment: .leading, spacing: 16) {
                         Text("Weekly Analytics")
                             .font(.headline)
                             .foregroundColor(isDark ? .white : .black)
-                        
+
                         MetricChart(type: summary.type, history: weeklyHistory)
                     }
                     .padding(16)
@@ -140,16 +141,17 @@ public struct DetailedMetricView: View {
                     .padding(.horizontal)
                     .opacity(animateEntry ? 1.0 : 0.0)
                     .offset(y: animateEntry ? 0 : 15)
+                    .animation(.spring(response: 0.5, dampingFraction: 0.82).delay(0.1), value: animateEntry)
 
-                    
+
                     // Secondary stats list
                     VStack(alignment: .leading, spacing: 14) {
                         Text("Historical Insights")
                             .font(.headline)
                             .foregroundColor(isDark ? .white : .black)
-                        
+
                         Divider().background(isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.08))
-                        
+
                         HStack {
                             Label("Weekly Average", systemImage: "chart.bar.fill")
                                 .foregroundColor(isDark ? .white.opacity(0.8) : .black.opacity(0.8))
@@ -173,14 +175,13 @@ public struct DetailedMetricView: View {
                     .padding(.horizontal)
                     .opacity(animateEntry ? 1.0 : 0.0)
                     .offset(y: animateEntry ? 0 : 5)
+                    .animation(.spring(response: 0.5, dampingFraction: 0.82).delay(0.2), value: animateEntry)
                 }
                 .padding(.bottom, 60)
             }
         }
         .onAppear {
-            withAnimation(.easeOut(duration: 0.5)) {
-                animateEntry = true
-            }
+            animateEntry = true
         }
         .sheet(isPresented: $showHRZones) {
             HeartRateZonesView()

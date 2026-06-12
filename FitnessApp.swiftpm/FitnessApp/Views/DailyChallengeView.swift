@@ -173,7 +173,7 @@ public struct DailyChallengeView: View {
                 )
             }
 
-            Divider().opacity(0.2)
+            Divider().opacity(0.5)
 
             tipText(for: challenge.metric, color: color)
         }

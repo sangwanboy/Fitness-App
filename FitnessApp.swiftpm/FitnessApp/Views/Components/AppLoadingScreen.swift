@@ -176,6 +176,14 @@ public struct AppLoadingScreen: View {
         withAnimation(.easeOut(duration: 0.55).delay(0.65)) {
             taglineOpacity = 1.0
         }
+        Task {
+            while true {
+                try? await Task.sleep(nanoseconds: 380_000_000)
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    dotsPhase = (dotsPhase + 1) % 3
+                }
+            }
+        }
     }
 }
 

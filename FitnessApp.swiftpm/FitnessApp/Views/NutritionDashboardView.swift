@@ -15,6 +15,8 @@ public struct NutritionDashboardView: View {
     @State private var animateRings    = false
     @State private var selectedTab: Int = 0    // 0 = Today, 1 = Week
     @State private var showFoodPhotoFlow = false
+    @State private var scanTapped = false
+    @State private var logTapped  = false
 
     private var isDark: Bool { themeMode == "dark" }
     private var accentColor: Color { ThemeHelper.color(from: accentColorHex) }
@@ -326,6 +328,7 @@ public struct NutritionDashboardView: View {
             HStack(spacing: 12) {
                 // Camera scan button
                 Button {
+                    scanTapped.toggle()
                     showFoodPhotoFlow = true
                 } label: {
                     HStack(spacing: 8) {
@@ -334,19 +337,21 @@ public struct NutritionDashboardView: View {
                         Text("Scan Meal")
                             .font(.system(size: 16, weight: .semibold))
                     }
-                    .foregroundColor(.white)
+                    .foregroundStyle(
+                        LinearGradient(colors: [.orange, .pink],
+                                       startPoint: .leading, endPoint: .trailing)
+                    )
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 15)
-                    .background(
-                        RoundedRectangle(cornerRadius: 16)
-                            .fill(LinearGradient(colors: [.orange, .pink],
-                                                 startPoint: .leading, endPoint: .trailing))
-                    )
+                    .glassEffect(.regular.tint(Color.orange.opacity(0.25)).interactive(),
+                                 in: .rect(cornerRadius: 16))
                 }
                 .buttonStyle(.plain)
+                .sensoryFeedback(.impact(weight: .medium), trigger: scanTapped)
 
                 // Text/AI log button
                 Button {
+                    logTapped.toggle()
                     ChatPrefillBus.shared.queueComposerSeed("Log food: ")
                     dismiss()
                 } label: {
@@ -356,15 +361,14 @@ public struct NutritionDashboardView: View {
                         Text("Log with AI")
                             .font(.system(size: 16, weight: .semibold))
                     }
-                    .foregroundColor(.white)
+                    .foregroundStyle(accentColor.gradient)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 15)
-                    .background(
-                        RoundedRectangle(cornerRadius: 16)
-                            .fill(accentColor.gradient)
-                    )
+                    .glassEffect(.regular.tint(accentColor.opacity(0.25)).interactive(),
+                                 in: .rect(cornerRadius: 16))
                 }
                 .buttonStyle(.plain)
+                .sensoryFeedback(.impact(weight: .medium), trigger: logTapped)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
@@ -917,6 +921,7 @@ public struct MacroGoalsEditorSheet: View {
                     Button {
                         let newVal = max(range.lowerBound, value.wrappedValue - step)
                         value.wrappedValue = newVal
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     } label: {
                         Image(systemName: "minus")
                             .font(.system(size: 14, weight: .semibold))
@@ -935,6 +940,7 @@ public struct MacroGoalsEditorSheet: View {
                     Button {
                         let newVal = min(range.upperBound, value.wrappedValue + step)
                         value.wrappedValue = newVal
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     } label: {
                         Image(systemName: "plus")
                             .font(.system(size: 14, weight: .semibold))

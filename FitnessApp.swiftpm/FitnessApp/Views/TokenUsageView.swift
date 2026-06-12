@@ -41,7 +41,7 @@ public struct TokenUsageView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(role: .destructive) { showResetConfirm = true } label: {
-                        Image(systemName: "arrow.counterclockwise")
+                        Image(systemName: "trash")
                     }
                     .disabled(meter.total == 0)
                 }

@@ -20,6 +20,11 @@ public final class ChatHistoryStore: ObservableObject {
 
     private static let storageKey = "astra_chat_history_v1"
 
+    /// Dedicated slot for the LIVE (on-screen) conversation, persisted after
+    /// every settled turn so a force-quit never loses it. Separate key from the
+    /// archived list — saving here can never duplicate an archived session.
+    private static let liveKey = "chat_live_session_v1"
+
     @Published public private(set) var sessions: [ChatSession] = []
 
     private init() {
@@ -35,6 +40,17 @@ public final class ChatHistoryStore: ObservableObject {
         let persistable = messages.compactMap { SessionMessage(from: $0) }
         // Require at least one real user message — a lone greeting isn't a chat.
         guard persistable.contains(where: { $0.role == .user }) else { return }
+
+        // Re-archiving a grown copy of the newest session (background → keep
+        // chatting → new chat) updates it in place instead of duplicating.
+        if let newest = sessions.first,
+           newest.messages.count <= persistable.count,
+           persistable.prefix(newest.messages.count).map(\.id) == newest.messages.map(\.id) {
+            sessions[0].messages = persistable
+            sessions[0].title = Self.deriveTitle(from: persistable)
+            save()
+            return
+        }
 
         let title = Self.deriveTitle(from: persistable)
         let session = ChatSession(
@@ -63,6 +79,29 @@ public final class ChatHistoryStore: ObservableObject {
 
     public func session(id: UUID) -> ChatSession? {
         sessions.first { $0.id == id }
+    }
+
+    // MARK: - Live session slot
+
+    /// Overwrite the live-session slot with the current conversation. Reuses
+    /// the `SessionMessage` encoding; tool-card-only turns are dropped the same
+    /// way archiving drops them. Cheap (<100 messages) — safe per settled turn.
+    public func saveLive(messages: [ChatMessage]) {
+        let persistable = messages.compactMap { SessionMessage(from: $0) }
+        guard let data = try? JSONEncoder().encode(persistable) else { return }
+        UserDefaults.standard.set(data, forKey: Self.liveKey)
+    }
+
+    /// Restore the live-session slot. Empty when there's no interrupted
+    /// conversation to resume.
+    public func loadLive() -> [SessionMessage] {
+        guard let data = UserDefaults.standard.data(forKey: Self.liveKey),
+              let decoded = try? JSONDecoder().decode([SessionMessage].self, from: data) else { return [] }
+        return decoded
+    }
+
+    public func clearLive() {
+        UserDefaults.standard.removeObject(forKey: Self.liveKey)
     }
 
     // MARK: - Title derivation

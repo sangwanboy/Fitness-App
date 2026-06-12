@@ -33,6 +33,7 @@ struct FoodReviewSheet: View {
         var protein: Double
         var carbs: Double
         var fat: Double
+        let isEstimate: Bool
         let confidence: String
         let identificationNote: String
 
@@ -41,6 +42,7 @@ struct FoodReviewSheet: View {
             portionDescription = item.portionDescription
             calories = item.calories; protein = item.protein
             carbs = item.carbs; fat = item.fat
+            isEstimate = item.isEstimate
             confidence = item.confidence
             identificationNote = item.identificationNote
         }
@@ -323,7 +325,7 @@ struct FoodReviewSheet: View {
                 protein: item.protein,
                 carbs: item.carbs,
                 fat: item.fat,
-                isEstimate: true,
+                isEstimate: item.isEstimate,
                 confidence: item.confidence
             )
             if !ok { allOk = false }

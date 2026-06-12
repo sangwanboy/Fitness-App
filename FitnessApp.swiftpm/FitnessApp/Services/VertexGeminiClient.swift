@@ -118,7 +118,7 @@ public actor VertexGeminiClient {
                 ],
                 [
                     "name": "show_metric_chart",
-                    "description": "Render a sparkline chart for a metric over the past N days. Auto-executes — no confirmation needed.",
+                    "description": "Render a sparkline chart for a metric over the past N days. Auto-executes — no confirmation needed. Feeds the plotted series stats (points, avg, min, max, latest, change_pct_first_to_last) back via functionResponse: follow up with a brief grounded analysis (2-3 sentences max — trend, notable high/low, one actionable takeaway, quoting the actual numbers). Never re-list the chart's data points.",
                     "parameters": [
                         "type": "object",
                         "properties": [
@@ -130,7 +130,7 @@ public actor VertexGeminiClient {
                 ],
                 [
                     "name": "show_comparison_chart",
-                    "description": "Compare a metric across two periods, e.g. 'this week vs last week'. App fetches both series from HealthKit and renders side-by-side bars + averages.",
+                    "description": "Compare a metric across two periods, e.g. 'this week vs last week'. App fetches both series from HealthKit and renders side-by-side bars + averages. Auto-executes and feeds per-period stats (avg, min, max, points) plus delta_pct back via functionResponse: follow up with a brief grounded analysis (2-3 sentences max — which period won, by how much, one actionable takeaway, quoting the actual numbers).",
                     "parameters": [
                         "type": "object",
                         "properties": [
@@ -144,7 +144,7 @@ public actor VertexGeminiClient {
                 ],
                 [
                     "name": "render_card",
-                    "description": "Render a custom glass card with title, optional headline, bullets, and value tiles. Auto-executes.",
+                    "description": "Render a custom glass card with title, optional headline, bullets, and value tiles. Auto-executes; a render acknowledgment comes back via functionResponse — follow up with a SINGLE-sentence takeaway. Never re-list the card's contents.",
                     "parameters": [
                         "type": "object",
                         "properties": [

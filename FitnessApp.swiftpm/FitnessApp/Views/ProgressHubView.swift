@@ -21,6 +21,7 @@ public struct ProgressHubView: View {
     @State private var showWorkoutAnalytics = false
     @State private var showBreathing     = false
     @State private var animateCards      = false
+    @State private var cardVisibleCount  = 0
     @State private var lastRefreshed: Date? = nil
 
     private var isDark: Bool    { themeMode == "dark" }
@@ -34,19 +35,22 @@ public struct ProgressHubView: View {
             VStack(spacing: 16) {
                 // Quick-stats row at the top
                 quickStatsRow
-                    .opacity(animateCards ? 1 : 0)
-                    .offset(y: animateCards ? 0 : 14)
+                    .opacity(cardVisibleCount > 0 ? 1 : 0)
+                    .offset(y: cardVisibleCount > 0 ? 0 : 14)
+                    .animation(.spring(response: 0.5, dampingFraction: 0.82), value: cardVisibleCount)
 
                 // Section: Activity
                 sectionLabel(icon: "flame.fill", title: "Activity", color: .orange)
 
                 streakHubCard
-                    .opacity(animateCards ? 1 : 0)
-                    .offset(y: animateCards ? 0 : 18)
+                    .opacity(cardVisibleCount > 1 ? 1 : 0)
+                    .offset(y: cardVisibleCount > 1 ? 0 : 18)
+                    .animation(.spring(response: 0.5, dampingFraction: 0.82), value: cardVisibleCount)
 
                 challengeHubCard
-                    .opacity(animateCards ? 1 : 0)
-                    .offset(y: animateCards ? 0 : 22)
+                    .opacity(cardVisibleCount > 2 ? 1 : 0)
+                    .offset(y: cardVisibleCount > 2 ? 0 : 22)
+                    .animation(.spring(response: 0.5, dampingFraction: 0.82), value: cardVisibleCount)
 
                 // Section: Health Analytics
                 sectionLabel(icon: "heart.text.square.fill", title: "Health Analytics", color: .red)
@@ -55,22 +59,25 @@ public struct ProgressHubView: View {
                     hrZonesHubCard
                     workoutAnalyticsHubCard
                 }
-                .opacity(animateCards ? 1 : 0)
-                .offset(y: animateCards ? 0 : 26)
+                .opacity(cardVisibleCount > 3 ? 1 : 0)
+                .offset(y: cardVisibleCount > 3 ? 0 : 26)
+                .animation(.spring(response: 0.5, dampingFraction: 0.82), value: cardVisibleCount)
 
                 // Section: Nutrition
                 sectionLabel(icon: "fork.knife", title: "Nutrition", color: .green)
 
                 nutritionHubCard
-                    .opacity(animateCards ? 1 : 0)
-                    .offset(y: animateCards ? 0 : 30)
+                    .opacity(cardVisibleCount > 4 ? 1 : 0)
+                    .offset(y: cardVisibleCount > 4 ? 0 : 30)
+                    .animation(.spring(response: 0.5, dampingFraction: 0.82), value: cardVisibleCount)
 
                 // Section: Mindfulness
                 sectionLabel(icon: "wind", title: "Mindfulness", color: .teal)
 
                 breathingHubCard
-                    .opacity(animateCards ? 1 : 0)
-                    .offset(y: animateCards ? 0 : 34)
+                    .opacity(cardVisibleCount > 5 ? 1 : 0)
+                    .offset(y: cardVisibleCount > 5 ? 0 : 34)
+                    .animation(.spring(response: 0.5, dampingFraction: 0.82), value: cardVisibleCount)
 
                 Spacer(minLength: 24)
             }
@@ -84,8 +91,12 @@ public struct ProgressHubView: View {
         .navigationSubtitle(currentDateString())
         .toolbarTitleDisplayMode(.inlineLarge)
         .onAppear {
-            withAnimation(.spring(response: 0.5, dampingFraction: 0.82).delay(0.08)) {
-                animateCards = true
+            animateCards = true
+            Task {
+                for i in 1...6 {
+                    try? await Task.sleep(nanoseconds: 60_000_000)
+                    await MainActor.run { cardVisibleCount = i }
+                }
             }
             let isStale = lastRefreshed.map { Date().timeIntervalSince($0) > 300 } ?? true
             guard isStale else { return }
@@ -111,7 +122,7 @@ public struct ProgressHubView: View {
             quickStatPill(
                 icon: "flame.fill",
                 value: "\(streakEngine.currentStreak)",
-                label: "wk streak",
+                label: "week streak",
                 color: streakEngine.currentStreak > 0 ? .orange : .gray
             )
             quickStatPill(
@@ -141,6 +152,7 @@ public struct ProgressHubView: View {
             Image(systemName: icon)
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundColor(color)
+                .accessibilityHidden(true)
             Text(value)
                 .font(.system(size: 18, weight: .bold, design: .rounded))
                 .foregroundColor(isDark ? .white : .black)
@@ -238,7 +250,7 @@ public struct ProgressHubView: View {
 
                 Image(systemName: "chevron.right")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(isDark ? .white.opacity(0.3) : .black.opacity(0.3))
+                    .foregroundColor(isDark ? .white.opacity(0.3) : .black.opacity(0.45))
             }
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -295,7 +307,7 @@ public struct ProgressHubView: View {
                         }
                         .frame(height: 5)
                     } else {
-                        Text("Loading challenge...")
+                        Text("Loading\u{2026}")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundColor(isDark ? .white.opacity(0.4) : .black.opacity(0.4))
                     }
@@ -318,7 +330,7 @@ public struct ProgressHubView: View {
 
                 Image(systemName: "chevron.right")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(isDark ? .white.opacity(0.3) : .black.opacity(0.3))
+                    .foregroundColor(isDark ? .white.opacity(0.3) : .black.opacity(0.45))
             }
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -375,7 +387,7 @@ public struct ProgressHubView: View {
                     Spacer()
                     Image(systemName: "chevron.right")
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(isDark ? .white.opacity(0.3) : .black.opacity(0.3))
+                        .foregroundColor(isDark ? .white.opacity(0.3) : .black.opacity(0.45))
                 }
             }
             .padding(14)
@@ -431,7 +443,7 @@ public struct ProgressHubView: View {
                     Spacer()
                     Image(systemName: "chevron.right")
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(isDark ? .white.opacity(0.3) : .black.opacity(0.3))
+                        .foregroundColor(isDark ? .white.opacity(0.3) : .black.opacity(0.45))
                 }
             }
             .padding(14)
@@ -481,7 +493,7 @@ public struct ProgressHubView: View {
 
                 Image(systemName: "chevron.right")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(isDark ? .white.opacity(0.3) : .black.opacity(0.3))
+                    .foregroundColor(isDark ? .white.opacity(0.3) : .black.opacity(0.45))
             }
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -525,13 +537,9 @@ public struct ProgressHubView: View {
 
                 Spacer()
 
-                Text("Breathe")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 7)
-                    .background(Color.teal)
-                    .clipShape(Capsule())
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(isDark ? .white.opacity(0.3) : .black.opacity(0.45))
             }
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)

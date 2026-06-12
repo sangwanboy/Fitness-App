@@ -15,13 +15,17 @@ public struct FoodScanView: View {
     private enum ScanPhase {
         case camera
         case analyzing(UIImage)
+        case lookingUpProduct(String)        // barcode lookup in flight
         case review(UIImage, FoodRecognitionResult)
         case error(UIImage?, String)
         case noFood(UIImage?)
+        case productNotFound                 // OFF has no record for this code
+        case productError(String, String)    // (message, barcode) — retryable
     }
 
     @State private var phase: ScanPhase = .camera
     @State private var analyzeTask: Task<Void, Never>? = nil
+    @State private var lookupTask: Task<Void, Never>? = nil
 
     private var isCameraPhase: Bool {
         if case .camera = phase { return true }
@@ -38,7 +42,8 @@ public struct FoodScanView: View {
                 case .camera:
                     FoodCameraView(
                         onImage: { img in handlePickedImage(img) },
-                        onCancel: { analyzeTask?.cancel(); dismiss() }
+                        onCancel: { analyzeTask?.cancel(); lookupTask?.cancel(); dismiss() },
+                        onBarcode: { code in handleBarcode(code) }
                     )
 
                 case .analyzing(let image):
@@ -47,6 +52,9 @@ public struct FoodScanView: View {
                         analyzeTask = nil
                         phase = .camera
                     }
+
+                case .lookingUpProduct:
+                    productLookupCard()
 
                 case .review(let image, let result):
                     FoodReviewSheet(image: image, result: result) {
@@ -60,6 +68,12 @@ public struct FoodScanView: View {
 
                 case .noFood(let image):
                     noFoodCard(image: image)
+
+                case .productNotFound:
+                    productNotFoundCard()
+
+                case .productError(let message, let barcode):
+                    productErrorCard(message: message, barcode: barcode)
                 }
             }
             .navigationTitle(isCameraPhase ? "" : "Scan Meal")
@@ -70,6 +84,7 @@ public struct FoodScanView: View {
                     ToolbarItem(placement: .cancellationAction) {
                         Button("Cancel") {
                             analyzeTask?.cancel()
+                            lookupTask?.cancel()
                             dismiss()
                         }
                     }
@@ -183,6 +198,183 @@ public struct FoodScanView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
                 .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 14))
+            }
+            .padding(.horizontal, 24)
+
+            Spacer()
+        }
+        .padding(.top, 24)
+    }
+
+    // MARK: - Barcode lookup
+
+    private func handleBarcode(_ code: String) {
+        // Only act from the camera (a fresh scan) or the retryable error state.
+        // Ignores stray reads once we've moved into lookup/review/etc.
+        switch phase {
+        case .camera, .productError:
+            break
+        default:
+            return
+        }
+        lookupTask?.cancel()
+        phase = .lookingUpProduct(code)
+
+        lookupTask = Task {
+            do {
+                let product = try await BarcodeProductService.shared.lookup(barcode: code)
+                guard !Task.isCancelled else { return }
+                // Build a single-item result so the EXISTING review pipeline
+                // handles it exactly like a vision result.
+                let item = product.asRecognizedFoodItem()
+                let result = FoodRecognitionResult(
+                    foodDetected: true,
+                    items: [item],
+                    overallConfidence: "high",
+                    plateNote: nil
+                )
+                await MainActor.run {
+                    phase = .review(Self.barcodePlaceholderImage(), result)
+                }
+            } catch let error as BarcodeLookupError {
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    switch error {
+                    case .notFound:
+                        phase = .productNotFound
+                    case .network, .malformed:
+                        phase = .productError(error.localizedDescription, code)
+                    }
+                }
+            } catch {
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    phase = .productError(
+                        BarcodeLookupError.network.localizedDescription, code)
+                }
+            }
+        }
+    }
+
+    /// A neutral placeholder shown in the review sheet's photo slot for barcode
+    /// results (there's no captured photo). Honest — a barcode glyph, not a
+    /// fabricated meal image.
+    private static func barcodePlaceholderImage() -> UIImage {
+        let size = CGSize(width: 600, height: 360)
+        let renderer = UIGraphicsImageRenderer(size: size)
+        return renderer.image { ctx in
+            UIColor(white: 0.12, alpha: 1).setFill()
+            ctx.fill(CGRect(origin: .zero, size: size))
+            let cfg = UIImage.SymbolConfiguration(pointSize: 96, weight: .regular)
+            if let glyph = UIImage(systemName: "barcode.viewfinder", withConfiguration: cfg)?
+                .withTintColor(UIColor(white: 0.55, alpha: 1), renderingMode: .alwaysOriginal) {
+                let origin = CGPoint(x: (size.width - glyph.size.width) / 2,
+                                     y: (size.height - glyph.size.height) / 2)
+                glyph.draw(at: origin)
+            }
+        }
+    }
+
+    // MARK: - Product lookup loading state
+
+    private func productLookupCard() -> some View {
+        VStack(spacing: 18) {
+            Spacer()
+            ProgressView()
+                .tint(.orange)
+                .scaleEffect(1.4)
+            Text("Looking up product…")
+                .font(.system(size: 18, weight: .bold))
+                .foregroundColor(isDark ? .white : .black)
+            Text("Fetching nutrition from Open Food Facts")
+                .font(.system(size: 13))
+                .foregroundColor(isDark ? .white.opacity(0.55) : .black.opacity(0.55))
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(28)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 24))
+        .padding(.horizontal, 24)
+        .padding(.vertical, 40)
+    }
+
+    // MARK: - Product not found state
+
+    private func productNotFoundCard() -> some View {
+        VStack(spacing: 24) {
+            Spacer().frame(height: 20)
+            VStack(spacing: 8) {
+                Image(systemName: "barcode.viewfinder")
+                    .font(.system(size: 36))
+                    .foregroundColor(.secondary)
+                Text("Product not in the database")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundColor(isDark ? .white : .black)
+                Text("Open Food Facts doesn't have this item yet. Try scanning again, or take a photo of the food instead.")
+                    .font(.system(size: 14))
+                    .foregroundColor(isDark ? .white.opacity(0.6) : .black.opacity(0.6))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+            }
+
+            VStack(spacing: 12) {
+                Button("Scan Again") { phase = .camera }
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(LinearGradient(colors: [.orange, .pink],
+                                               startPoint: .leading, endPoint: .trailing))
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+
+                Button("Take a Photo Instead") { phase = .camera }
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(isDark ? .white : .black)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 14))
+            }
+            .padding(.horizontal, 24)
+
+            Spacer()
+        }
+        .padding(.top, 24)
+    }
+
+    // MARK: - Product lookup error state (retryable)
+
+    private func productErrorCard(message: String, barcode: String) -> some View {
+        VStack(spacing: 24) {
+            Spacer().frame(height: 20)
+            VStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 36))
+                    .foregroundColor(.orange)
+                Text("Lookup failed")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundColor(isDark ? .white : .black)
+                Text(message)
+                    .font(.system(size: 14))
+                    .foregroundColor(isDark ? .white.opacity(0.6) : .black.opacity(0.6))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+            }
+
+            VStack(spacing: 12) {
+                Button("Retry") { handleBarcode(barcode) }
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(Color.orange)
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+
+                Button("Take a Photo Instead") { phase = .camera }
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(isDark ? .white : .black)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 14))
             }
             .padding(.horizontal, 24)
 

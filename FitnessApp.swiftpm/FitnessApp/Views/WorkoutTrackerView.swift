@@ -130,7 +130,7 @@ public struct WorkoutTrackerView: View {
                     }
                     Spacer()
                     
-                    Text("Workout Detail")
+                    Text("Log Workout")
                         .font(.headline)
                         .foregroundColor(isDark ? .white : .black)
                     
@@ -155,19 +155,25 @@ public struct WorkoutTrackerView: View {
                                                 Image(systemName: type.icon)
                                                     .font(.title2)
                                                     .foregroundColor(isSelected ? type.themeColor : (isDark ? .white.opacity(0.8) : .black.opacity(0.8)))
-                                                
+
                                                 Text(type.rawValue)
                                                     .font(.system(size: 13, weight: .bold))
                                                     .foregroundColor(isSelected ? (isDark ? .white : .black) : (isDark ? .white.opacity(0.6) : .black.opacity(0.6)))
+                                                    .minimumScaleFactor(0.7)
+                                                    .lineLimit(2)
+                                                    .multilineTextAlignment(.center)
                                             }
-                                            .frame(width: 100, height: 90)
+                                            .frame(width: 100)
+                                            .frame(minHeight: 90)
                                             .glassCard(glowColor: isSelected ? type.themeColor.opacity(0.12) : nil)
                                         }
-                                        .buttonStyle(PlainButtonStyle())
+                                        .buttonStyle(InteractiveButtonStyle())
                                     }
                                 }
+                                .sensoryFeedback(.selection, trigger: selectedWorkoutType)
                                 .padding(.horizontal, 20)
                             }
+                            .transition(.opacity.combined(with: .move(edge: .top)))
                         }
                         
                         // Stopwatch / Current Session stats
@@ -376,7 +382,7 @@ public struct WorkoutTrackerView: View {
             Button("Discard", role: .destructive) { discardWorkout() }
             Button("Save Workout") { saveWorkout() }
         } message: {
-            Text("Do you want to save this workout details to Apple Health?")
+            Text("Save this workout to Apple Health?")
         }
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
@@ -441,7 +447,7 @@ public struct WorkoutTrackerView: View {
     }
     
     private func startWorkout() {
-        isRunning = true
+        withAnimation(.spring(response: 0.45, dampingFraction: 0.82)) { isRunning = true }
         timer = Timer.publish(every: 1, on: .main, in: .common)
         let pub = timer.connect()
         cancellable = pub
@@ -449,7 +455,7 @@ public struct WorkoutTrackerView: View {
     }
 
     private func pauseWorkout() {
-        isRunning = false
+        withAnimation(.spring(response: 0.45, dampingFraction: 0.82)) { isRunning = false }
         if let con = cancellable as? Cancellable {
             con.cancel()
         }
@@ -730,7 +736,10 @@ struct WorkoutSummaryView: View {
                 Spacer()
                 
                 // Done Button
-                Button(action: onDismiss) {
+                Button(action: {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    onDismiss()
+                }) {
                     Text("Done")
                         .font(.system(size: 16, weight: .bold))
                         .foregroundColor(.white)

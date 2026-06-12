@@ -213,7 +213,10 @@ struct EKReminderRowView: View {
         let meta = inferredIcon
         VStack(spacing: 0) {
             HStack(spacing: 12) {
-                Button(action: onToggle) {
+                Button(action: {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    onToggle()
+                }) {
                     ZStack {
                         Circle()
                             .stroke(reminder.isCompleted ? accentColor : (isDark ? Color.white.opacity(0.25) : Color.black.opacity(0.25)), lineWidth: 2)
@@ -257,9 +260,7 @@ struct EKReminderRowView: View {
 
                 Spacer()
 
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(isDark ? .white.opacity(0.3) : .black.opacity(0.3))
+
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
