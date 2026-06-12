@@ -19,25 +19,29 @@ public struct PredictionWhySheet: View {
 
     private var title: String {
         switch kind {
-        case .recovery:     return "Why your recovery is \(predictions.recovery?.label.headline ?? "—")"
-        case .nextWorkout:  return "Why this workout time"
-        case .trajectory:   return "Why this pace projection"
-        case .sedentary:    return "Why this move reminder"
-        case .healthMeter:  return "Why your health is \(predictions.healthMeter?.label.headline.lowercased() ?? "—")"
-        case .illness:      return "What these strain signals mean"
-        case .correlations: return "Patterns found in your data"
+        case .recovery:       return "Why your recovery is \(predictions.recovery?.label.headline ?? "—")"
+        case .nextWorkout:    return "Why this workout time"
+        case .trajectory:     return "Why this pace projection"
+        case .sedentary:      return "Why this move reminder"
+        case .healthMeter:    return "Why your health is \(predictions.healthMeter?.label.headline.lowercased() ?? "—")"
+        case .illness:        return "What these strain signals mean"
+        case .correlations:   return "Patterns found in your data"
+        case .periodization:
+            let phase = predictions.periodization?.phase ?? "—"
+            return "Why you're in a \(phase.prefix(1).uppercased() + phase.dropFirst()) phase"
         }
     }
 
     private var subtitle: String {
         switch kind {
-        case .recovery:     return "Personalized read on today's recovery"
-        case .nextWorkout:  return "What your 4-week pattern looks like"
-        case .trajectory:   return "Today vs your 14-day baseline"
-        case .sedentary:    return "Quiet stretches vs your usual day"
-        case .healthMeter:  return "What's driving your wellness score"
-        case .illness:      return "Your RHR, HRV, and sleep debt vs your own baseline"
-        case .correlations: return "How your metrics tend to influence each other"
+        case .recovery:       return "Personalized read on today's recovery"
+        case .nextWorkout:    return "What your 4-week pattern looks like"
+        case .trajectory:     return "Today vs your 14-day baseline"
+        case .sedentary:      return "Quiet stretches vs your usual day"
+        case .healthMeter:    return "What's driving your wellness score"
+        case .illness:        return "Your RHR, HRV, and sleep debt vs your own baseline"
+        case .correlations:   return "How your metrics tend to influence each other"
+        case .periodization:  return "Weekly load trend vs your 3-week baseline"
         }
     }
 
@@ -269,6 +273,30 @@ public struct PredictionWhySheet: View {
                     prompt: "I just saw the patterns found in my data. Walk me through what these correlations mean for how I should train and recover this week, and ask me anything you need to give me a specific plan."
                 )
             ]
+        case .periodization:
+            guard let pz = predictions.periodization else { return [] }
+            switch pz.phase {
+            case "peak", "recover":
+                return [
+                    QuickAction(
+                        icon: "calendar.badge.clock",
+                        color: .blue,
+                        title: "Plan a deload week",
+                        subtitle: "Schedule reduced volume before your next block",
+                        prompt: "My training load is at a \(pz.phase) phase — help me plan a full deload week with specific day-by-day sessions, reduced volume, and what to prioritize for recovery."
+                    )
+                ]
+            default:
+                return [
+                    QuickAction(
+                        icon: "calendar.badge.plus",
+                        color: .indigo,
+                        title: "Plan next week's sessions",
+                        subtitle: "Build on the current \(pz.phase) phase momentum",
+                        prompt: "I'm in a \(pz.phase) training phase right now. Help me plan next week's workout sessions — include type, duration, and intensity for each day. Feel free to ask about my goals and schedule."
+                    )
+                ]
+            }
         case .healthMeter:
             guard let m = predictions.healthMeter else { return [] }
             // Surface 1-2 actions targeted at the WEAKEST sub-score.
@@ -343,6 +371,12 @@ public struct PredictionWhySheet: View {
             return "My vitals have been showing early strain signals for \(days) day\(days == "1" ? "" : "s"). Help me understand what my body is telling me and build a recovery plan for the next few days — ask me whatever you need."
         case .correlations:
             return "I just saw some patterns in my data. Walk me through what these relationships mean and help me use them to plan my next week — feel free to ask about my goals and schedule."
+        case .periodization:
+            if let pz = predictions.periodization {
+                let trendSign = pz.loadTrendPct >= 0 ? "+" : ""
+                return "I'm in a \(pz.phase) training phase with load trending \(trendSign)\(String(format: "%.0f", pz.loadTrendPct))% vs my 3-week average. Help me understand what this means for how I should train and recover this week — feel free to ask about my goals and upcoming events."
+            }
+            return "Let's review my current training phase and load trend. Help me plan this week's sessions around where I am in my cycle."
         }
     }
 

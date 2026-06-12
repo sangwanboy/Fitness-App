@@ -274,6 +274,7 @@ public struct PredictionsCard: View {
         switch slot {
         case .morning:
             if let r = p.recovery { rows.append(AnyView(RecoveryRow(reading: r, onWhy: { openWhy(.recovery) }))) }
+            if let pz = p.periodization { rows.append(AnyView(PeriodizationRow(status: pz, onWhy: { openWhy(.periodization) }))) }
             if let n = p.nextWorkout { rows.append(AnyView(NextWorkoutRow(forecast: n, onWhy: { openWhy(.nextWorkout) }))) }
             if currentHour >= 9, let s = p.sedentary { rows.append(AnyView(SedentaryRow(alert: s, onWhy: { openWhy(.sedentary) }))) }
         case .midday:
@@ -288,12 +289,14 @@ public struct PredictionsCard: View {
             if rows.count == 1, let r = p.recovery {
                 rows.append(AnyView(RecoveryRow(reading: r, onWhy: { openWhy(.recovery) })))
             }
+            if let pz = p.periodization { rows.append(AnyView(PeriodizationRow(status: pz, onWhy: { openWhy(.periodization) }))) }
             if !p.correlations.isEmpty {
                 rows.append(AnyView(CorrelationsRow(correlations: p.correlations, onWhy: { openWhy(.correlations) })))
             }
         case .night:
             if let n = p.nextWorkout { rows.append(AnyView(NextWorkoutRow(forecast: n, onWhy: { openWhy(.nextWorkout) }))) }
             if let r = p.recovery { rows.append(AnyView(RecoveryRow(reading: r, onWhy: { openWhy(.recovery) }))) }
+            if let pz = p.periodization { rows.append(AnyView(PeriodizationRow(status: pz, onWhy: { openWhy(.periodization) }))) }
         }
         return Array(rows.prefix(4))
     }
@@ -944,6 +947,88 @@ private struct IllnessWarningBanner: View {
         }
         .padding(12)
         .glassEffect(.regular.tint(accentColor.opacity(0.10)), in: .rect(cornerRadius: 12))
+    }
+}
+
+// MARK: - Periodization row (training phase)
+
+private struct PeriodizationRow: View {
+    let status: PeriodizationStatus
+    let onWhy: () -> Void
+    @AppStorage("theme_mode") private var themeMode = "dark"
+    private var isDark: Bool { themeMode == "dark" }
+
+    private var phaseColor: Color {
+        switch status.phase {
+        case "build":   return .green
+        case "peak":    return .orange
+        case "deload":  return .blue
+        case "recover": return .red
+        default:        return .gray
+        }
+    }
+
+    private var phaseIcon: String {
+        switch status.phase {
+        case "build":   return "arrow.up.right"
+        case "peak":    return "flame.fill"
+        case "deload":  return "arrow.down.right"
+        case "recover": return "bed.double.fill"
+        default:        return "equal"
+        }
+    }
+
+    private var phaseHeadline: String {
+        "Training phase: \(status.phase.prefix(1).uppercased() + status.phase.dropFirst())"
+    }
+
+    private var deltaText: String {
+        let pct = status.loadTrendPct
+        let sign = pct >= 0 ? "+" : ""
+        return "\(sign)\(String(format: "%.0f", pct))% vs 3-wk avg"
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(phaseColor.opacity(0.18))
+                    .frame(width: 36, height: 36)
+                Image(systemName: phaseIcon)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(phaseColor)
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(phaseHeadline)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(phaseColor)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                    Text("·")
+                        .foregroundColor(.gray)
+                        .fixedSize()
+                    Text(deltaText)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(isDark ? .white.opacity(0.65) : .black.opacity(0.65))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                    Spacer()
+                    WhyButton(onTap: onWhy)
+                }
+                Text(status.recommendation)
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundColor(isDark ? .white.opacity(0.85) : .black.opacity(0.85))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(status.confidence.displayLabel.lowercased())
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(isDark ? .white.opacity(0.45) : .black.opacity(0.45))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
+            Spacer(minLength: 0)
+        }
     }
 }
 

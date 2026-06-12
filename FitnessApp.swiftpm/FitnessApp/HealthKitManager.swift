@@ -1729,6 +1729,29 @@ public final class HealthKitManager: ObservableObject {
             .filter { $0.startDate >= twentyEightDaysAgo }
             .reduce(0.0) { $0 + $1.duration / 60.0 }
 
+        // Per-day kcal-load for the last 28 days (oldest → newest, zero-filled).
+        // Uses the same kcal / duration-proxy math as TrainingLoadEngine.
+        let dailyKcalLoad28: [Double] = {
+            let today = cal.startOfDay(for: now)
+            var loadByDay: [Date: Double] = [:]
+            for w in recentWorkouts28 {
+                let day = cal.startOfDay(for: w.startDate)
+                let load: Double
+                if let kcal = w.totalEnergyBurned?.doubleValue(for: .kilocalorie()), kcal > 0 {
+                    load = kcal
+                } else {
+                    load = (w.duration / 60.0) * 8.0
+                }
+                loadByDay[day, default: 0] += load
+            }
+            var out: [Double] = []
+            for offset in stride(from: 27, through: 0, by: -1) {
+                guard let d = cal.date(byAdding: .day, value: -offset, to: today) else { out.append(0); continue }
+                out.append(loadByDay[d] ?? 0)
+            }
+            return out
+        }()
+
         // Pre-map workouts to ActivityCategory + weekday/hour.
         let mapped: [PredictionEngine.WorkoutSample] = recentWorkouts28.map { w in
             PredictionEngine.WorkoutSample(
@@ -1789,6 +1812,7 @@ public final class HealthKitManager: ObservableObject {
             exerciseMinutesToday: metricSummaries[.exerciseMinutes]?.currentValue ?? 0,
             acuteLoadMinutes: acute,
             chronicLoadMinutes: chronic,
+            dailyKcalLoad28: dailyKcalLoad28,
             workouts28: mapped,
             hourlyStepsToday: hourlyStepsToday,
             stepsHistoryNonZeroDayCount: stepsNonZeroDayCount,

@@ -360,6 +360,22 @@ public struct MetricCorrelation: Codable, Equatable, Identifiable {
     }
 }
 
+// MARK: - Periodization Status
+
+/// Deterministic training-phase classifier from the last 4 weeks of kcal-load.
+/// Honest: surfaces nil from the engine when there isn't enough workout signal
+/// to classify a phase. Never prescriptive-medical — recommendation is a
+/// general training one-liner.
+public struct PeriodizationStatus: Codable, Equatable {
+    public let phase: String              // "build" | "peak" | "deload" | "recover" | "steady"
+    public let weekLoad: Double           // current-week kcal-load total
+    public let baselineWeekLoad: Double   // mean of the prior 3 weeks
+    public let loadTrendPct: Double       // (weekLoad - baseline) / baseline * 100, finite
+    public let recommendation: String     // deterministic one-liner
+    public let confidence: PredictionConfidence
+    public init(phase: String, weekLoad: Double, baselineWeekLoad: Double, loadTrendPct: Double, recommendation: String, confidence: PredictionConfidence) { self.phase = phase; self.weekLoad = weekLoad; self.baselineWeekLoad = baselineWeekLoad; self.loadTrendPct = loadTrendPct; self.recommendation = recommendation; self.confidence = confidence }
+}
+
 // MARK: - AI-generated layers
 
 public struct DailyInsight: Codable, Equatable {
@@ -424,6 +440,7 @@ public enum PredictionKind: String, Codable, Identifiable {
     case healthMeter
     case illness
     case correlations
+    case periodization
 
     public var id: String { rawValue }
 }
@@ -470,6 +487,10 @@ public struct Predictions: Codable, Equatable {
     /// clears the sample-size / magnitude bar.
     public let correlations: [MetricCorrelation]
 
+    /// On-device training-phase classifier from 4 weeks of kcal-load. nil when
+    /// there isn't enough workout signal to classify honestly.
+    public let periodization: PeriodizationStatus?
+
     /// Lifecycle of the AI layer for UI gating.
     public let aiEnrichmentStatus: EnrichmentStatus
 
@@ -489,6 +510,7 @@ public struct Predictions: Codable, Equatable {
                 actions: [ActionSuggestion] = [],
                 illnessWarning: IllnessWarning? = nil,
                 correlations: [MetricCorrelation] = [],
+                periodization: PeriodizationStatus? = nil,
                 aiEnrichmentStatus: EnrichmentStatus = .pending,
                 insufficientHistoryDays: Int? = nil) {
         self.generatedAt = generatedAt
@@ -502,6 +524,7 @@ public struct Predictions: Codable, Equatable {
         self.actions = actions
         self.illnessWarning = illnessWarning
         self.correlations = correlations
+        self.periodization = periodization
         self.aiEnrichmentStatus = aiEnrichmentStatus
         self.insufficientHistoryDays = insufficientHistoryDays
     }
@@ -523,6 +546,7 @@ public struct Predictions: Codable, Equatable {
         let actions: [ActionSuggestion]
         let illnessWarning: IllnessWarning?
         let correlations: [MetricCorrelation]
+        let periodization: PeriodizationStatus?
         let aiEnrichmentStatus: EnrichmentStatus
         let insufficientHistoryDays: Int?
     }
@@ -539,6 +563,7 @@ public struct Predictions: Codable, Equatable {
             actions: actions,
             illnessWarning: illnessWarning,
             correlations: correlations,
+            periodization: periodization,
             aiEnrichmentStatus: aiEnrichmentStatus,
             insufficientHistoryDays: insufficientHistoryDays
         )
@@ -550,6 +575,7 @@ public struct Predictions: Codable, Equatable {
             && healthMeter == nil
             && anomalies.isEmpty && dailyInsight == nil && actions.isEmpty
             && illnessWarning == nil && correlations.isEmpty
+            && periodization == nil
     }
 
     /// Return a copy with the AI layer fields swapped in (engine fields unchanged).
@@ -575,6 +601,7 @@ public struct Predictions: Codable, Equatable {
             actions: actions,
             illnessWarning: illnessWarning,
             correlations: correlations,
+            periodization: periodization,
             aiEnrichmentStatus: status,
             insufficientHistoryDays: insufficientHistoryDays
         )

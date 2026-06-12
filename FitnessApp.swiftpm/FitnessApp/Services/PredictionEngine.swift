@@ -66,6 +66,10 @@ public enum PredictionEngine {
         public let acuteLoadMinutes: Double      // sum of workout minutes in last 7 days
         public let chronicLoadMinutes: Double    // sum of workout minutes in last 28 days
 
+        // 28 zero-filled daily kcal-loads, oldest -> newest (kcal per workout;
+        // duration-min x 8 proxy when energy missing). Periodization input.
+        public let dailyKcalLoad28: [Double]
+
         // 28-day workouts with weekday/hour/category for pattern detection.
         public let workouts28: [WorkoutSample]
 
@@ -127,6 +131,7 @@ public enum PredictionEngine {
                     exerciseMinutesToday: Double,
                     acuteLoadMinutes: Double,
                     chronicLoadMinutes: Double,
+                    dailyKcalLoad28: [Double] = [],
                     workouts28: [WorkoutSample],
                     hourlyStepsToday: [Double],
                     stepsHistoryNonZeroDayCount: Int,
@@ -165,6 +170,7 @@ public enum PredictionEngine {
             self.exerciseMinutesToday = exerciseMinutesToday
             self.acuteLoadMinutes = acuteLoadMinutes
             self.chronicLoadMinutes = chronicLoadMinutes
+            self.dailyKcalLoad28 = dailyKcalLoad28
             self.workouts28 = workouts28
             self.hourlyStepsToday = hourlyStepsToday
             self.stepsHistoryNonZeroDayCount = stepsHistoryNonZeroDayCount
@@ -204,6 +210,7 @@ public enum PredictionEngine {
         let healthMeter = computeHealthMeter(snapshot: s)
         let illnessWarning = computeIllnessWarning(snapshot: s)
         let correlations = computeCorrelations(snapshot: s)
+        let periodization = computePeriodization(snapshot: s)
         return Predictions(
             generatedAt: s.now,
             recovery: recovery,
@@ -214,6 +221,7 @@ public enum PredictionEngine {
             anomalies: anomalies,
             illnessWarning: illnessWarning,
             correlations: correlations,
+            periodization: periodization,
             aiEnrichmentStatus: .pending,
             insufficientHistoryDays: nil
         )
@@ -539,6 +547,83 @@ public enum PredictionEngine {
         }
 
         return "Days you \(driverPhrase(driver)), \(outcomeUp(outcome, up: positive)) (r \(rStr), \(days) days)"
+    }
+
+    // MARK: - Periodization
+
+    /// Classifies the current training phase from 4 weeks of daily kcal-load.
+    /// Chunks `dailyKcalLoad28` oldest→newest into 4 weeks of 7. Current-week
+    /// load is compared to the mean of the prior 3 weeks (counting only weeks
+    /// that carried any load). Phase rules are deterministic and blend the
+    /// week-over-week trend with ACWR from the pre-aggregated load minutes.
+    /// Returns nil when there isn't enough workout signal to classify honestly.
+    public static func computePeriodization(snapshot s: Snapshot) -> PeriodizationStatus? {
+        let loads = s.dailyKcalLoad28
+        guard loads.count == 28 else { return nil }
+
+        // Honest signal gate: enough non-zero workout days to classify.
+        let nonZeroDays = loads.filter { $0 > 0 }.count
+        let enoughSignal = nonZeroDays >= 6
+            || (s.chronicLoadMinutes > 0 && nonZeroDays >= 4)
+        guard enoughSignal else { return nil }
+
+        // Chunk oldest→newest into 4 weeks of 7.
+        let week1 = Array(loads[0..<7])
+        let week2 = Array(loads[7..<14])
+        let week3 = Array(loads[14..<21])
+        let week4 = Array(loads[21..<28])
+
+        let weekLoad = week4.reduce(0, +)
+
+        // Baseline = mean of prior-3-week sums, counting only weeks with load.
+        let priorSums = [week1, week2, week3].map { $0.reduce(0, +) }
+        let loadedPriorSums = priorSums.filter { $0 > 0 }
+        let baseline = loadedPriorSums.isEmpty
+            ? 0.0
+            : loadedPriorSums.reduce(0, +) / Double(loadedPriorSums.count)
+
+        // Trend %, clamped to finite.
+        let rawTrend = (weekLoad - baseline) / max(baseline, 1.0) * 100.0
+        let trend = rawTrend.isFinite ? rawTrend : 0.0
+
+        // ACWR from pre-aggregated load minutes (acute / weekly-equivalent chronic).
+        let acwr = s.acuteLoadMinutes / max(s.chronicLoadMinutes / 4.0, 1.0)
+        let acwrFinite = acwr.isFinite ? acwr : 0.0
+
+        // Optional recovery score for the recover-vs-deload split.
+        let recoveryScore = predictRecoveryReadiness(snapshot: s)?.score
+
+        let phase: String
+        if trend >= 15.0 && acwrFinite <= 1.3 {
+            phase = "build"
+        } else if trend >= 15.0 {
+            phase = "peak"
+        } else if trend <= -30.0 {
+            if let rs = recoveryScore, rs < 50 { phase = "recover" }
+            else { phase = "deload" }
+        } else {
+            phase = "steady"
+        }
+
+        let recommendation: String
+        switch phase {
+        case "build":   recommendation = "Load is ramping — keep ~10% weekly increases and protect sleep."
+        case "peak":    recommendation = "Strain is high vs your base — plan a deload inside the next week."
+        case "deload":  recommendation = "Lighter week — good time to absorb fitness; keep movement easy."
+        case "recover": recommendation = "Low load + low recovery — prioritize rest, easy walks, and sleep."
+        default:        recommendation = "Load is consistent with your 4-week base."
+        }
+
+        let confidence: PredictionConfidence = nonZeroDays >= 10 ? .high : .medium
+
+        return PeriodizationStatus(
+            phase: phase,
+            weekLoad: weekLoad.isFinite ? weekLoad : 0.0,
+            baselineWeekLoad: baseline.isFinite ? baseline : 0.0,
+            loadTrendPct: trend,
+            recommendation: recommendation,
+            confidence: confidence
+        )
     }
 
     // MARK: - Recovery Readiness

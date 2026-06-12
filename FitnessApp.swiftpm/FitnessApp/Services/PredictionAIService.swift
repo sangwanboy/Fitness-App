@@ -434,6 +434,10 @@ public actor PredictionAIService {
         for c in p.correlations {
             lines.append("Correlation: \(c.metricA.displayName) → \(c.metricB.displayName) lag=\(c.lagDays)d r=\(String(format: "%.2f", c.r)) n=\(c.sampleDays) days — \(c.insight)")
         }
+        if let pz = p.periodization {
+            let trendSign = pz.loadTrendPct >= 0 ? "+" : ""
+            lines.append("Periodization: phase=\(pz.phase) weekLoad=\(String(format: "%.0f", pz.weekLoad)) kcal baselineWeekLoad=\(String(format: "%.0f", pz.baselineWeekLoad)) kcal trend=\(trendSign)\(String(format: "%.1f", pz.loadTrendPct))% confidence=\(pz.confidence.rawValue) recommendation=\"\(pz.recommendation)\"")
+        }
         return lines.isEmpty ? "—" : lines.joined(separator: "\n")
     }
 
@@ -500,6 +504,21 @@ public actor PredictionAIService {
                 detail = p.correlations.map { c in
                     "• \(c.metricA.displayName) → \(c.metricB.displayName): r=\(String(format: "%.2f", c.r)), lag=\(c.lagDays) day\(c.lagDays == 1 ? "" : "s"), n=\(c.sampleDays) overlapping days. \(c.insight)"
                 }.joined(separator: "\n")
+            }
+        case .periodization:
+            if let pz = p.periodization {
+                let trendSign = pz.loadTrendPct >= 0 ? "+" : ""
+                // Note: weekLoad is a kcal proxy (duration × 8) when Apple Health energy data is absent.
+                detail = """
+                Phase: \(pz.phase)
+                This week's load: \(String(format: "%.0f", pz.weekLoad)) kcal (proxy: duration-min × 8 when energy data is missing)
+                3-week baseline load: \(String(format: "%.0f", pz.baselineWeekLoad)) kcal
+                Load trend: \(trendSign)\(String(format: "%.1f", pz.loadTrendPct))% vs baseline
+                Confidence: \(pz.confidence.rawValue)
+                Deterministic recommendation: \(pz.recommendation)
+                """
+            } else {
+                detail = "No periodization data available."
             }
         }
         let kindSpecificShape = whyOutputShape(for: kind)
@@ -615,6 +634,33 @@ public actor PredictionAIService {
             - Quote the sample size (overlapping days) to help the user gauge how much to trust it.
             - One concrete implication: "When your X is high one day, your Y tends to be [higher/lower] the [same/next] day — so on days when X looks strong, it may be worth [specific behaviour]."
             Close with a brief note on what to do with these patterns — not an absolute rule, but a nudge toward experimentation.
+            """
+        case .periodization:
+            return """
+            SHAPE FOR PERIODIZATION:
+            DATA HONESTY RULE: The load numbers are kilocalorie estimates. When Apple Health has active-energy data from workouts, those are used directly. When energy data is absent (common without Apple Watch), load is estimated as duration-in-minutes × 8 kcal/min — a rough proxy. If the trend percentage is large but the raw kcal numbers seem low (< 200 kcal per session), call this out briefly: "these are duration-based estimates, not measured energy."
+
+            ### Your current phase: [phase]
+            Explain what this phase means in plain English. One sentence on what distinguishes it from the neighbouring phases (e.g. "Build means your week's load is climbing — you're asking more of your body than your recent average").
+
+            ### Weekly load breakdown
+            - Quote this week's load vs the 3-week baseline in kcal (e.g. "1,840 kcal this week vs your 1,420 kcal baseline").
+            - Quote the trend percentage with sign (e.g. "+29%").
+            - If energy data may be estimated, say so: "these figures are duration-based proxies — add a Watch or log workouts with energy data for more precision."
+
+            ### What the trend means for your body
+            Explain the Acute:Chronic Workload Ratio (ACWR) concept in one plain-English sentence without the jargon: the idea that how much you're doing this week relative to your recent average tells you how much stress you're adding. A trend above +20-25% raises injury risk; a sharp drop can mean detraining. Keep it personal, not textbook.
+
+            ### Training recommendations for this phase
+            Two or three concrete bullets:
+            - For "build": how hard to push, what to watch for (soreness, sleep quality, HRV)
+            - For "peak": that this is a short window, not sustainable — the ACWR signal to back off soon
+            - For "deload": roughly what volume cut (e.g. "reduce total weekly volume ~30-40%") and why it makes you fitter
+            - For "recover": active recovery emphasis, what to avoid, when to expect a bounce-back
+            - For "steady": this is maintenance — how to avoid the plateau and when to nudge load up
+
+            ### What to watch next week
+            One specific metric or signal to track (e.g. morning RHR, sleep quality, workout performance) as a leading indicator of whether to push or back off.
             """
         }
     }

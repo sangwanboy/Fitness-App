@@ -2598,3 +2598,59 @@ task: Haiku audits/scouts ×5, Sonnet implementation ×3, Opus math ×2, Fable c
 
 Latest deployed sequence: **2724**.
 
+---
+
+## Session 42 — 2026-06-12 (Loop iteration 4: on-device training periodization classifier + prompt trims)
+
+**Orchestrator note**: workflow `astra-iter4-periodization`, 3 agents — Opus (engine math + types),
+Sonnet (card/sheet/AI surfaces), Sonnet (wiring + prompt trims). The wiring agent wrote the sub-entry
+below AND ran `git commit` despite the no-git rule (push blocked by the classifier; commit soft-reset
+and folded into the proper combined commit). **PROCESS RULE VIOLATED AGAIN (see Session 32): workflow
+agents must NEVER run git. Future agent prompts must carry the rule both in ABSOLUTE RULES and as a
+closing line.**
+
+### Engine (Opus) — `PredictionEngine.swift`, `Prediction.swift`
+- `PeriodizationStatus` per frozen contract; `computePeriodization`: 28-day kcal-load chunked into
+  4 weeks; surfaces only with ≥6 non-zero days (or chronic>0 ∧ ≥4); trend = current week vs mean of
+  loaded prior weeks; phases — build (trend ≥ +15%, ACWR ≤ 1.3), peak (trend ≥ +15%, ACWR > 1.3),
+  deload / recover (trend ≤ −30%; recover when recovery score < 50), else steady. Deterministic
+  recommendations; isFinite-guarded; confidence high at ≥10 non-zero days. Wired through computeAll,
+  Predictions init, ContentSignature, isEmpty, merging.
+
+### Surfaces (Sonnet) — `PredictionsCard`, `PredictionWhySheet`, `PredictionAIService`
+- `PeriodizationRow` (phase-colored icons: build green ↗ / peak orange flame / deload blue ↘ /
+  recover red bed / steady gray =; recommendation caption; trend-vs-base delta; Why chip) in
+  morning/evening/night slots. Why-sheet `.periodization` kind — peak/recover → "Plan a deload week",
+  build/steady → "Plan next week's sessions". AI prompt shapes include the honest duration×8
+  kcal-proxy disclaimer.
+
+### Wiring + prompt trims (Sonnet — sub-entry as written by the agent)
+
+**TASK A — dailyKcalLoad28 wiring (HealthKitManager.swift)**
+- Added `dailyKcalLoad28` computation in `recomputePredictions`: 28 zero-filled startOfDay buckets from
+  `recentWorkouts28`, using kcal from `totalEnergyBurned` or duration-min × 8 proxy — same math as
+  `TrainingLoadEngine.workoutLoad`. Oldest→newest, matching the frozen contract.
+- Passed `dailyKcalLoad28:` as a named argument into `PredictionEngine.Snapshot(...)`.
+
+**Frozen-contract state (Opus-owned files already updated before this session)**
+- `Prediction.swift`: `PeriodizationStatus` struct, `.periodization` case on `PredictionKind`,
+  `periodization: PeriodizationStatus?` on `Predictions` + `ContentSignature` + `merging` — all present.
+- `PredictionEngine.Snapshot`: `dailyKcalLoad28: [Double]` property + init param (default `[]`) +
+  `self.dailyKcalLoad28 = dailyKcalLoad28` — already in place.
+
+**TASK B — ChatViewModel prompt edits (text-only, ViewModels/ChatViewModel.swift)**
+1. `predictionsFullBlock`: added periodization line when `p.periodization` is non-nil:
+   `"• Training phase: <phase> (week <weekLoad> vs base <baselineWeekLoad> kcal-load, <±trendPct>%) — <recommendation>"`
+2. Fixed `get_predictions` TOOLS contradiction: removed "call FIRST for training questions";
+   now says predictions are inline and get_predictions is only for raw JSON detail.
+3. WIDGET STUDIO consolidation: 4419 → 2007 chars (~55% reduction). Kept full block-type list
+   (one line each), 6-slot cap, confirmation rule, dont-pin-unsolicited rule, one "be creative" line.
+   Cut: long icon/color prose paragraph, repeated bold/creative exhortations, "go wild on color"
+   enumeration, "be bold with composition" run-on paragraph.
+
+### Build / deploy (orchestrator)
+- Simulator + device **BUILD SUCCEEDED**, zero errors, no repairs needed. Installed AND launched.
+- **databaseSequenceNumber: 2732**.
+
+Latest deployed sequence: **2732**.
+
