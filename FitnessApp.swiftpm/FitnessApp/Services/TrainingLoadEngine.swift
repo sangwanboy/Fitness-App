@@ -99,6 +99,8 @@ public enum ACWRZone {
 
 public final class TrainingLoadEngine: ObservableObject {
 
+    public static let shared = TrainingLoadEngine()
+
     @Published public var dailyLoads: [DailyLoad] = []
     @Published public var acuteLoad: Double = 0     // 7-day rolling average
     @Published public var chronicLoad: Double = 0   // 28-day rolling average

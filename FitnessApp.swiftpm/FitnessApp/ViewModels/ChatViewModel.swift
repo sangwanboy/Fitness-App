@@ -787,47 +787,21 @@ public final class ChatViewModel: ObservableObject {
     }
 
     /// TRAINING LOAD one-liner — acute (7d) vs chronic (28d) load + ACWR +
-    /// zone label. Mirrors TrainingLoadEngine's math exactly (kcal per
-    /// workout, duration-min × 8 proxy when energy is missing, full 28-day
-    /// daily fill, mean over the window) so the numbers match the Workout
-    /// Analytics card. Computed inline because the engine is a view-local
-    /// @StateObject that publishes asynchronously — there is no shared,
-    /// already-populated instance to read here. Empty string when the user
-    /// has no workouts in the window (block omitted).
+    /// zone label, read from the shared TrainingLoadEngine (populated by
+    /// HealthKitManager after each workout fetch). Empty string until the
+    /// engine has computed or when the user has no workouts (block omitted).
     fileprivate static func trainingLoadBlock() -> String {
-        let workouts = HealthKitManager.shared.recentWorkouts28
-        guard !workouts.isEmpty else { return "" }
-        let cal = Calendar.current
-        let today = cal.startOfDay(for: Date())
-        let windowStart = cal.date(byAdding: .day, value: -27, to: today) ?? today
-        var loadByDay: [Date: Double] = [:]
-        var minutes7 = 0.0
-        let cutoff7 = cal.date(byAdding: .day, value: -6, to: today) ?? today
-        for w in workouts {
-            let day = cal.startOfDay(for: w.startDate)
-            guard day >= windowStart else { continue }
-            let kcal = w.totalEnergyBurned?.doubleValue(for: .kilocalorie()) ?? 0
-            loadByDay[day, default: 0] += kcal > 0 ? kcal : (w.duration / 60.0) * 8.0
-            if day >= cutoff7 { minutes7 += w.duration / 60.0 }
-        }
-        var series: [Double] = []
-        var cursor = windowStart
-        while cursor <= today {
-            series.append(loadByDay[cursor] ?? 0)
-            guard let next = cal.date(byAdding: .day, value: 1, to: cursor) else { break }
-            cursor = next
-        }
-        func rollingAvg(_ days: Int) -> Double {
-            let slice = series.suffix(days)
-            guard slice.contains(where: { $0 > 0 }) else { return 0 }
-            return slice.reduce(0, +) / Double(slice.count)
-        }
-        let acute = rollingAvg(7)
-        let chronic = rollingAvg(28)
+        let engine = TrainingLoadEngine.shared
+        let acute = engine.acuteLoad
+        let chronic = engine.chronicLoad
         guard acute > 0 || chronic > 0 else { return "" }
-        let acwr = acute / max(chronic, 1.0)
-        let zone = ACWRZone(acwr: acwr)
-        return "- Acute (7d) \(Int(acute.rounded())) kcal-load/day vs chronic (28d) \(Int(chronic.rounded())) — ACWR \(String(format: "%.2f", acwr)) (\(zone.label)). \(Int(minutes7.rounded())) workout min last 7d."
+        let cal = Calendar.current
+        let cutoff7 = cal.date(byAdding: .day, value: -6, to: cal.startOfDay(for: Date()))
+            ?? Date().addingTimeInterval(-6 * 86_400)
+        let minutes7 = HealthKitManager.shared.recentWorkouts28
+            .filter { $0.startDate >= cutoff7 }
+            .reduce(0.0) { $0 + $1.duration / 60.0 }
+        return "- Acute (7d) \(Int(acute.rounded())) kcal-load/day vs chronic (28d) \(Int(chronic.rounded())) — ACWR \(String(format: "%.2f", engine.acwr)) (\(engine.acwrZone.label)). \(Int(minutes7.rounded())) workout min last 7d."
     }
 
     /// HR ZONES one-liner — the five personalised Karvonen zone ranges from

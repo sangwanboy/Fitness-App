@@ -5,7 +5,7 @@ import HealthKit
 // MARK: - Main Analytics Sheet
 
 public struct WorkoutAnalyticsView: View {
-    @StateObject private var engine = TrainingLoadEngine()
+    @ObservedObject private var engine = TrainingLoadEngine.shared
     @ObservedObject private var hk = HealthKitManager.shared
 
     @AppStorage("accent_color") private var accentColorHex = "#30D158"

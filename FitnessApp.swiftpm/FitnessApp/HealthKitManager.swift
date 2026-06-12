@@ -337,7 +337,10 @@ public final class HealthKitManager: ObservableObject {
             // Prediction inputs: 28-day workout cache + hourly steps for sedentary detection.
             group.addTask {
                 let workouts = await self.fetchRecentWorkouts(days: 28)
-                await MainActor.run { self.recentWorkouts28 = workouts }
+                await MainActor.run {
+                    self.recentWorkouts28 = workouts
+                    TrainingLoadEngine.shared.compute(from: workouts)
+                }
                 return nil
             }
             group.addTask {

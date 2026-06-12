@@ -2568,3 +2568,33 @@ correctness), (d) consider winding the loop down — core goal substantially met
 
 Latest deployed sequence: **2716**.
 
+---
+
+## Session 41 — 2026-06-12 (Loop iteration 3 — final: TrainingLoadEngine singleton + prompt token audit; loop wound down)
+
+### Changes
+- **TrainingLoadEngine → shared singleton** (Sonnet, finished by orchestrator after a transient
+  API-overload kill): `TrainingLoadEngine.shared`; WorkoutAnalyticsView observes the shared instance;
+  HealthKitManager calls `TrainingLoadEngine.shared.compute(from:)` right after `recentWorkouts28`
+  updates in fetchTodayData — engine is populated app-wide without opening Workout Analytics.
+  ChatViewModel's TRAINING LOAD block now READS the shared engine (34 lines of duplicated inline
+  ACWR math deleted; one source of truth).
+- **System-prompt token audit (Haiku)**: typical assembled instruction ≈ 9.5k tokens ≈ $0.014/turn
+  at gemini-3.5-flash input pricing — verdict HEALTHY, no immediate action. Optional future trims
+  documented in the workflow output: (1) predictionsFullBlock → summary line (~200-300 tok/turn,
+  biggest ROI if long chats become common), (2) WIDGET STUDIO guidance consolidation (~300-400 tok),
+  (3) split SAFETY RAILS into ALWAYS vs IF-CONDITION. Also flagged: TOOLS section still says "call
+  get_predictions FIRST" while the data is inline — minor contradiction to clean up someday.
+
+### Build / deploy
+- Simulator + device **BUILD SUCCEEDED**. Installed AND launched. **databaseSequenceNumber: 2724**.
+
+### Loop CLOSED — goal met across 3 iterations (sessions 39-41)
+Astra now sees every data category the app holds (audited): all metrics inline + get_metric_history,
+workouts, training load/ACWR, HR zones, streaks/challenges, sleep pattern + per-night sessions
+(get_sleep_sessions), symptoms, cycle, nutrition + goals, predictions. Engine v2 shipped: illness
+early-warning (symptom-corroborated), correlation engine, + all prior predictors. Models used per
+task: Haiku audits/scouts ×5, Sonnet implementation ×3, Opus math ×2, Fable chat-core ×2.
+
+Latest deployed sequence: **2724**.
+
