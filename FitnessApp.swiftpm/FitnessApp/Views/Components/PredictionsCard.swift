@@ -38,6 +38,11 @@ public struct PredictionsCard: View {
                 } else if p.isEmpty {
                     quietState
                 } else {
+                    // Illness warning — above anomaly banners, always shown when present
+                    if let warning = p.illnessWarning {
+                        IllnessWarningBanner(warning: warning, onWhy: { whyKind = .illness })
+                    }
+
                     // Anomaly banner — top, severity-colored
                     ForEach(p.anomalies) { anomaly in
                         AnomalyBanner(anomaly: anomaly)
@@ -274,11 +279,17 @@ public struct PredictionsCard: View {
         case .midday:
             for t in p.trajectories.prefix(2) { rows.append(AnyView(TrajectoryRow(trajectory: t, onWhy: { openWhy(.trajectory) }))) }
             if let s = p.sedentary { rows.append(AnyView(SedentaryRow(alert: s, onWhy: { openWhy(.sedentary) }))) }
+            if !p.correlations.isEmpty {
+                rows.append(AnyView(CorrelationsRow(correlations: p.correlations, onWhy: { openWhy(.correlations) })))
+            }
         case .evening:
             for t in p.trajectories.prefix(2) { rows.append(AnyView(TrajectoryRow(trajectory: t, onWhy: { openWhy(.trajectory) }))) }
             if let s = p.sedentary { rows.append(AnyView(SedentaryRow(alert: s, onWhy: { openWhy(.sedentary) }))) }
             if rows.count == 1, let r = p.recovery {
                 rows.append(AnyView(RecoveryRow(reading: r, onWhy: { openWhy(.recovery) })))
+            }
+            if !p.correlations.isEmpty {
+                rows.append(AnyView(CorrelationsRow(correlations: p.correlations, onWhy: { openWhy(.correlations) })))
             }
         case .night:
             if let n = p.nextWorkout { rows.append(AnyView(NextWorkoutRow(forecast: n, onWhy: { openWhy(.nextWorkout) }))) }
@@ -850,6 +861,131 @@ private struct DailyInsightRow: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
+        }
+    }
+}
+
+// MARK: - Illness warning banner
+
+private struct IllnessWarningBanner: View {
+    let warning: IllnessWarning
+    let onWhy: () -> Void
+    @AppStorage("theme_mode") private var themeMode = "dark"
+    private var isDark: Bool { themeMode == "dark" }
+
+    private var accentColor: Color {
+        warning.severity == .high ? .red : .orange
+    }
+
+    private func formatDelta(_ value: Double, unit: String, direction: String) -> String {
+        let sign = value >= 0 ? "+" : ""
+        return "\(sign)\(String(format: "%.0f", value))\(unit) \(direction)"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(accentColor)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text("Early strain signals")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(isDark ? .white : .black)
+                            .lineLimit(1)
+                        Spacer()
+                        WhyButton(onTap: onWhy)
+                    }
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("RHR")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(isDark ? .white.opacity(0.5) : .black.opacity(0.5))
+                                .lineLimit(1)
+                            Text(formatDelta(warning.rhrDeltaBpm, unit: " bpm", direction: "above"))
+                                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                .foregroundColor(accentColor)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.75)
+                        }
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("HRV")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(isDark ? .white.opacity(0.5) : .black.opacity(0.5))
+                                .lineLimit(1)
+                            Text("\(String(format: "%.0f", warning.hrvDropPct))% drop")
+                                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                .foregroundColor(accentColor)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.75)
+                        }
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Sleep debt")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(isDark ? .white.opacity(0.5) : .black.opacity(0.5))
+                                .lineLimit(1)
+                            Text("\(String(format: "%.1f", warning.sleepDebtHours))h deficit")
+                                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                .foregroundColor(accentColor)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.75)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    Text("\(warning.consecutiveDays) day\(warning.consecutiveDays == 1 ? "" : "s") of these signals")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(isDark ? .white.opacity(0.55) : .black.opacity(0.55))
+                        .lineLimit(1)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(12)
+        .glassEffect(.regular.tint(accentColor.opacity(0.10)), in: .rect(cornerRadius: 12))
+    }
+}
+
+// MARK: - Correlations row ("PATTERNS IN YOUR DATA")
+
+private struct CorrelationsRow: View {
+    let correlations: [MetricCorrelation]
+    let onWhy: () -> Void
+    @AppStorage("theme_mode") private var themeMode = "dark"
+    private var isDark: Bool { themeMode == "dark" }
+
+    private var visibleCorrelations: [MetricCorrelation] {
+        Array(correlations.prefix(3))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Text("PATTERNS IN YOUR DATA")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(isDark ? .white.opacity(0.5) : .black.opacity(0.5))
+                    .tracking(0.5)
+                    .lineLimit(1)
+                Spacer()
+                WhyButton(onTap: onWhy)
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(visibleCorrelations) { correlation in
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Image(systemName: "arrow.triangle.branch")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(.indigo)
+                            .frame(width: 14)
+                        Text(correlation.insight)
+                            .font(.system(size: 12, weight: .regular))
+                            .foregroundColor(isDark ? .white.opacity(0.85) : .black.opacity(0.85))
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 0)
+                    }
+                }
+            }
         }
     }
 }

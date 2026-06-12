@@ -366,6 +366,18 @@ public actor VertexGeminiClient {
                     ]
                 ],
                 [
+                    "name": "get_metric_history",
+                    "description": "Daily history for ANY tracked HealthKit metric over the last N days (max 90). Auto-executes and feeds {metric, unit, days, daily: [{date, value}], avg, min, max, latest, change_pct} back via functionResponse — ground your answer in those numbers. Returns available:false when the user has no data for that metric (say so honestly). Call this for any metric question the inline system-prompt blocks don't already answer. Valid metric values: steps, heart_rate, active_energy, sleep, distance, hrv, hydration, resting_heart_rate, body_mass, flights_climbed, exercise_minutes, stand_hours, mindful_minutes, oxygen_saturation, vo2_max, resting_energy, walking_speed, walking_step_length, walking_double_support, walking_asymmetry, headphone_audio.",
+                    "parameters": [
+                        "type": "object",
+                        "properties": [
+                            "metric": ["type": "string", "description": "One of the valid metric values listed in the tool description."],
+                            "days":   ["type": "integer", "description": "1-90 (default 30)"]
+                        ],
+                        "required": ["metric"]
+                    ]
+                ],
+                [
                     "name": "get_sleep_pattern",
                     "description": "Returns the user's full on-device sleep pattern (typical bedtime, wake, median duration, restlessness baseline, snore profile, consistency, weekend delay, weekly trend) PLUS the last 5 tracked sessions with motion + snore details. Call this whenever the user asks anything sleep-related — 'how's my sleep', 'am I getting enough', 'should I sleep more', 'why am I tired' — so your answer can cite real per-user numbers instead of universal thresholds. Auto-executes. Returns 'available: false' if the user hasn't tracked any nights yet.",
                     "parameters": [

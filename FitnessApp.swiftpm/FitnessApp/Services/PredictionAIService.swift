@@ -428,6 +428,12 @@ public actor PredictionAIService {
         for a in p.anomalies {
             lines.append("Anomaly: \(a.metric.displayName) drifted \(a.direction) (z=\(String(format: "%.2f", a.zScore)), today=\(String(format: "%.1f", a.today)), baseline=\(String(format: "%.1f", a.baseline)))")
         }
+        if let w = p.illnessWarning {
+            lines.append("Illness warning: severity=\(w.severity.rawValue), RHR delta=+\(String(format: "%.1f", w.rhrDeltaBpm)) bpm above baseline, HRV drop=\(String(format: "%.1f", w.hrvDropPct))%, sleep debt=\(String(format: "%.1f", w.sleepDebtHours))h, consecutive days=\(w.consecutiveDays)")
+        }
+        for c in p.correlations {
+            lines.append("Correlation: \(c.metricA.displayName) → \(c.metricB.displayName) lag=\(c.lagDays)d r=\(String(format: "%.2f", c.r)) n=\(c.sampleDays) days — \(c.insight)")
+        }
         return lines.isEmpty ? "—" : lines.joined(separator: "\n")
     }
 
@@ -473,6 +479,27 @@ public actor PredictionAIService {
                 """
             } else {
                 detail = "No health meter score available."
+            }
+        case .illness:
+            if let w = p.illnessWarning {
+                detail = """
+                Severity: \(w.severity.rawValue)
+                RHR delta: +\(String(format: "%.1f", w.rhrDeltaBpm)) bpm above 28-day baseline (positive = elevated)
+                HRV drop: \(String(format: "%.1f", w.hrvDropPct))% below 28-day baseline
+                Sleep debt: \(String(format: "%.1f", w.sleepDebtHours)) hours cumulative deficit across flagged window
+                Consecutive days: \(w.consecutiveDays)
+                Explanation bullets: \(w.explanation.bullets.joined(separator: " | "))
+                """
+            } else {
+                detail = "No illness warning available."
+            }
+        case .correlations:
+            if p.correlations.isEmpty {
+                detail = "No correlations available."
+            } else {
+                detail = p.correlations.map { c in
+                    "• \(c.metricA.displayName) → \(c.metricB.displayName): r=\(String(format: "%.2f", c.r)), lag=\(c.lagDays) day\(c.lagDays == 1 ? "" : "s"), n=\(c.sampleDays) overlapping days. \(c.insight)"
+                }.joined(separator: "\n")
             }
         }
         let kindSpecificShape = whyOutputShape(for: kind)
@@ -560,6 +587,34 @@ public actor PredictionAIService {
             One sentence on the metabolic / circulatory cost of long sitting (without going clinical).
             ### What 5 minutes fixes
             What a single short walk now does for their day score / step count.
+            """
+        case .illness:
+            return """
+            SHAPE FOR ILLNESS WARNING:
+            CRITICAL RULE: You are describing physiological strain patterns from the user's own biometric data — never diagnose, never mention illness, disease, infection, or medical conditions. Use language like "your body is working harder than usual" or "your recovery metrics are under stress."
+            ### Resting Heart Rate
+            Quote the exact delta (e.g. "+4 bpm above your 28-day baseline of X bpm"). Explain what elevated RHR at this level typically means for training readiness — keep it personal, not clinical.
+            ### HRV
+            Quote the exact percentage drop vs 28-day baseline. Explain what a drop of this magnitude suggests about the nervous system's current state.
+            ### Sleep debt
+            Quote the cumulative hours of deficit across the flagged window. Explain how sleep debt compounds with the other two signals.
+            ### The pattern
+            State how many consecutive days these signals have held. Explain why a multi-day pattern is more meaningful than a single-day blip.
+            ### What this means for training
+            Be direct: given all three signals together, what intensity level is appropriate right now? Use terms like "zone 1-2 only", "no new PRs", "prioritize sleep over volume". Do NOT suggest rest has anything to do with illness — frame it as optimising the body's internal repair cycle.
+            NO DIAGNOSIS RULE: Never imply the user is sick. Never suggest they see a doctor unless the numbers are extreme (e.g. RHR delta > 15 bpm). Always frame as "your recovery metrics are signalling that your body is under load."
+            """
+        case .correlations:
+            return """
+            SHAPE FOR CORRELATIONS:
+            CRITICAL RULE: Correlation is not causation. State this clearly but briefly once, then move on. Never say one metric "causes" another.
+            For each correlation in the data (up to 3):
+            ### [MetricA] and [MetricB]
+            - State the Pearson r value and what it means in plain English (e.g. "r = 0.62 — a moderately strong relationship"). Use a simple scale: |r| 0.45-0.59 = moderate, 0.60-0.79 = strong, 0.80+ = very strong.
+            - Explain the lag: "Same-day" vs "next-day" — which metric tends to precede the other, and what that pattern looks like in practice.
+            - Quote the sample size (overlapping days) to help the user gauge how much to trust it.
+            - One concrete implication: "When your X is high one day, your Y tends to be [higher/lower] the [same/next] day — so on days when X looks strong, it may be worth [specific behaviour]."
+            Close with a brief note on what to do with these patterns — not an absolute rule, but a nudge toward experimentation.
             """
         }
     }

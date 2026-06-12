@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import HealthKit
 
 @MainActor
 public final class ChatViewModel: ObservableObject {
@@ -288,8 +289,77 @@ public final class ChatViewModel: ObservableObject {
             return d
         case .renderCard(let title, _, _, _, _, _):
             return ["rendered": true, "title": title]
+        case .getMetricHistory(let metric, let days):
+            return Self.metricHistoryPayload(metric: metric, days: days)
         default:
             return nil
+        }
+    }
+
+    /// Universal daily-history payload for `get_metric_history`. Clips the
+    /// stored history to the requested window, buckets one value per calendar
+    /// day (latest sample wins), and returns an honest `{available: false}`
+    /// when the user has no data for that metric.
+    private static func metricHistoryPayload(metric: String, days: Int) -> [String: Any] {
+        guard let type = Self.historyMetricType(from: metric),
+              let history = HealthKitManager.shared.metricSummaries[type]?.history,
+              !history.isEmpty else {
+            return ["available": false, "metric": metric,
+                    "reason": "No HealthKit history for this metric."]
+        }
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        let cutoff = cal.date(byAdding: .day, value: -(days - 1), to: today) ?? today
+        var byDay: [Date: Double] = [:]
+        for sample in history.sorted(by: { $0.date < $1.date }) where sample.date >= cutoff {
+            byDay[cal.startOfDay(for: sample.date)] = sample.value
+        }
+        let daily = byDay.sorted { $0.key < $1.key }
+        guard let first = daily.first?.value, let last = daily.last?.value else {
+            return ["available": false, "metric": metric, "days": days,
+                    "reason": "No samples in the requested window."]
+        }
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        let values = daily.map(\.value)
+        return ["available": true,
+                "metric": metric,
+                "unit": type.unit,
+                "days": days,
+                "daily": daily.map { ["date": f.string(from: $0.key), "value": Self.round1($0.value)] },
+                "avg": Self.round1(values.reduce(0, +) / Double(values.count)),
+                "min": Self.round1(values.min() ?? 0),
+                "max": Self.round1(values.max() ?? 0),
+                "latest": Self.round1(last),
+                "change_pct": first == 0 ? 0 : Self.round1((last - first) / first * 100)]
+    }
+
+    /// Resolves the loose metric token Gemini passes to `get_metric_history`.
+    /// Accepts the documented snake_case names plus common aliases.
+    private static func historyMetricType(from raw: String) -> HealthMetricType? {
+        switch raw.lowercased() {
+        case "steps": return .steps
+        case "heart_rate", "heartrate", "heart": return .heartRate
+        case "active_energy", "activeenergy", "calories": return .activeEnergy
+        case "sleep": return .sleep
+        case "distance": return .distance
+        case "hrv": return .hrv
+        case "hydration", "water": return .hydration
+        case "resting_heart_rate", "restingheartrate", "resting_hr", "rhr": return .restingHeartRate
+        case "body_mass", "bodymass", "weight": return .bodyMass
+        case "flights_climbed", "flightsclimbed", "flights": return .flightsClimbed
+        case "exercise_minutes", "exerciseminutes": return .exerciseMinutes
+        case "stand_hours", "standhours": return .standHours
+        case "mindful_minutes", "mindfulminutes": return .mindfulMinutes
+        case "oxygen_saturation", "oxygensaturation", "spo2": return .oxygenSaturation
+        case "vo2_max", "vo2max": return .vo2Max
+        case "resting_energy", "restingenergy", "basal_energy": return .restingEnergy
+        case "walking_speed", "walkingspeed": return .walkingSpeed
+        case "walking_step_length", "walkingsteplength", "step_length": return .walkingStepLength
+        case "walking_double_support", "walkingdoublesupport": return .walkingDoubleSupport
+        case "walking_asymmetry", "walkingasymmetry": return .walkingAsymmetry
+        case "headphone_audio", "headphoneaudio": return .headphoneAudio
+        default: return nil
         }
     }
 
@@ -566,6 +636,16 @@ public final class ChatViewModel: ObservableObject {
             lines.append("• Anomaly: \(a.metric.displayName) is \(dir) baseline — today \(String(format: "%.1f", a.today)) \(a.metric.unit), baseline \(String(format: "%.1f", a.baseline)), z=\(String(format: "%.2f", a.zScore)) (\(a.severity.rawValue))")
         }
 
+        // Illness early-warning (multi-signal physiological strain)
+        if let w = p.illnessWarning {
+            lines.append("• ILLNESS EARLY-WARNING (\(w.severity.rawValue)): RHR +\(String(format: "%.1f", w.rhrDeltaBpm)) bpm vs 28-day baseline · HRV down \(String(format: "%.0f", w.hrvDropPct))% · sleep debt \(String(format: "%.1f", w.sleepDebtHours)) h — pattern held \(w.consecutiveDays) consecutive days. These are early strain signals - NEVER diagnose, suggest rest/hydration and consulting a professional if symptoms appear.")
+        }
+
+        // Cross-metric correlations (deterministic on-device Pearson)
+        for c in p.correlations {
+            lines.append("• Correlation: \(c.insight) (r=\(String(format: "%.2f", c.r)), \(c.sampleDays) days)")
+        }
+
         if lines.isEmpty {
             return "All quiet — no notable signals from your last 28 days."
         }
@@ -602,6 +682,91 @@ public final class ChatViewModel: ObservableObject {
             parts.append("\(s.quietHours)h quiet")
         }
         return parts.isEmpty ? "All quiet — no notable signals." : parts.joined(separator: " · ")
+    }
+
+    /// Mean of the last 7 days of a metric's history, counting only days
+    /// with a real (> 0) sample. nil when the user has no data — callers
+    /// drop the line entirely (honest "—" semantics, never a fake 0).
+    private static func sevenDayAvg(_ type: HealthMetricType) -> Double? {
+        guard let history = HealthKitManager.shared.metricSummaries[type]?.history else { return nil }
+        let cutoff = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
+        let vals = history.filter { $0.date >= cutoff && $0.value > 0 }.map(\.value)
+        guard !vals.isEmpty else { return nil }
+        return vals.reduce(0, +) / Double(vals.count)
+    }
+
+    /// STREAK & CHALLENGE block — workout-week streak + today's challenge.
+    fileprivate static func streakChallengeBlock() -> String {
+        let streak = StreakEngine.shared
+        let challenge = ChallengeEngine.shared
+        var lines: [String] = []
+        lines.append("- Streak: \(streak.currentStreak) week(s) current · \(streak.longestStreak) longest · \(streak.earnedBadges.count) badge(s)")
+        if let c = challenge.activeChallenge {
+            let pct = Int((challenge.progress * 100).rounded())
+            lines.append("- Today's challenge: \(c.title) — \(pct)% done (target \(Int(c.targetValue)) \(c.metric.unit)). \(challenge.completedChallenges.count) completed all-time.")
+        } else {
+            lines.append("- Today's challenge: —")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    /// BODY & GAIT 7-DAY block — only metrics that actually have data.
+    fileprivate static func bodyGaitBlock() -> String {
+        var parts: [String] = []
+        if let w = HealthKitManager.shared.metricSummaries[.bodyMass]?.currentValue, w > 0 {
+            parts.append("weight \(String(format: "%.1f", w)) kg (latest)")
+        }
+        if let s = sevenDayAvg(.walkingSpeed) {
+            parts.append("walking speed \(String(format: "%.1f", s)) mi/hr avg")
+        }
+        if let a = sevenDayAvg(.walkingAsymmetry) {
+            parts.append("asymmetry \(String(format: "%.1f", a))% avg")
+        }
+        return parts.isEmpty ? "—" : "- " + parts.joined(separator: " · ")
+    }
+
+    /// HYDRATION & MINDFUL 7-DAY block — daily averages over logged days.
+    fileprivate static func hydrationMindfulBlock() -> String {
+        var parts: [String] = []
+        if let h = sevenDayAvg(.hydration) {
+            parts.append("hydration \(String(format: "%.1f", h)) L/day")
+        }
+        if let m = sevenDayAvg(.mindfulMinutes) {
+            parts.append("mindful \(String(format: "%.0f", m)) min/day")
+        }
+        return parts.isEmpty ? "—" : "- " + parts.joined(separator: " · ") + " (avg of days with data)"
+    }
+
+    /// RECENT WORKOUTS block — last 3 from the 28-day HealthKit window.
+    fileprivate static func recentWorkoutsBlock() -> String {
+        let workouts = HealthKitManager.shared.recentWorkouts28
+        guard !workouts.isEmpty else { return "None recorded in the last 28 days." }
+        let f = DateFormatter()
+        f.dateFormat = "EEE MM/dd"
+        return workouts
+            .sorted { $0.startDate > $1.startDate }
+            .prefix(3)
+            .map { w in
+                let kcal = w.totalEnergyBurned?.doubleValue(for: .kilocalorie())
+                let kcalStr = kcal.map { " · \(Int($0)) kcal" } ?? ""
+                return "- \(Self.workoutLabel(w.workoutActivityType)) \(f.string(from: w.startDate)) — \(Int(w.duration / 60)) min\(kcalStr)"
+            }
+            .joined(separator: "\n")
+    }
+
+    /// Coarse activity label — mirrors HealthKitManager.activityCategory
+    /// (private there), kept tiny for prompt lines.
+    private static func workoutLabel(_ t: HKWorkoutActivityType) -> String {
+        switch t {
+        case .running: return "Run"
+        case .walking, .hiking: return "Walk"
+        case .cycling: return "Cycle"
+        case .traditionalStrengthTraining, .functionalStrengthTraining, .crossTraining: return "Strength"
+        case .yoga, .mindAndBody, .pilates, .flexibility, .barre: return "Yoga"
+        case .highIntensityIntervalTraining, .coreTraining: return "HIIT"
+        case .swimming, .waterFitness, .waterSports: return "Swim"
+        default: return "Workout"
+        }
     }
 
     private func encodeJSON(_ obj: [String: Any]) -> String? {
@@ -804,7 +969,8 @@ public final class ChatViewModel: ObservableObject {
             return AstraWidgetStore.shared.remove(id: uuid)
         case .showMetricChart, .showComparisonChart, .renderCard,
              .listReminders, .listCalendarEvents, .getPredictions,
-             .listFoodLog, .listWidgets, .updateNotes, .getSleepPattern:
+             .listFoodLog, .listWidgets, .updateNotes, .getSleepPattern,
+             .getMetricHistory:
             return true
         }
     }
@@ -1116,6 +1282,12 @@ public final class ChatViewModel: ObservableObject {
             goals: NutritionService.shared.macroGoals
         )
 
+        // -- Compact engagement / body / workout blocks -----------------------
+        let streakChallenge = Self.streakChallengeBlock()
+        let bodyGait        = Self.bodyGaitBlock()
+        let hydrationMindful = Self.hydrationMindfulBlock()
+        let recentWorkouts  = Self.recentWorkoutsBlock()
+
         // -- 7-day histories --------------------------------------------------
         let stepsHistory = historySummary(for: .steps)
         let calsHistory  = historySummary(for: .activeEnergy)
@@ -1184,6 +1356,18 @@ public final class ChatViewModel: ObservableObject {
         - Resting HR: \(rhrHistory)
         - HRV: \(hrvHistory)
 
+        STREAK & CHALLENGE (celebrate milestones; coach continuity)
+        \(streakChallenge)
+
+        BODY & GAIT 7-DAY
+        \(bodyGait)
+
+        HYDRATION & MINDFUL 7-DAY
+        \(hydrationMindful)
+
+        RECENT WORKOUTS (last 3 of 28-day window — call get_metric_history for metric trends)
+        \(recentWorkouts)
+
         DATA SEMANTICS
         - "—" or null = HealthKit returned no record. NEVER invent or imply a value.
         - 0 may be a genuine value depending on context: 0 steps at 6 AM is "early morning"; 0 sleep is almost certainly "not synced yet" — use judgement. When in doubt, state the ambiguity.
@@ -1220,6 +1404,7 @@ public final class ChatViewModel: ObservableObject {
         - update_reminder / update_calendar_event / delete_reminder / delete_calendar_event : by id from the prior list_* call. Always pass `title` on deletes.
         - show_metric_chart / show_comparison_chart : visualize trends. Use comparison proactively when a 7-day pattern is interesting. After either chart renders, you receive the series stats (avg/min/max/latest/change %) via functionResponse and you MUST reply with a brief grounded analysis — 2-3 sentences MAX: the trend, one notable high or low, one actionable takeaway — quoting the user's actual numbers from the stats. Never re-list the chart's contents point by point.
         - render_card : structured visuals that don't fit other tools. SF Symbol icon, color ∈ {accent, red, green, blue, orange, purple, cyan, yellow}. After the card renders you get an ack via functionResponse — follow with a SINGLE-sentence takeaway; never re-list the card's contents.
+        - get_metric_history : daily history for ANY tracked metric over up to 90 days — returns {daily values, avg, min, max, latest, change %}. Call it for any metric question the inline blocks above don't answer (weight trend, SpO₂, VO₂ max, stand hours, exercise minutes, gait, headphone audio, longer windows). Auto-executes; ground your answer in the returned numbers.
         - get_predictions : on-device PredictionEngine snapshot (recovery readiness, next-likely-workout, goal trajectory, sedentary alert). Call FIRST whenever the user asks "how should I train", "am I recovered", "should I rest/run/lift", "on track for my goals". Always surface the structured confidence + why-bullets it returns — never quote raw numbers as gospel. Prefer this over re-deriving from raw 7-day history.
         - list_food_log / update_food_log / delete_food_log : READ + WRITE for today's logged meals. Use list_food_log FIRST when the user asks to fix, correct, rename, change, or delete a logged meal — you cannot guess the id. If list returns exactly ONE match for the user's description, proceed straight to update_/delete_ without asking. Pass `name` on deletes so the confirm card shows what's about to go.
         - create_widget / list_widgets / update_widget / delete_widget : ASTRA STUDIO — your creative canvas on the user's Home screen. See the WIDGET STUDIO block below for when and how to use it.

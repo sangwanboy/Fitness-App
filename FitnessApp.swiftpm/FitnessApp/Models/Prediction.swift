@@ -301,6 +301,55 @@ public struct Anomaly: Codable, Equatable, Identifiable {
     }
 }
 
+// MARK: - Illness Early-Warning
+
+/// Surfaced when resting heart rate, HRV, and sleep all drift in the
+/// strain direction for ≥ 2 consecutive days. This is NOT a diagnosis —
+/// copy must frame it as early physiological strain signals only.
+public struct IllnessWarning: Codable, Equatable {
+    public let severity: AnomalySeverity        // .moderate | .high only
+    public let rhrDeltaBpm: Double              // today RHR minus 28-day baseline (positive = elevated)
+    public let hrvDropPct: Double               // percent below 28-day baseline (positive = drop)
+    public let sleepDebtHours: Double           // cumulative deficit vs baseline across the flagged window
+    public let consecutiveDays: Int             // days the pattern has held (>= 2 to surface)
+    public let explanation: PredictionExplanation
+
+    public init(severity: AnomalySeverity, rhrDeltaBpm: Double, hrvDropPct: Double,
+                sleepDebtHours: Double, consecutiveDays: Int,
+                explanation: PredictionExplanation) {
+        self.severity = severity
+        self.rhrDeltaBpm = rhrDeltaBpm
+        self.hrvDropPct = hrvDropPct
+        self.sleepDebtHours = sleepDebtHours
+        self.consecutiveDays = consecutiveDays
+        self.explanation = explanation
+    }
+}
+
+// MARK: - Metric Correlation
+
+/// A deterministic Pearson correlation between two daily metric series,
+/// optionally lagged. Honest, no causality claims beyond "tends".
+public struct MetricCorrelation: Codable, Equatable, Identifiable {
+    public var id: String { metricA.rawValue + "-" + metricB.rawValue + "-" + String(lagDays) }
+    public let metricA: HealthMetricType        // driver
+    public let metricB: HealthMetricType        // outcome
+    public let lagDays: Int                     // 0 same-day, 1 next-day
+    public let r: Double                        // Pearson, |r| >= 0.45 to surface
+    public let sampleDays: Int                  // >= 12 overlapping valid days required
+    public let insight: String                  // deterministic template sentence quoting direction
+
+    public init(metricA: HealthMetricType, metricB: HealthMetricType, lagDays: Int,
+                r: Double, sampleDays: Int, insight: String) {
+        self.metricA = metricA
+        self.metricB = metricB
+        self.lagDays = lagDays
+        self.r = r
+        self.sampleDays = sampleDays
+        self.insight = insight
+    }
+}
+
 // MARK: - AI-generated layers
 
 public struct DailyInsight: Codable, Equatable {
@@ -363,6 +412,8 @@ public enum PredictionKind: String, Codable, Identifiable {
     case trajectory
     case sedentary
     case healthMeter
+    case illness
+    case correlations
 
     public var id: String { rawValue }
 }
@@ -401,6 +452,14 @@ public struct Predictions: Codable, Equatable {
     /// AI-suggested action chips. Empty before enrichment / on failure.
     public let actions: [ActionSuggestion]
 
+    /// On-device illness early-warning. nil when the pattern doesn't hold or
+    /// the user has no HRV/RHR data (Watch-less) — never guessed.
+    public let illnessWarning: IllnessWarning?
+
+    /// On-device cross-metric correlations (top 3 by |r|). Empty when nothing
+    /// clears the sample-size / magnitude bar.
+    public let correlations: [MetricCorrelation]
+
     /// Lifecycle of the AI layer for UI gating.
     public let aiEnrichmentStatus: EnrichmentStatus
 
@@ -418,6 +477,8 @@ public struct Predictions: Codable, Equatable {
                 anomalies: [Anomaly] = [],
                 dailyInsight: DailyInsight? = nil,
                 actions: [ActionSuggestion] = [],
+                illnessWarning: IllnessWarning? = nil,
+                correlations: [MetricCorrelation] = [],
                 aiEnrichmentStatus: EnrichmentStatus = .pending,
                 insufficientHistoryDays: Int? = nil) {
         self.generatedAt = generatedAt
@@ -429,6 +490,8 @@ public struct Predictions: Codable, Equatable {
         self.anomalies = anomalies
         self.dailyInsight = dailyInsight
         self.actions = actions
+        self.illnessWarning = illnessWarning
+        self.correlations = correlations
         self.aiEnrichmentStatus = aiEnrichmentStatus
         self.insufficientHistoryDays = insufficientHistoryDays
     }
@@ -448,6 +511,8 @@ public struct Predictions: Codable, Equatable {
         let anomalies: [Anomaly]
         let dailyInsight: DailyInsight?
         let actions: [ActionSuggestion]
+        let illnessWarning: IllnessWarning?
+        let correlations: [MetricCorrelation]
         let aiEnrichmentStatus: EnrichmentStatus
         let insufficientHistoryDays: Int?
     }
@@ -462,6 +527,8 @@ public struct Predictions: Codable, Equatable {
             anomalies: anomalies,
             dailyInsight: dailyInsight,
             actions: actions,
+            illnessWarning: illnessWarning,
+            correlations: correlations,
             aiEnrichmentStatus: aiEnrichmentStatus,
             insufficientHistoryDays: insufficientHistoryDays
         )
@@ -472,6 +539,7 @@ public struct Predictions: Codable, Equatable {
         recovery == nil && nextWorkout == nil && trajectories.isEmpty && sedentary == nil
             && healthMeter == nil
             && anomalies.isEmpty && dailyInsight == nil && actions.isEmpty
+            && illnessWarning == nil && correlations.isEmpty
     }
 
     /// Return a copy with the AI layer fields swapped in (engine fields unchanged).
@@ -495,6 +563,8 @@ public struct Predictions: Codable, Equatable {
             anomalies: newAnomalies,
             dailyInsight: insight,
             actions: actions,
+            illnessWarning: illnessWarning,
+            correlations: correlations,
             aiEnrichmentStatus: status,
             insufficientHistoryDays: insufficientHistoryDays
         )

@@ -24,16 +24,20 @@ public struct PredictionWhySheet: View {
         case .trajectory:   return "Why this pace projection"
         case .sedentary:    return "Why this move reminder"
         case .healthMeter:  return "Why your health is \(predictions.healthMeter?.label.headline.lowercased() ?? "—")"
+        case .illness:      return "What these strain signals mean"
+        case .correlations: return "Patterns found in your data"
         }
     }
 
     private var subtitle: String {
         switch kind {
-        case .recovery:    return "Personalized read on today's recovery"
-        case .nextWorkout: return "What your 4-week pattern looks like"
-        case .trajectory:  return "Today vs your 14-day baseline"
-        case .sedentary:   return "Quiet stretches vs your usual day"
-        case .healthMeter: return "What's driving your wellness score"
+        case .recovery:     return "Personalized read on today's recovery"
+        case .nextWorkout:  return "What your 4-week pattern looks like"
+        case .trajectory:   return "Today vs your 14-day baseline"
+        case .sedentary:    return "Quiet stretches vs your usual day"
+        case .healthMeter:  return "What's driving your wellness score"
+        case .illness:      return "Your RHR, HRV, and sleep debt vs your own baseline"
+        case .correlations: return "How your metrics tend to influence each other"
         }
     }
 
@@ -238,6 +242,33 @@ public struct PredictionWhySheet: View {
                     prompt: "Add a \(n.category.displayName.lowercased()) workout to my calendar for \(n.weekdayLabel) at \(timeStr) for 45 minutes."
                 )
             ]
+        case .illness:
+            return [
+                QuickAction(
+                    icon: "leaf.fill",
+                    color: .purple,
+                    title: "Plan a rest day",
+                    subtitle: "Let your body catch up on what it's missing",
+                    prompt: "My resting heart rate is elevated and my HRV is down — help me plan a full rest day with light mobility work only, no intense training."
+                ),
+                QuickAction(
+                    icon: "bed.double.fill",
+                    color: .indigo,
+                    title: "Earlier bedtime reminder",
+                    subtitle: "Pay down the sleep debt tonight",
+                    prompt: "I have accumulated sleep debt and my vitals are showing early strain signals. Set a reminder for me to start winding down at 9:30 PM tonight so I can get to bed earlier."
+                )
+            ]
+        case .correlations:
+            return [
+                QuickAction(
+                    icon: "sparkles",
+                    color: .indigo,
+                    title: "Ask Astra what to do",
+                    subtitle: "Turn these patterns into a plan",
+                    prompt: "I just saw the patterns found in my data. Walk me through what these correlations mean for how I should train and recover this week, and ask me anything you need to give me a specific plan."
+                )
+            ]
         case .healthMeter:
             guard let m = predictions.healthMeter else { return [] }
             // Surface 1-2 actions targeted at the WEAKEST sub-score.
@@ -307,6 +338,11 @@ public struct PredictionWhySheet: View {
             return "Let's talk about my pace today. What's the most realistic way to close the gap before the day's over, and what would you do in my shoes?"
         case .sedentary:
             return "I've been sitting too long. Help me plan the rest of the day so I break it up properly — feel free to ask about my schedule."
+        case .illness:
+            let days = predictions.illnessWarning.map { "\($0.consecutiveDays)" } ?? "several"
+            return "My vitals have been showing early strain signals for \(days) day\(days == "1" ? "" : "s"). Help me understand what my body is telling me and build a recovery plan for the next few days — ask me whatever you need."
+        case .correlations:
+            return "I just saw some patterns in my data. Walk me through what these relationships mean and help me use them to plan my next week — feel free to ask about my goals and schedule."
         }
     }
 

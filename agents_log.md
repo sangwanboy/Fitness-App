@@ -2471,3 +2471,58 @@ meal quality score, streak evolutions, menstrual-cycle intelligence.
 
 Latest deployed sequence: **2700**.
 
+---
+
+## Session 39 — 2026-06-12 (Loop iteration 1: Astra full data access + engine v2 — illness warning & correlations)
+
+### Process (standing /loop goal: Astra sees ALL health data; enhance the on-device predictive engine)
+Workflow `astra-data-engine-v2`, 5 agents, models per task: **Haiku ×2** (gap audits), **Opus**
+(engine math), **Fable** (chat plumbing), **Sonnet** (surfaces). Orchestrator froze a cross-agent
+Swift type contract (IllnessWarning, MetricCorrelation) so all three builders worked in parallel on
+disjoint files; single integration error at the end (ToolCards switch exhaustiveness — predicted by
+the Fable agent, fixed by orchestrator).
+
+### Audits (Haiku)
+Astra previously saw ~7 of ~18 data categories. Hidden: workout list, training-load/ACWR, streak &
+challenge state, HR zones, most 7-day trends (gait/SpO2/VO2/body mass), menstrual & symptom types
+(authorized, never read), breathing sessions. Engine: all correlation/illness inputs already fetched —
+just not in Snapshot.
+
+### Engine v2 (Opus) — `PredictionEngine.swift`, `Prediction.swift`, `HealthKitManager.swift`
+- **Illness early-warning**: surfaces when RHR ≥ +4 bpm AND HRV ≥ 12% below AND cumulative sleep debt
+  > 1h vs 28-day baselines (baseline excludes the flagged window) for ≥ 2 consecutive days; .high at
+  ≥ 3 days or extreme deltas; nil for watch-less users; bullets quote real numbers; never diagnoses.
+- **Correlation engine**: Pearson r over 7 (driver, outcome, lag) candidates on zero-filled 30-day
+  arrays (sleep→HRV+1d, sleep→RHR+1d, steps→sleep, activeEnergy→sleep, mindful→HRV+1d,
+  hydration→steps, sleep→steps+1d); pairs valid days only; needs n ≥ 12, |r| ≥ 0.45; top 3; honest
+  template insights ("tends", never causal). NaN/zero-variance guarded.
+- Snapshot gained 7 30-day daily arrays built from existing metricSummaries (no new HK queries).
+
+### Astra data access (Fable) — `ChatViewModel`, `ToolCall`, `VertexGeminiClient`
+- NEW universal tool **get_metric_history(metric, days≤90)** — any of 21 metrics, daily values +
+  avg/min/max/latest/change%; honest {available:false}.
+- NEW system-prompt blocks: STREAK & CHALLENGE, BODY & GAIT 7-DAY, HYDRATION & MINDFUL 7-DAY,
+  RECENT WORKOUTS (last 3) — all token-lean, honest when empty.
+- predictionsFullBlock renders illnessWarning (with mandatory never-diagnose instruction) +
+  correlations. (TRAINING LOAD block deferred — TrainingLoadEngine state not cleanly reachable from
+  ChatViewModel; candidate for iteration 2.)
+
+### Surfaces (Sonnet) — `PredictionsCard`, `PredictionWhySheet`, `PredictionAIService`
+IllnessWarningBanner (orange/red glass, three signals + days, Why chip) above anomaly banners;
+"PATTERNS IN YOUR DATA" CorrelationsRow (≤3 insights, Why chip); Why-sheet kinds .illness (rest-day +
+bedtime quick actions, no-diagnosis rule) and .correlations (correlation-not-causation rule);
+predictionsSummary extended for both.
+
+### Build / deploy
+- One fix by orchestrator: `.getMetricHistory` ListSummaryCard case in ToolCards.swift.
+- Simulator + device **BUILD SUCCEEDED**, zero errors. Installed AND launched.
+- **databaseSequenceNumber: 2708**.
+
+### Loop state / next iteration candidates
+1. TRAINING LOAD + HR-zone blocks for Astra (deferred above).
+2. Menstrual/symptom category reads → engine + Astra (data authorized, never read).
+3. Feed illness/correlations into the AI daily-insight enrichment prompts.
+4. Sleep-session detail tool for Astra (per-night motion/snore beyond the pattern block).
+
+Latest deployed sequence: **2708**.
+

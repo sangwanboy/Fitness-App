@@ -39,6 +39,18 @@ public enum PredictionEngine {
         public let rhrHistory28: [Double]
         public let sleepHistory28NonZero: [Double]
 
+        // 30-day daily arrays (chronological, oldest → newest, ZERO-FILLED for
+        // missing days — illness-warning & correlation engine align by index).
+        // A zero means "no valid reading that day" and is excluded after lag
+        // alignment / windowing by the consumers.
+        public let hrvHistory30: [Double]
+        public let rhrHistory30: [Double]
+        public let sleepHistory30: [Double]
+        public let stepsHistory30: [Double]
+        public let activeEnergyHistory30: [Double]
+        public let hydrationHistory30: [Double]
+        public let mindfulMinutesHistory30: [Double]
+
         // Last 14 days (chronological, oldest → newest, includes zeros so
         // empty days don't lie about pace).
         public let stepsHistory14: [Double]
@@ -96,6 +108,13 @@ public enum PredictionEngine {
                     hrvHistory28: [Double],
                     rhrHistory28: [Double],
                     sleepHistory28NonZero: [Double],
+                    hrvHistory30: [Double] = [],
+                    rhrHistory30: [Double] = [],
+                    sleepHistory30: [Double] = [],
+                    stepsHistory30: [Double] = [],
+                    activeEnergyHistory30: [Double] = [],
+                    hydrationHistory30: [Double] = [],
+                    mindfulMinutesHistory30: [Double] = [],
                     stepsHistory14: [Double],
                     activeEnergyHistory14: [Double],
                     exerciseMinutesHistory14: [Double],
@@ -126,6 +145,13 @@ public enum PredictionEngine {
             self.hrvHistory28 = hrvHistory28
             self.rhrHistory28 = rhrHistory28
             self.sleepHistory28NonZero = sleepHistory28NonZero
+            self.hrvHistory30 = hrvHistory30
+            self.rhrHistory30 = rhrHistory30
+            self.sleepHistory30 = sleepHistory30
+            self.stepsHistory30 = stepsHistory30
+            self.activeEnergyHistory30 = activeEnergyHistory30
+            self.hydrationHistory30 = hydrationHistory30
+            self.mindfulMinutesHistory30 = mindfulMinutesHistory30
             self.stepsHistory14 = stepsHistory14
             self.activeEnergyHistory14 = activeEnergyHistory14
             self.exerciseMinutesHistory14 = exerciseMinutesHistory14
@@ -170,6 +196,8 @@ public enum PredictionEngine {
         let sedentary = detectSedentaryAlert(snapshot: s)
         let anomalies = detectAnomalies(snapshot: s)
         let healthMeter = computeHealthMeter(snapshot: s)
+        let illnessWarning = computeIllnessWarning(snapshot: s)
+        let correlations = computeCorrelations(snapshot: s)
         return Predictions(
             generatedAt: s.now,
             recovery: recovery,
@@ -178,6 +206,8 @@ public enum PredictionEngine {
             sedentary: sedentary,
             healthMeter: healthMeter,
             anomalies: anomalies,
+            illnessWarning: illnessWarning,
+            correlations: correlations,
             aiEnrichmentStatus: .pending,
             insufficientHistoryDays: nil
         )
@@ -256,6 +286,213 @@ public enum PredictionEngine {
             severity: severity,
             interpretation: nil
         )
+    }
+
+    // MARK: - Illness Early-Warning
+
+    /// Surfaces an `IllnessWarning` when resting heart rate, HRV, and sleep all
+    /// drift in the strain direction for ≥ 2 consecutive days ending today:
+    ///   • RHR ≥ +4 bpm above the 28-day baseline,
+    ///   • HRV ≥ 12% below baseline,
+    ///   • sleep below the user's own baseline (cumulative debt > 1h).
+    /// Baselines are the mean of non-zero days EXCLUDING the flagged window.
+    /// Watch-less users (no RHR/HRV data) get nil — never a guess. This is NOT
+    /// a diagnosis; the explanation frames it as early strain signals only.
+    public static func computeIllnessWarning(snapshot s: Snapshot) -> IllnessWarning? {
+        let rhr = s.rhrHistory30
+        let hrv = s.hrvHistory30
+        let sleep = s.sleepHistory30
+        // Need the arrays aligned by day for the lookback. If any is empty we
+        // can't evaluate that day honestly.
+        guard !rhr.isEmpty, !hrv.isEmpty, !sleep.isEmpty else { return nil }
+        // Watch-less: no HRV/RHR readings at all → bail, never guess.
+        guard rhr.contains(where: { $0 > 0 }), hrv.contains(where: { $0 > 0 }) else { return nil }
+
+        let n = min(rhr.count, min(hrv.count, sleep.count))
+        guard n >= 4 else { return nil }
+        // Index from the newest end so "today" is the last element of each.
+        let rhrW = Array(rhr.suffix(n))
+        let hrvW = Array(hrv.suffix(n))
+        let sleepW = Array(sleep.suffix(n))
+
+        // Walk backwards from today counting consecutive days where ALL THREE
+        // strain conditions hold. Baselines are recomputed to EXCLUDE the
+        // flagged window each step (mean of non-zero days before the window).
+        let maxWindow = min(n - 1, 5) // cap; need at least 1 day outside for baseline
+        var bestDays = 0
+        var bestRhrDelta = 0.0, bestHrvDrop = 0.0, bestSleepDebt = 0.0
+        var bestRhrToday = 0.0, bestRhrBase = 0.0
+        var bestHrvToday = 0.0, bestHrvBase = 0.0
+        var bestSleepBase = 0.0
+
+        for windowLen in stride(from: 2, through: maxWindow, by: 1) {
+            let windowStart = n - windowLen
+            // Baseline = non-zero days strictly before the window.
+            let rhrBaseDays = Array(rhrW.prefix(windowStart)).filter { $0 > 0 }
+            let hrvBaseDays = Array(hrvW.prefix(windowStart)).filter { $0 > 0 }
+            let sleepBaseDays = Array(sleepW.prefix(windowStart)).filter { $0 > 0 }
+            guard rhrBaseDays.count >= 3, hrvBaseDays.count >= 3, sleepBaseDays.count >= 3 else { continue }
+            let rhrBase = mean(rhrBaseDays)
+            let hrvBase = mean(hrvBaseDays)
+            let sleepBase = mean(sleepBaseDays)
+            guard rhrBase > 0, hrvBase > 0, sleepBase > 0 else { continue }
+
+            // Every day in the window must satisfy all three conditions with
+            // valid (non-zero) readings.
+            var allHold = true
+            var sleepDebt = 0.0
+            for i in windowStart..<n {
+                let dayRhr = rhrW[i], dayHrv = hrvW[i], daySleep = sleepW[i]
+                guard dayRhr > 0, dayHrv > 0, daySleep > 0 else { allHold = false; break }
+                let rhrUp = dayRhr - rhrBase
+                let hrvDownPct = (hrvBase - dayHrv) / hrvBase * 100.0
+                let sleepShort = daySleep < sleepBase
+                if rhrUp >= 4.0 && hrvDownPct >= 12.0 && sleepShort {
+                    sleepDebt += (sleepBase - daySleep)
+                } else {
+                    allHold = false; break
+                }
+            }
+            guard allHold, sleepDebt > 1.0 else { continue }
+
+            if windowLen > bestDays {
+                bestDays = windowLen
+                let todayRhr = rhrW[n - 1], todayHrv = hrvW[n - 1]
+                bestRhrDelta = todayRhr - rhrBase
+                bestHrvDrop = (hrvBase - todayHrv) / hrvBase * 100.0
+                bestSleepDebt = sleepDebt
+                bestRhrToday = todayRhr; bestRhrBase = rhrBase
+                bestHrvToday = todayHrv; bestHrvBase = hrvBase
+                bestSleepBase = sleepBase
+            }
+        }
+
+        guard bestDays >= 2 else { return nil }
+        guard bestRhrDelta.isFinite, bestHrvDrop.isFinite, bestSleepDebt.isFinite else { return nil }
+
+        let severity: AnomalySeverity =
+            (bestDays >= 3 || (bestRhrDelta >= 8 && bestHrvDrop >= 20)) ? .high : .moderate
+
+        let todaySleep = sleepW[n - 1]
+        var bullets: [String] = []
+        bullets.append("RHR \(Int(bestRhrToday.rounded())) vs \(Int(bestRhrBase.rounded())) baseline (+\(Int(bestRhrDelta.rounded())))")
+        bullets.append("HRV \(Int(bestHrvToday.rounded())) vs \(Int(bestHrvBase.rounded())) baseline (-\(Int(bestHrvDrop.rounded()))%)")
+        bullets.append("Sleep \(formattedDuration(todaySleep)) vs \(formattedDuration(bestSleepBase)) baseline — \(formattedDuration(bestSleepDebt)) debt over \(bestDays) days")
+        bullets.append("Pattern has held \(bestDays) days — these are early strain signals, not a diagnosis.")
+
+        return IllnessWarning(
+            severity: severity,
+            rhrDeltaBpm: bestRhrDelta,
+            hrvDropPct: bestHrvDrop,
+            sleepDebtHours: bestSleepDebt,
+            consecutiveDays: bestDays,
+            explanation: PredictionExplanation(bullets: bullets)
+        )
+    }
+
+    // MARK: - Correlation Engine
+
+    private struct CorrelationCandidate {
+        let driver: HealthMetricType
+        let outcome: HealthMetricType
+        let lag: Int
+    }
+
+    /// Pearson r over 30-day daily arrays for a fixed candidate set. Pairs days
+    /// only when BOTH values are non-zero/valid after lag alignment; requires
+    /// ≥ 12 overlapping days and |r| ≥ 0.45. Returns the top 3 by |r|. Insights
+    /// are deterministic, direction-aware, and avoid causality claims.
+    public static func computeCorrelations(snapshot s: Snapshot) -> [MetricCorrelation] {
+        func series(_ m: HealthMetricType) -> [Double] {
+            switch m {
+            case .sleep:             return s.sleepHistory30
+            case .hrv:               return s.hrvHistory30
+            case .restingHeartRate:  return s.rhrHistory30
+            case .steps:             return s.stepsHistory30
+            case .activeEnergy:      return s.activeEnergyHistory30
+            case .hydration:         return s.hydrationHistory30
+            case .mindfulMinutes:    return s.mindfulMinutesHistory30
+            default:                 return []
+            }
+        }
+
+        let candidates: [CorrelationCandidate] = [
+            .init(driver: .sleep,          outcome: .hrv,              lag: 1),
+            .init(driver: .sleep,          outcome: .restingHeartRate, lag: 1),
+            .init(driver: .steps,          outcome: .sleep,            lag: 0),
+            .init(driver: .activeEnergy,   outcome: .sleep,            lag: 0),
+            .init(driver: .mindfulMinutes, outcome: .hrv,              lag: 1),
+            .init(driver: .hydration,      outcome: .steps,            lag: 0),
+            .init(driver: .sleep,          outcome: .steps,            lag: 1)
+        ]
+
+        var results: [MetricCorrelation] = []
+        for c in candidates {
+            let a = series(c.driver)
+            let b = series(c.outcome)
+            guard !a.isEmpty, !b.isEmpty else { continue }
+
+            // Align: driver day i predicts outcome day i+lag. Pair only where
+            // both are valid (> 0).
+            var xs: [Double] = []
+            var ys: [Double] = []
+            let count = min(a.count, b.count)
+            for i in 0..<count {
+                let j = i + c.lag
+                guard j < b.count else { break }
+                let dv = a[i], ov = b[j]
+                if dv > 0 && ov > 0 {
+                    xs.append(dv)
+                    ys.append(ov)
+                }
+            }
+            guard xs.count >= 12 else { continue }
+            guard let r = pearson(xs, ys) else { continue }
+            guard r.isFinite, abs(r) >= 0.45 else { continue }
+
+            let insight = correlationInsight(driver: c.driver, outcome: c.outcome,
+                                             lag: c.lag, r: r, days: xs.count)
+            results.append(MetricCorrelation(
+                metricA: c.driver,
+                metricB: c.outcome,
+                lagDays: c.lag,
+                r: r,
+                sampleDays: xs.count,
+                insight: insight
+            ))
+        }
+
+        return Array(results.sorted { abs($0.r) > abs($1.r) }.prefix(3))
+    }
+
+    private static func correlationInsight(driver: HealthMetricType, outcome: HealthMetricType,
+                                           lag: Int, r: Double, days: Int) -> String {
+        let positive = r > 0
+        let rStr = String(format: "%.2f", r)
+        let nextDay = lag == 1 ? "next-day " : ""
+
+        func driverPhrase(_ m: HealthMetricType) -> String {
+            switch m {
+            case .sleep:          return "sleep more"
+            case .steps:          return "take more steps"
+            case .activeEnergy:   return "burn more energy"
+            case .mindfulMinutes: return "spend more time on mindfulness"
+            case .hydration:      return "drink more water"
+            default:              return "log more \(m.displayName.lowercased())"
+            }
+        }
+        func outcomeUp(_ m: HealthMetricType, up: Bool) -> String {
+            let dir = up ? "higher" : "lower"
+            switch m {
+            case .hrv:              return "\(nextDay)HRV tends to run \(dir)"
+            case .restingHeartRate: return "\(nextDay)resting heart rate tends to run \(dir)"
+            case .sleep:            return "\(nextDay)sleep tends to run \(dir)"
+            case .steps:            return "\(nextDay)step count tends to run \(dir)"
+            default:                return "\(nextDay)\(m.displayName.lowercased()) tends to run \(dir)"
+            }
+        }
+
+        return "Days you \(driverPhrase(driver)), \(outcomeUp(outcome, up: positive)) (r \(rStr), \(days) days)"
     }
 
     // MARK: - Recovery Readiness
@@ -784,6 +1021,29 @@ public enum PredictionEngine {
 
     private static func clamp(_ x: Double, _ lo: Double, _ hi: Double) -> Double {
         min(max(x, lo), hi)
+    }
+
+    /// Pearson correlation over paired arrays. Returns nil on size mismatch,
+    /// fewer than 2 points, or zero variance in either series (so we never
+    /// emit NaN into Codable output).
+    private static func pearson(_ xs: [Double], _ ys: [Double]) -> Double? {
+        guard xs.count == ys.count, xs.count >= 2 else { return nil }
+        let n = Double(xs.count)
+        let mx = mean(xs)
+        let my = mean(ys)
+        var cov = 0.0, vx = 0.0, vy = 0.0
+        for i in 0..<xs.count {
+            let dx = xs[i] - mx
+            let dy = ys[i] - my
+            cov += dx * dy
+            vx += dx * dx
+            vy += dy * dy
+        }
+        _ = n
+        guard vx > 1e-9, vy > 1e-9 else { return nil }
+        let r = cov / (sqrt(vx) * sqrt(vy))
+        guard r.isFinite else { return nil }
+        return clamp(r, -1.0, 1.0)
     }
 
     /// Fraction of the day that has elapsed at the given time, in [0, 1].

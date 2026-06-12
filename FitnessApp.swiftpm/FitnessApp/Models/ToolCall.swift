@@ -86,6 +86,11 @@ public enum ToolCall: Codable, Equatable {
     // generic guidance.
     case getSleepPattern
 
+    // Universal metric history read — daily values for ANY tracked HealthKit
+    // metric over the last N days (clamped to 90), bucketed one-per-day.
+    // Auto-executes; payload feeds back via functionResponse.
+    case getMetricHistory(metric: String, days: Int)
+
     public struct Stat: Codable, Equatable {
         public let label: String
         public let value: String
@@ -111,7 +116,8 @@ public enum ToolCall: Codable, Equatable {
             return true
         case .showMetricChart, .showComparisonChart, .renderCard,
              .listReminders, .listCalendarEvents, .getPredictions,
-             .listFoodLog, .listWidgets, .updateNotes, .getSleepPattern:
+             .listFoodLog, .listWidgets, .updateNotes, .getSleepPattern,
+             .getMetricHistory:
             return false
         }
     }
@@ -125,6 +131,7 @@ public enum ToolCall: Codable, Equatable {
         switch self {
         case .listReminders, .listCalendarEvents, .getPredictions,
              .listFoodLog, .listWidgets, .updateNotes, .getSleepPattern,
+             .getMetricHistory,
              .showMetricChart, .showComparisonChart, .renderCard:
             return true
         default: return false
@@ -155,6 +162,7 @@ public enum ToolCall: Codable, Equatable {
         case .deleteWidget: return "delete_widget"
         case .updateNotes: return "update_notes"
         case .getSleepPattern: return "get_sleep_pattern"
+        case .getMetricHistory: return "get_metric_history"
         }
     }
 
@@ -306,6 +314,10 @@ public enum ToolCall: Codable, Equatable {
             return .updateNotes(notes: notes)
         case "get_sleep_pattern":
             return .getSleepPattern
+        case "get_metric_history":
+            guard let metric = args["metric"] as? String else { return nil }
+            let days = Int(doubleFrom(args["days"]) ?? 30)
+            return .getMetricHistory(metric: metric, days: max(1, min(days, 90)))
         default:
             return nil
         }
@@ -442,6 +454,8 @@ public enum ToolCall: Codable, Equatable {
             return ["notes": notes]
         case .getSleepPattern:
             return [:]
+        case .getMetricHistory(let metric, let days):
+            return ["metric": metric, "days": days]
         }
     }
 }
