@@ -2690,3 +2690,39 @@ MutationConfirmCard for update_goal; predictionsSummary line.
 
 Latest deployed sequence: **2740**.
 
+---
+
+## Session 44 — 2026-06-12 (Loop iteration 6: tonight's sleep forecast)
+
+### Process
+Workflow `astra-iter6-sleep-forecast`, 2 agents (Opus engine, Sonnet surfaces incl. a text-only
+predictionsFullBlock line in ChatViewModel). Zero integration errors, no repairs, no git violations.
+
+### Engine (Opus) — `computeSleepForecast`
+Stratified day-activity → next-night-sleep method (deliberately NOT regression at n≈20):
+day i features (steps/activeEnergy/kcal-load each normalized by own non-zero median, averaged)
+paired with sleep[i+1]; ≥10 valid pairs required. HIGH/LOW/MID strata at p75/p25 (≥3 pairs to use a
+stratum). Today classified by the same score only after 16:00 (before that: honest "typical day" /
+overall-median forecast). predictedHours clamped 3–12; basis sentence quotes the user's own numbers
+("After high-activity days you've averaged 6.4h vs your 7.1h median (9 nights)"). Confidence
+high/medium/low by stratum size + separation; honest nil when sleep history is empty/all-zero.
+dailyKcalLoad28 alignment handled (newest-anchored window; zero-pad without lying).
+
+### Surfaces (Sonnet)
+SleepForecastRow (moon, ~X.Xh, delta chip vs baseline) leading the EVENING and NIGHT card slots
+only; Why-sheet `.sleepForecast` kind — below-baseline → "Set an earlier bedtime reminder" +
+"Start a wind-down breathing session", else "Plan tomorrow's workout"; AI prompt shapes with
+tendency-not-promise honesty rule; one prompt-block line for Astra.
+
+### Build / deploy
+- Simulator + device **BUILD SUCCEEDED**, zero errors. Installed AND launched.
+- **databaseSequenceNumber: 2748**.
+
+### Loop state
+Engine now has SIX deterministic predictors beyond the original five outputs: illness early-warning
+(symptom-aware), correlations, periodization, goal suggestions, sleep forecast (+ the Health Meter).
+Feature ideas with clear value are thinning — iteration 7 should be a verification & hardening pass
+over the five loop-built predictors (edge cases vs real data shapes) rather than another feature.
+
+Latest deployed sequence: **2748**.
+

@@ -376,6 +376,22 @@ public struct PeriodizationStatus: Codable, Equatable {
     public init(phase: String, weekLoad: Double, baselineWeekLoad: Double, loadTrendPct: Double, recommendation: String, confidence: PredictionConfidence) { self.phase = phase; self.weekLoad = weekLoad; self.baselineWeekLoad = baselineWeekLoad; self.loadTrendPct = loadTrendPct; self.recommendation = recommendation; self.confidence = confidence }
 }
 
+// MARK: - Sleep Forecast
+
+/// Deterministic next-night sleep forecast from a stratified comparison of the
+/// user's own day-activity → next-night-sleep pairs. Deliberately NOT regression
+/// at this sample size — instead the engine buckets days into high/mid/low
+/// activity strata and reports the mean next-night sleep of the stratum today
+/// resembles. The `basis` sentence quotes the user's real historical numbers.
+public struct SleepForecast: Codable, Equatable {
+    public let predictedHours: Double
+    public let baselineHours: Double     // recent median night
+    public let deltaDriver: String       // "high load" | "low activity" | "typical day"
+    public let basis: String             // deterministic sentence quoting the user's own historical numbers
+    public let confidence: PredictionConfidence
+    public init(predictedHours: Double, baselineHours: Double, deltaDriver: String, basis: String, confidence: PredictionConfidence) { self.predictedHours = predictedHours; self.baselineHours = baselineHours; self.deltaDriver = deltaDriver; self.basis = basis; self.confidence = confidence }
+}
+
 // MARK: - Goal Suggestion
 
 /// A deterministic recommendation to raise or lower a user-configurable daily
@@ -459,6 +475,7 @@ public enum PredictionKind: String, Codable, Identifiable {
     case illness
     case correlations
     case periodization
+    case sleepForecast = "sleep_forecast"
 
     public var id: String { rawValue }
 }
@@ -513,6 +530,11 @@ public struct Predictions: Codable, Equatable {
     /// attainment. Empty when nothing clears the non-zero-day / margin gate.
     public let goalSuggestions: [GoalSuggestion]
 
+    /// On-device next-night sleep forecast from a stratified day-activity →
+    /// next-night-sleep comparison. nil when there aren't enough valid pairs or
+    /// the sleep history is all zeros — never guessed.
+    public let sleepForecast: SleepForecast?
+
     /// Lifecycle of the AI layer for UI gating.
     public let aiEnrichmentStatus: EnrichmentStatus
 
@@ -534,6 +556,7 @@ public struct Predictions: Codable, Equatable {
                 correlations: [MetricCorrelation] = [],
                 periodization: PeriodizationStatus? = nil,
                 goalSuggestions: [GoalSuggestion] = [],
+                sleepForecast: SleepForecast? = nil,
                 aiEnrichmentStatus: EnrichmentStatus = .pending,
                 insufficientHistoryDays: Int? = nil) {
         self.generatedAt = generatedAt
@@ -549,6 +572,7 @@ public struct Predictions: Codable, Equatable {
         self.correlations = correlations
         self.periodization = periodization
         self.goalSuggestions = goalSuggestions
+        self.sleepForecast = sleepForecast
         self.aiEnrichmentStatus = aiEnrichmentStatus
         self.insufficientHistoryDays = insufficientHistoryDays
     }
@@ -572,6 +596,7 @@ public struct Predictions: Codable, Equatable {
         let correlations: [MetricCorrelation]
         let periodization: PeriodizationStatus?
         let goalSuggestions: [GoalSuggestion]
+        let sleepForecast: SleepForecast?
         let aiEnrichmentStatus: EnrichmentStatus
         let insufficientHistoryDays: Int?
     }
@@ -590,6 +615,7 @@ public struct Predictions: Codable, Equatable {
             correlations: correlations,
             periodization: periodization,
             goalSuggestions: goalSuggestions,
+            sleepForecast: sleepForecast,
             aiEnrichmentStatus: aiEnrichmentStatus,
             insufficientHistoryDays: insufficientHistoryDays
         )
@@ -602,6 +628,7 @@ public struct Predictions: Codable, Equatable {
             && anomalies.isEmpty && dailyInsight == nil && actions.isEmpty
             && illnessWarning == nil && correlations.isEmpty
             && periodization == nil && goalSuggestions.isEmpty
+            && sleepForecast == nil
     }
 
     /// Return a copy with the AI layer fields swapped in (engine fields unchanged).
@@ -629,6 +656,7 @@ public struct Predictions: Codable, Equatable {
             correlations: correlations,
             periodization: periodization,
             goalSuggestions: goalSuggestions,
+            sleepForecast: sleepForecast,
             aiEnrichmentStatus: status,
             insufficientHistoryDays: insufficientHistoryDays
         )

@@ -223,6 +223,7 @@ public enum PredictionEngine {
         let correlations = computeCorrelations(snapshot: s)
         let periodization = computePeriodization(snapshot: s)
         let goalSuggestions = computeGoalSuggestions(snapshot: s)
+        let sleepForecast = computeSleepForecast(snapshot: s)
         return Predictions(
             generatedAt: s.now,
             recovery: recovery,
@@ -235,6 +236,7 @@ public enum PredictionEngine {
             correlations: correlations,
             periodization: periodization,
             goalSuggestions: goalSuggestions,
+            sleepForecast: sleepForecast,
             aiEnrichmentStatus: .pending,
             insufficientHistoryDays: nil
         )
@@ -637,6 +639,197 @@ public enum PredictionEngine {
             recommendation: recommendation,
             confidence: confidence
         )
+    }
+
+    // MARK: - Sleep Forecast
+
+    /// Next-night sleep forecast via a stratified comparison of the user's own
+    /// day-activity → next-night-sleep pairs. Deliberately NOT regression at this
+    /// sample size — instead it buckets days by a composite activity score into
+    /// HIGH / MID / LOW strata, takes each stratum's mean next-night sleep, then
+    /// classifies TODAY by the same score and reports the matched stratum's mean.
+    /// The basis sentence quotes the user's real numbers. Returns nil when there
+    /// aren't ≥ 10 valid pairs or the sleep history is all zeros — never a guess.
+    public static func computeSleepForecast(snapshot s: Snapshot) -> SleepForecast? {
+        let sleep = s.sleepHistory30
+        let steps = s.stepsHistory30
+        let energy = s.activeEnergyHistory30
+        let kcal = s.dailyKcalLoad28
+
+        // Honest nil when the sleep series is empty or all zeros.
+        guard !sleep.isEmpty, sleep.contains(where: { $0 > 0 }) else { return nil }
+
+        // Align activity series to the sleep array's newest-anchored window. All
+        // arrays are zero-filled daily oldest→newest ending today, so anchoring
+        // every series to sleep's last index keeps day i comparable across them.
+        let nDays = sleep.count
+        func aligned(_ arr: [Double]) -> [Double] {
+            guard !arr.isEmpty else { return Array(repeating: 0, count: nDays) }
+            if arr.count >= nDays { return Array(arr.suffix(nDays)) }
+            // Pad missing older days with zeros at the front (treated as invalid).
+            return Array(repeating: 0, count: nDays - arr.count) + arr
+        }
+        let stepsA = aligned(steps)
+        let energyA = aligned(energy)
+        let kcalA = aligned(kcal)
+
+        // dailyKcalLoad28 alignment check: when it carries 28 entries its last
+        // bucket is today (same anchor as the 30-day arrays). If it's empty or
+        // short, aligned() zero-pads the front, so today's load may read 0 — the
+        // composite score below tolerates that by averaging only available ratios.
+        let kcalLastIsToday = kcal.count >= nDays || kcal.count == 28
+
+        // ---------- Per-day medians for normalization (non-zero only) ----------
+        func nonZeroMedian(_ arr: [Double]) -> Double {
+            let nz = arr.filter { $0 > 0 && $0.isFinite }
+            return nz.isEmpty ? 0 : median(nz)
+        }
+        let stepsMed = nonZeroMedian(stepsA)
+        let energyMed = nonZeroMedian(energyA)
+        let kcalMed = nonZeroMedian(kcalA)
+
+        // Composite activity score for a single day: mean of available ratios
+        // (each feature normalized by its own non-zero median). nil when no
+        // feature is available that day.
+        func activityScore(steps sv: Double, energy ev: Double, kcal kv: Double) -> Double? {
+            var ratios: [Double] = []
+            if stepsMed > 0, sv > 0, sv.isFinite { ratios.append(sv / stepsMed) }
+            if energyMed > 0, ev > 0, ev.isFinite { ratios.append(ev / energyMed) }
+            if kcalMed > 0, kv > 0, kv.isFinite { ratios.append(kv / kcalMed) }
+            guard !ratios.isEmpty else { return nil }
+            let m = mean(ratios)
+            return m.isFinite ? m : nil
+        }
+
+        // ---------- Build day→next-night pairs ----------
+        // Day i activity paired with sleep[i+1] when sleep[i+1] > 0 and the day
+        // has a computable activity score. i ranges over 0..<nDays-1.
+        struct Pair { let score: Double; let nextSleep: Double }
+        var pairs: [Pair] = []
+        for i in 0..<(nDays - 1) {
+            let nextSleep = sleep[i + 1]
+            guard nextSleep > 0, nextSleep.isFinite else { continue }
+            guard let score = activityScore(steps: stepsA[i], energy: energyA[i], kcal: kcalA[i]) else { continue }
+            pairs.append(Pair(score: score, nextSleep: nextSleep))
+        }
+        guard pairs.count >= 10 else { return nil }
+
+        // ---------- Baseline: median of all valid next-night values ----------
+        let baseline = median(pairs.map { $0.nextSleep })
+        guard baseline.isFinite, baseline > 0 else { return nil }
+
+        // ---------- Strata thresholds (percentiles of pair-day scores) ----------
+        let scores = pairs.map { $0.score }
+        let p75 = percentile(scores, 0.75)
+        let p25 = percentile(scores, 0.25)
+        guard p75.isFinite, p25.isFinite else { return nil }
+
+        let highPairs = pairs.filter { $0.score >= p75 }
+        let lowPairs  = pairs.filter { $0.score <= p25 }
+        let midPairs  = pairs.filter { $0.score > p25 && $0.score < p75 }
+
+        let overallMedian = baseline
+        func stratumMean(_ ps: [Pair]) -> Double? {
+            guard ps.count >= 3 else { return nil }
+            let m = mean(ps.map { $0.nextSleep })
+            return m.isFinite ? m : nil
+        }
+        let highMean = stratumMean(highPairs)
+        let lowMean  = stratumMean(lowPairs)
+        let midMean  = stratumMean(midPairs)
+
+        // ---------- Classify TODAY ----------
+        let cal = Calendar.current
+        let nowHour = cal.component(.hour, from: s.now)
+
+        // Today's running totals normalized by the same medians. Before 16:00 we
+        // can't classify the day honestly — fall back to "typical day".
+        let todayScore: Double? = activityScore(
+            steps: s.stepsToday,
+            energy: s.activeEnergyToday,
+            kcal: kcalLastIsToday ? (kcalA.last ?? 0) : 0
+        )
+
+        let stratum: String       // "high" | "low" | "mid"
+        let deltaDriver: String
+        let matchedPairs: [Pair]
+        let predictedRaw: Double
+
+        if nowHour >= 16, let ts = todayScore {
+            if ts >= p75 {
+                stratum = "high"; deltaDriver = "high load"
+                matchedPairs = highPairs
+                predictedRaw = highMean ?? overallMedian
+            } else if ts <= p25 {
+                stratum = "low"; deltaDriver = "low activity"
+                matchedPairs = lowPairs
+                predictedRaw = lowMean ?? overallMedian
+            } else {
+                stratum = "mid"; deltaDriver = "typical day"
+                matchedPairs = midPairs
+                predictedRaw = midMean ?? overallMedian
+            }
+        } else {
+            // Too early (or no score yet) — typical day, overall median forecast.
+            stratum = "mid"; deltaDriver = "typical day"
+            matchedPairs = midPairs
+            predictedRaw = overallMedian
+        }
+
+        let predicted = clamp(predictedRaw, 3.0, 12.0)
+        guard predicted.isFinite, baseline.isFinite else { return nil }
+
+        // ---------- Basis sentence (quotes real numbers) ----------
+        let basis: String
+        let matchedCount = matchedPairs.count
+        switch stratum {
+        case "high":
+            basis = "After high-activity days you've averaged \(oneDecimal(predicted))h vs your \(oneDecimal(baseline))h median (\(matchedCount) nights)."
+        case "low":
+            basis = "After low-activity days you've averaged \(oneDecimal(predicted))h vs your \(oneDecimal(baseline))h median (\(matchedCount) nights)."
+        default:
+            if nowHour >= 16, !matchedPairs.isEmpty {
+                basis = "On typical-activity days you've averaged \(oneDecimal(predicted))h, close to your \(oneDecimal(baseline))h median (\(matchedCount) nights)."
+            } else {
+                basis = "Forecasting your \(oneDecimal(baseline))h median night from \(pairs.count) recent nights."
+            }
+        }
+
+        // ---------- Confidence ----------
+        // high: matched stratum ≥ 6 pairs AND |stratum mean - baseline| ≥ 0.4h.
+        // medium: matched stratum ≥ 3 pairs. low: otherwise — but only emit at
+        // low when ≥ 3 pairs in the matched stratum; else honest nil.
+        let usedStratumDelta = abs(predicted - baseline)
+        let confidence: PredictionConfidence
+        if matchedCount >= 6 && usedStratumDelta >= 0.4 {
+            confidence = .high
+        } else if matchedCount >= 3 {
+            confidence = .medium
+        } else {
+            // Matched stratum too thin to stand on. If we fell back to the
+            // overall median (typical day before 16:00), the whole pair set
+            // (≥ 10) backs it — emit at low. Otherwise honest nil.
+            if deltaDriver == "typical day" && pairs.count >= 10 {
+                confidence = .low
+            } else {
+                return nil
+            }
+        }
+
+        return SleepForecast(
+            predictedHours: predicted,
+            baselineHours: baseline,
+            deltaDriver: deltaDriver,
+            basis: basis,
+            confidence: confidence
+        )
+    }
+
+    /// One-decimal hours string ("6.4", "7").
+    private static func oneDecimal(_ value: Double) -> String {
+        let r = (value * 10).rounded() / 10
+        if r == r.rounded() { return "\(Int(r.rounded()))" }
+        return String(format: "%.1f", r)
     }
 
     // MARK: - Recovery Readiness

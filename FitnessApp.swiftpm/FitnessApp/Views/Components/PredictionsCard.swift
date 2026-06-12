@@ -287,6 +287,7 @@ public struct PredictionsCard: View {
                 rows.append(AnyView(CorrelationsRow(correlations: p.correlations, onWhy: { openWhy(.correlations) })))
             }
         case .evening:
+            if let sf = p.sleepForecast { rows.append(AnyView(SleepForecastRow(forecast: sf, onWhy: { openWhy(.sleepForecast) }))) }
             for t in p.trajectories.prefix(2) { rows.append(AnyView(TrajectoryRow(trajectory: t, onWhy: { openWhy(.trajectory) }))) }
             if let s = p.sedentary { rows.append(AnyView(SedentaryRow(alert: s, onWhy: { openWhy(.sedentary) }))) }
             if rows.count == 1, let r = p.recovery {
@@ -300,6 +301,7 @@ public struct PredictionsCard: View {
                 rows.append(AnyView(CorrelationsRow(correlations: p.correlations, onWhy: { openWhy(.correlations) })))
             }
         case .night:
+            if let sf = p.sleepForecast { rows.append(AnyView(SleepForecastRow(forecast: sf, onWhy: { openWhy(.sleepForecast) }))) }
             if let n = p.nextWorkout { rows.append(AnyView(NextWorkoutRow(forecast: n, onWhy: { openWhy(.nextWorkout) }))) }
             if let r = p.recovery { rows.append(AnyView(RecoveryRow(reading: r, onWhy: { openWhy(.recovery) }))) }
             if let pz = p.periodization { rows.append(AnyView(PeriodizationRow(status: pz, onWhy: { openWhy(.periodization) }))) }
@@ -1180,6 +1182,71 @@ private struct GoalSuggestionRow: View {
         HealthKitManager.shared.setGoal(suggestion.suggestedGoal, for: suggestion.metric)
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         withAnimation { applied = true }
+    }
+}
+
+// MARK: - Sleep forecast row (evening + night only)
+
+private struct SleepForecastRow: View {
+    let forecast: SleepForecast
+    let onWhy: () -> Void
+    @AppStorage("theme_mode") private var themeMode = "dark"
+    private var isDark: Bool { themeMode == "dark" }
+
+    private var deltaHours: Double { forecast.predictedHours - forecast.baselineHours }
+
+    private var deltaColor: Color { deltaHours >= 0 ? .green : .orange }
+
+    private var deltaLabel: String {
+        let sign = deltaHours >= 0 ? "+" : ""
+        return "\(sign)\(String(format: "%.1f", deltaHours))h vs baseline"
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(Color.purple.opacity(0.15))
+                    .frame(width: 36, height: 36)
+                Image(systemName: "moon.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.purple)
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text("Tonight's sleep")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.purple)
+                        .lineLimit(1)
+                    Spacer()
+                    Text(deltaLabel)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(deltaColor)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(deltaColor.opacity(0.12), in: Capsule())
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                    WhyButton(onTap: onWhy)
+                }
+                Text("~\(String(format: "%.1f", forecast.predictedHours))h")
+                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                    .foregroundColor(isDark ? .white : .black)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                Text(forecast.basis)
+                    .font(.system(size: 12, weight: .regular))
+                    .foregroundColor(isDark ? .white.opacity(0.7) : .black.opacity(0.7))
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(forecast.confidence.displayLabel.lowercased() + " confidence · " + forecast.deltaDriver)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(isDark ? .white.opacity(0.45) : .black.opacity(0.45))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
+            Spacer(minLength: 0)
+        }
     }
 }
 

@@ -438,6 +438,11 @@ public actor PredictionAIService {
             let trendSign = pz.loadTrendPct >= 0 ? "+" : ""
             lines.append("Periodization: phase=\(pz.phase) weekLoad=\(String(format: "%.0f", pz.weekLoad)) kcal baselineWeekLoad=\(String(format: "%.0f", pz.baselineWeekLoad)) kcal trend=\(trendSign)\(String(format: "%.1f", pz.loadTrendPct))% confidence=\(pz.confidence.rawValue) recommendation=\"\(pz.recommendation)\"")
         }
+        if let sf = p.sleepForecast {
+            let deltaSign = (sf.predictedHours - sf.baselineHours) >= 0 ? "+" : ""
+            let delta = String(format: "%.1f", sf.predictedHours - sf.baselineHours)
+            lines.append("Sleep forecast tonight: ~\(String(format: "%.1f", sf.predictedHours))h (\(deltaSign)\(delta)h vs \(String(format: "%.1f", sf.baselineHours))h baseline, driver=\(sf.deltaDriver), confidence=\(sf.confidence.rawValue)) — \(sf.basis)")
+        }
         if !p.goalSuggestions.isEmpty {
             let parts = p.goalSuggestions.map { s -> String in
                 let cur: String
@@ -535,6 +540,22 @@ public actor PredictionAIService {
                 """
             } else {
                 detail = "No periodization data available."
+            }
+        case .sleepForecast:
+            if let sf = p.sleepForecast {
+                let deltaSign = (sf.predictedHours - sf.baselineHours) >= 0 ? "+" : ""
+                let delta = String(format: "%.1f", sf.predictedHours - sf.baselineHours)
+                detail = """
+                Predicted tonight: \(String(format: "%.1f", sf.predictedHours))h
+                Baseline (recent median): \(String(format: "%.1f", sf.baselineHours))h
+                Delta: \(deltaSign)\(delta)h
+                Driver: \(sf.deltaDriver)
+                Basis sentence: \(sf.basis)
+                Confidence: \(sf.confidence.rawValue)
+                Method: stratified comparison — the engine buckets days by activity level (high/mid/low) and reports the mean next-night sleep of whichever stratum today most resembles. This is a tendency based on the user's own data, not a promise.
+                """
+            } else {
+                detail = "No sleep forecast available."
             }
         }
         let kindSpecificShape = whyOutputShape(for: kind)
@@ -650,6 +671,25 @@ public actor PredictionAIService {
             - Quote the sample size (overlapping days) to help the user gauge how much to trust it.
             - One concrete implication: "When your X is high one day, your Y tends to be [higher/lower] the [same/next] day — so on days when X looks strong, it may be worth [specific behaviour]."
             Close with a brief note on what to do with these patterns — not an absolute rule, but a nudge toward experimentation.
+            """
+        case .sleepForecast:
+            return """
+            SHAPE FOR SLEEP FORECAST:
+            HONESTY RULE: This is a tendency, not a guarantee. Say so once, briefly, then move on. Never claim the user will sleep a specific number of hours.
+
+            ### How the forecast was made
+            Explain the stratified method in plain English: the engine groups the user's past days into high-, mid-, and low-activity buckets, then reports the mean next-night sleep of whichever bucket today's activity level falls into. Quote the number of similar days the estimate is based on if it appears in the basis sentence. One sentence on why this is more honest than regression at small sample sizes.
+
+            ### Today's activity vs your pattern
+            Describe what "driver" means in context (high load / low activity / typical day) and how today compares to the user's norm. Quote the predicted and baseline hours with signs (e.g. "+0.4h above your usual 7.2h").
+
+            ### What affects tonight
+            Two or three short bullets on the levers most likely to move tonight's sleep in either direction — e.g. screen time, caffeine cutoff, room temperature, training timing. Keep them personal and concrete, not generic wellness clichés.
+
+            ### How to use this number
+            One pragmatic sentence: what to do with this forecast if it's above baseline (e.g. lean into it, plan something demanding tomorrow) vs below (e.g. start wind-down earlier).
+
+            End with one `Next:` line: the single most effective thing to do in the next 30 minutes to support the best possible sleep tonight.
             """
         case .periodization:
             return """

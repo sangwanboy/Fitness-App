@@ -684,6 +684,13 @@ public final class ChatViewModel: ObservableObject {
             lines.append("• Training phase: \(pz.phase) (week \(Int(pz.weekLoad.rounded())) vs base \(Int(pz.baselineWeekLoad.rounded())) kcal-load, \(trendSign)\(String(format: "%.0f", pz.loadTrendPct))%) — \(pz.recommendation)")
         }
 
+        // Sleep forecast (tonight's stratified estimate — evening/night only in UI but always in context)
+        if let sf = p.sleepForecast {
+            let deltaSign = (sf.predictedHours - sf.baselineHours) >= 0 ? "+" : ""
+            let delta = String(format: "%.1f", sf.predictedHours - sf.baselineHours)
+            lines.append("• Tonight's sleep forecast: ~\(String(format: "%.1f", sf.predictedHours))h vs \(String(format: "%.1f", sf.baselineHours))h baseline (\(deltaSign)\(delta)h, \(sf.deltaDriver)) — \(sf.basis)")
+        }
+
         // Deterministic goal suggestions (28-day attainment vs current goal)
         if !p.goalSuggestions.isEmpty {
             func g(_ v: Double) -> String {

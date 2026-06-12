@@ -29,6 +29,7 @@ public struct PredictionWhySheet: View {
         case .periodization:
             let phase = predictions.periodization?.phase ?? "—"
             return "Why you're in a \(phase.prefix(1).uppercased() + phase.dropFirst()) phase"
+        case .sleepForecast:  return "Tonight's sleep forecast"
         }
     }
 
@@ -42,6 +43,7 @@ public struct PredictionWhySheet: View {
         case .illness:        return "Your RHR, HRV, and sleep debt vs your own baseline"
         case .correlations:   return "How your metrics tend to influence each other"
         case .periodization:  return "Weekly load trend vs your 3-week baseline"
+        case .sleepForecast:  return "Based on your activity pattern vs similar past nights"
         }
     }
 
@@ -297,6 +299,36 @@ public struct PredictionWhySheet: View {
                     )
                 ]
             }
+        case .sleepForecast:
+            guard let sf = predictions.sleepForecast else { return [] }
+            if sf.predictedHours < sf.baselineHours {
+                return [
+                    QuickAction(
+                        icon: "bed.double.fill",
+                        color: .purple,
+                        title: "Set an earlier bedtime reminder",
+                        subtitle: "Give yourself time to reach your usual \(String(format: "%.1f", sf.baselineHours))h",
+                        prompt: "Set a reminder for me to start winding down 30 minutes earlier than usual tonight so I can try to get closer to my baseline of \(String(format: "%.1f", sf.baselineHours)) hours of sleep."
+                    ),
+                    QuickAction(
+                        icon: "waveform",
+                        color: .teal,
+                        title: "Start a wind-down breathing session",
+                        subtitle: "4-7-8 or box breathing before bed",
+                        prompt: "Start a wind-down breathing session to help me relax before bed tonight."
+                    )
+                ]
+            } else {
+                return [
+                    QuickAction(
+                        icon: "calendar.badge.plus",
+                        color: .indigo,
+                        title: "Plan tomorrow's workout",
+                        subtitle: "Good sleep ahead — make the most of it",
+                        prompt: "Tonight looks like a good sleep night based on my activity. Help me plan tomorrow's workout to take advantage of good recovery — ask me about my goals and how I'm feeling."
+                    )
+                ]
+            }
         case .healthMeter:
             guard let m = predictions.healthMeter else { return [] }
             // Surface 1-2 actions targeted at the WEAKEST sub-score.
@@ -377,6 +409,12 @@ public struct PredictionWhySheet: View {
                 return "I'm in a \(pz.phase) training phase with load trending \(trendSign)\(String(format: "%.0f", pz.loadTrendPct))% vs my 3-week average. Help me understand what this means for how I should train and recover this week — feel free to ask about my goals and upcoming events."
             }
             return "Let's review my current training phase and load trend. Help me plan this week's sessions around where I am in my cycle."
+        case .sleepForecast:
+            if let sf = predictions.sleepForecast {
+                let direction = sf.predictedHours >= sf.baselineHours ? "at or above" : "below"
+                return "My sleep forecast is ~\(String(format: "%.1f", sf.predictedHours))h tonight — \(direction) my usual \(String(format: "%.1f", sf.baselineHours))h. \(sf.basis) Help me understand what this means and what I can do tonight to optimize my sleep."
+            }
+            return "Let's talk about my sleep forecast for tonight and what I can do to make the most of my recovery."
         }
     }
 
