@@ -2878,3 +2878,37 @@ the PredictionEngine's percent-of-goal math all stay continuous and correct.
 
 Latest deployed sequence: **3004**.
 
+---
+
+## Session 49 — 2026-06-13 (Documentation: README rewrite + docs/ set)
+
+### What
+Brought the project documentation current with everything shipped since the original README (which
+predated barcode scanning, the six new predictors, widget studio, chat history, locale units, etc.).
+No app code changed — docs only.
+
+### Deliverables
+- **README.md rewritten** (orchestrator): current feature-at-a-glance, tech stack incl. Open Food
+  Facts + LocaleUnits, project structure, build/config/conventions/privacy — all linking into `docs/`.
+- **NEW `docs/` set** (6 Sonnet writers, each authoring one file from the actual source, ~3,700 lines):
+  - `docs/README.md` — index (orchestrator)
+  - `docs/ARCHITECTURE.md` — layer map, ContentView wiring, HealthKitManager single-publish pipeline,
+    engine-vs-AI split, singletons, refresh cadence, data-flow diagram
+  - `docs/FEATURES.md` — full catalog by tab with entry-point files
+  - `docs/PREDICTION_ENGINE.md` — all predictors (inputs/gating/math/confidence) + AI enrichment +
+    Snapshot/ContentSignature patterns
+  - `docs/ASTRA_AI.md` — auth, streaming + thought-signatures, ~24-tool registry, prompt assembly,
+    history persistence, token meter, safety rails
+  - `docs/DATA_AND_PRIVACY.md` — HealthKit type lists, HealthMetricType, LocaleUnits, app-scoped
+    EventKit, UserDefaults key inventory, data egress, credential handling
+  - `docs/BUILD_AND_DEPLOY.md` — XcodeGen, register_pbx.py fallback, build/install commands,
+    troubleshooting, git secret-scan protocol, conventions, multi-agent norms
+- **agents_log.md** — this entry (already current through Session 48).
+
+### Process
+Markdown files don't enter the Xcode build, so the 6 writers created new files in parallel with zero
+conflict. Each was told to read its subsystem and verify claims against current source. No build
+needed (no code change); committed + pushed.
+
+Latest deployed sequence: **3004** (unchanged — docs only).
+
