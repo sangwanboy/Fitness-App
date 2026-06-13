@@ -773,7 +773,8 @@ public final class ChatViewModel: ObservableObject {
             parts.append("weight \(String(format: "%.1f", w)) kg (latest)")
         }
         if let s = sevenDayAvg(.walkingSpeed) {
-            parts.append("walking speed \(String(format: "%.1f", s)) mi/hr avg")
+            let speedDisp = LocaleUnits.speedDisplay(fromMph: s)
+            parts.append("walking speed \(String(format: "%.1f", speedDisp.value)) \(speedDisp.unit) avg")
         }
         if let a = sevenDayAvg(.walkingAsymmetry) {
             parts.append("asymmetry \(String(format: "%.1f", a))% avg")
@@ -1315,16 +1316,30 @@ public final class ChatViewModel: ObservableObject {
         return last7Days.map { item in
             let dateStr = formatter.string(from: item.date)
             let valStr: String
+            let unitStr: String
             if type == .steps || type == .activeEnergy {
                 valStr = String(format: "%.0f", item.value)
+                unitStr = type.unit
             } else if type == .heartRate {
                 valStr = String(format: "%.0f", item.value)
+                unitStr = type.unit
             } else if type == .distance {
-                valStr = String(format: "%.2f", item.value)
+                let disp = LocaleUnits.distanceDisplay(fromMiles: item.value)
+                valStr = String(format: "%.2f", disp.value)
+                unitStr = disp.unit
+            } else if type == .walkingSpeed {
+                let disp = LocaleUnits.speedDisplay(fromMph: item.value)
+                valStr = String(format: "%.1f", disp.value)
+                unitStr = disp.unit
+            } else if type == .walkingStepLength {
+                let disp = LocaleUnits.stepLengthDisplay(fromInches: item.value)
+                valStr = String(format: "%.0f", disp.value)
+                unitStr = disp.unit
             } else {
                 valStr = String(format: "%.1f", item.value)
+                unitStr = type.unit
             }
-            return "\(dateStr): \(valStr) \(type.unit)"
+            return "\(dateStr): \(valStr) \(unitStr)"
         }.joined(separator: ", ")
     }
     
@@ -1505,7 +1520,7 @@ public final class ChatViewModel: ObservableObject {
         - Steps: \(Int(steps)) / \(Int(stepsGoal)) (\(pct(steps, stepsGoal))%)
         - Active calories: \(Int(cals)) / \(Int(calsGoal)) kcal (\(pct(cals, calsGoal))%)
         - Sleep: \(displayOr(sleepH, "%.1f")) h / \(Int(sleepGoal)) h (\(pct(sleepH, sleepGoal))%)
-        - Distance: \(displayOr(dist, "%.2f")) / \(String(format: "%.1f", distGoal)) mi
+        - Distance: \(dist > 0 ? String(format: "%.2f", LocaleUnits.distanceDisplay(fromMiles: dist).value) : "—") / \(String(format: "%.1f", LocaleUnits.distanceDisplay(fromMiles: distGoal).value)) \(LocaleUnits.distanceUnit)
         - Latest HR: \(displayOr(hrLive, "%.0f")) bpm
         - Resting HR: \(displayOr(rhr, "%.0f")) bpm
         - HRV: \(displayOr(hrv, "%.0f")) ms

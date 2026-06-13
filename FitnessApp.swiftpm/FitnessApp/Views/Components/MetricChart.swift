@@ -92,7 +92,7 @@ public struct MetricChart: View {
 
                     Spacer()
 
-                    Text("\(formattedValue(selectedPoint.value)) \(type.unit)")
+                    Text("\(formattedDisplayValue(selectedPoint.value)) \(chartDisplayUnit(for: selectedPoint.value))")
                         .font(.system(size: 14, weight: .bold, design: .rounded))
                         .foregroundColor(type.themeColor)
                 }
@@ -161,9 +161,10 @@ public struct MetricChart: View {
                         .cornerRadius(6)
 
                     case .distance:
+                        let distDisp = LocaleUnits.distanceDisplay(fromMiles: item.value)
                         AreaMark(
                             x: .value("Date", item.date),
-                            y: .value("Miles", item.value)
+                            y: .value(LocaleUnits.distanceUnit, distDisp.value)
                         )
                         .foregroundStyle(
                             LinearGradient(
@@ -176,7 +177,7 @@ public struct MetricChart: View {
 
                         LineMark(
                             x: .value("Date", item.date),
-                            y: .value("Miles", item.value)
+                            y: .value(LocaleUnits.distanceUnit, distDisp.value)
                         )
                         .foregroundStyle(type.themeColor)
                         .symbol {
@@ -276,6 +277,28 @@ public struct MetricChart: View {
             return String(format: "%.2f", value)
         default:
             return String(format: "%.0f", value)
+        }
+    }
+
+    func formattedDisplayValue(_ value: Double) -> String {
+        switch type {
+        case .distance:
+            return String(format: "%.2f", LocaleUnits.distanceDisplay(fromMiles: value).value)
+        case .walkingSpeed:
+            return String(format: "%.1f", LocaleUnits.speedDisplay(fromMph: value).value)
+        case .walkingStepLength:
+            return String(format: "%.0f", LocaleUnits.stepLengthDisplay(fromInches: value).value)
+        default:
+            return formattedValue(value)
+        }
+    }
+
+    func chartDisplayUnit(for value: Double) -> String {
+        switch type {
+        case .distance:          return LocaleUnits.distanceUnit
+        case .walkingSpeed:      return LocaleUnits.speedDisplay(fromMph: value).unit
+        case .walkingStepLength: return LocaleUnits.stepLengthDisplay(fromInches: value).unit
+        default:                 return type.unit
         }
     }
 

@@ -90,11 +90,42 @@ public struct GoalsEditorSheet: View {
 
     private func goalRow(for metric: HealthMetricType) -> some View {
         guard let range = metric.goalRange else { return AnyView(EmptyView()) }
+
+        // For .distance the slider operates in display units (km or mi) while
+        // the stored value stays in miles. Convert on read/write.
+        let sliderRange: ClosedRange<Double>
+        let sliderStep: Double
+        let displayUnit: String
+        let defaultDisplayStr: String
+
+        if metric == .distance {
+            let dispMin = LocaleUnits.distanceDisplay(fromMiles: range.min).value
+            let dispMax = LocaleUnits.distanceDisplay(fromMiles: range.max).value
+            let dispStep = LocaleUnits.usesMetric ? 1.0 : range.step
+            sliderRange = dispMin...dispMax
+            sliderStep = dispStep
+            displayUnit = LocaleUnits.distanceUnit
+            let defDisp = LocaleUnits.distanceDisplay(fromMiles: metric.defaultGoal)
+            defaultDisplayStr = "\(formatted(defDisp.value, for: metric)) \(displayUnit)"
+        } else {
+            sliderRange = range.min...range.max
+            sliderStep = range.step
+            displayUnit = metric.unit
+            defaultDisplayStr = "\(formatted(metric.defaultGoal, for: metric)) \(displayUnit)"
+        }
+
         let binding = Binding<Double>(
-            get: { values[metric] ?? HealthKitManager.userGoal(for: metric) },
+            get: {
+                let stored = values[metric] ?? HealthKitManager.userGoal(for: metric)
+                if metric == .distance {
+                    return LocaleUnits.distanceDisplay(fromMiles: stored).value
+                }
+                return stored
+            },
             set: { newVal in
-                values[metric] = newVal
-                hk.setGoal(newVal, for: metric)
+                let storeVal = metric == .distance ? LocaleUnits.milesFromDisplay(newVal) : newVal
+                values[metric] = storeVal
+                hk.setGoal(storeVal, for: metric)
             }
         )
         let isOverride = HealthKitManager.userGoal(for: metric) != metric.defaultGoal
@@ -114,7 +145,7 @@ public struct GoalsEditorSheet: View {
                         Text(metric.displayName)
                             .font(.system(size: 15, weight: .semibold))
                             .foregroundColor(isDark ? .white : .black)
-                        Text("Default: \(formatted(metric.defaultGoal, for: metric)) \(metric.unit)")
+                        Text("Default: \(defaultDisplayStr)")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundColor(isDark ? .white.opacity(0.45) : .black.opacity(0.45))
                     }
@@ -122,12 +153,12 @@ public struct GoalsEditorSheet: View {
                     Text("\(formatted(binding.wrappedValue, for: metric))")
                         .font(.system(size: 16, weight: .bold, design: .rounded))
                         .foregroundColor(metric.themeColor)
-                    Text(metric.unit)
+                    Text(displayUnit)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(isDark ? .white.opacity(0.5) : .black.opacity(0.5))
                 }
 
-                Slider(value: binding, in: range.min...range.max, step: range.step)
+                Slider(value: binding, in: sliderRange, step: sliderStep)
                     .tint(metric.themeColor)
 
                 if isOverride {

@@ -2845,3 +2845,36 @@ neutral 14). 8 confirmed defects fixed (10 refuted):
 
 Latest deployed sequence: **2844**.
 
+---
+
+## Session 48 — 2026-06-13 (Locale-aware distance/speed units — km for UK/metric)
+
+### Context
+User confirmed UK. Distance rendered in MILES app-wide (HealthMetricType.distance.unit = "mi",
+all displays hardcoded). The `Locale.measurementSystem` check existed but only fed Astra's text,
+never the UI. (Week-start was already correct — ISO-8601 fix shipped seq 2844.)
+
+### Design (frozen contract, 1 Sonnet enumerate → Opus core + Sonnet views)
+41 unit sites enumerated. New `LocaleUnits` enum in HealthMetric.swift: `distanceDisplay(fromMiles:)`
+→ km for metric (×1.60934), `milesFromDisplay` inverse, `speedDisplay(fromMph:)` → km/h,
+`stepLengthDisplay(fromInches:)` → cm; imperial passes through. **STORAGE/HEALTHKIT STAY IMPERIAL** —
+only display + the goal-editor slider convert, so history, HK reads/writes, stored goal_distance, and
+the PredictionEngine's percent-of-goal math all stay continuous and correct.
+
+### Changes
+- `HealthMetric.swift`: LocaleUnits enum; HealthMetricType.unit locale-aware for distance/walkingSpeed/
+  walkingStepLength; displayValueString converts those three before formatting.
+- `HealthKitManager.swift`: AI-context measurementSystem routed through LocaleUnits + a locale-correct
+  "Daily distance avg" baseline line for Astra. No fetch/storage lines touched (still miles/.mile()).
+- Views (MetricCards DistanceCard + SimpleMetricCard, DetailedMetricView hero+weekly rows, MetricChart
+  axis+tooltip+series label, WorkoutTrackerView live HUD+summary+history rows, WorkoutAnalyticsView,
+  GoalsEditorSheet distance slider in km round-tripping through milesFromDisplay, ChatViewModel
+  distance rendering): all display via LocaleUnits. Verified no double-conversion (each raw-miles
+  value converts exactly once; displayValueString sites don't re-convert).
+
+### Build / deploy
+- Simulator + device **BUILD SUCCEEDED** first try, zero errors. Installed AND launched.
+- **databaseSequenceNumber: 3004**.
+
+Latest deployed sequence: **3004**.
+

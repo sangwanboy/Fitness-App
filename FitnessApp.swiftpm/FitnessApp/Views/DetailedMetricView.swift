@@ -73,11 +73,11 @@ public struct DetailedMetricView: View {
                             .tracking(1.5)
                         
                         HStack(alignment: .lastTextBaseline, spacing: 4) {
-                            Text(summary.displayValueString)
+                            Text(mainDisplayValueString)
                                 .font(.system(size: 64, weight: .bold, design: .rounded))
                                 .foregroundColor(isDark ? .white : .black)
-                            
-                            Text(summary.type.unit)
+
+                            Text(mainDisplayUnit)
                                 .font(.title3)
                                 .fontWeight(.medium)
                                 .foregroundColor(isDark ? .white.opacity(0.6) : .black.opacity(0.6))
@@ -156,7 +156,7 @@ public struct DetailedMetricView: View {
                             Label("Weekly Average", systemImage: "chart.bar.fill")
                                 .foregroundColor(isDark ? .white.opacity(0.8) : .black.opacity(0.8))
                             Spacer()
-                            Text("\(formattedMetricValue(weeklyAverage)) \(summary.type.unit)")
+                            Text("\(formattedDisplayValue(weeklyAverage)) \(displayUnit(for: weeklyAverage))")
                                 .fontWeight(.semibold)
                                 .foregroundColor(isDark ? .white : .black)
                         }
@@ -165,7 +165,7 @@ public struct DetailedMetricView: View {
                             Label("Weekly Peak", systemImage: "arrow.up.right.circle.fill")
                                 .foregroundColor(isDark ? .white.opacity(0.8) : .black.opacity(0.8))
                             Spacer()
-                            Text("\(formattedMetricValue(weeklyPeak)) \(summary.type.unit)")
+                            Text("\(formattedDisplayValue(weeklyPeak)) \(displayUnit(for: weeklyPeak))")
                                 .fontWeight(.semibold)
                                 .foregroundColor(isDark ? .white : .black)
                         }
@@ -259,6 +259,57 @@ public struct DetailedMetricView: View {
             return String(format: "%.2f", value)
         default:
             return String(format: "%.0f", value)
+        }
+    }
+
+    /// Locale-aware display value string for the main hero stat.
+    private var mainDisplayValueString: String {
+        switch summary.type {
+        case .distance:
+            let d = LocaleUnits.distanceDisplay(fromMiles: summary.currentValue)
+            return summary.currentValue > 0 ? String(format: "%.2f", d.value) : "—"
+        case .walkingSpeed:
+            let d = LocaleUnits.speedDisplay(fromMph: summary.currentValue)
+            return summary.currentValue > 0 ? String(format: "%.1f", d.value) : "—"
+        case .walkingStepLength:
+            let d = LocaleUnits.stepLengthDisplay(fromInches: summary.currentValue)
+            return summary.currentValue > 0 ? String(format: "%.0f", d.value) : "—"
+        default:
+            return summary.displayValueString
+        }
+    }
+
+    /// Locale-aware unit string for the main hero stat.
+    private var mainDisplayUnit: String {
+        switch summary.type {
+        case .distance:      return LocaleUnits.distanceUnit
+        case .walkingSpeed:  return LocaleUnits.speedDisplay(fromMph: summary.currentValue).unit
+        case .walkingStepLength: return LocaleUnits.stepLengthDisplay(fromInches: summary.currentValue).unit
+        default:             return summary.type.unit
+        }
+    }
+
+    /// Locale-aware formatted value for historical stats (avg / peak).
+    private func formattedDisplayValue(_ value: Double) -> String {
+        switch summary.type {
+        case .distance:
+            return String(format: "%.2f", LocaleUnits.distanceDisplay(fromMiles: value).value)
+        case .walkingSpeed:
+            return String(format: "%.1f", LocaleUnits.speedDisplay(fromMph: value).value)
+        case .walkingStepLength:
+            return String(format: "%.0f", LocaleUnits.stepLengthDisplay(fromInches: value).value)
+        default:
+            return formattedMetricValue(value)
+        }
+    }
+
+    /// Locale-aware unit for historical stats.
+    private func displayUnit(for value: Double) -> String {
+        switch summary.type {
+        case .distance:          return LocaleUnits.distanceUnit
+        case .walkingSpeed:      return LocaleUnits.speedDisplay(fromMph: value).unit
+        case .walkingStepLength: return LocaleUnits.stepLengthDisplay(fromInches: value).unit
+        default:                 return summary.type.unit
         }
     }
     

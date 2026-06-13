@@ -225,16 +225,17 @@ public struct WorkoutTrackerView: View {
                                 
                                 // Distance
                                 if selectedWorkoutType != .strength {
+                                    let distDisp = LocaleUnits.distanceDisplay(fromMiles: estimatedDistance)
                                     VStack(spacing: 4) {
                                         Text("DISTANCE")
                                             .font(.system(size: 9, weight: .bold))
                                             .foregroundColor(isDark ? .white.opacity(0.5) : .black.opacity(0.5))
                                         HStack(alignment: .lastTextBaseline, spacing: 2) {
-                                            Text(String(format: "%.2f", estimatedDistance))
+                                            Text(String(format: "%.2f", distDisp.value))
                                                 .font(.title2)
                                                 .fontWeight(.bold)
                                                 .foregroundColor(.green)
-                                            Text("mi")
+                                            Text(distDisp.unit)
                                                 .font(.caption2)
                                                 .foregroundColor(isDark ? .white.opacity(0.6) : .black.opacity(0.6))
                                         }
@@ -443,7 +444,8 @@ public struct WorkoutTrackerView: View {
 
     private func workoutDistanceLabel(_ w: HKWorkout) -> String? {
         guard let d = w.totalDistance?.doubleValue(for: .mile()), d > 0 else { return nil }
-        return String(format: "%.1f mi", d)
+        let disp = LocaleUnits.distanceDisplay(fromMiles: d)
+        return String(format: "%.1f \(disp.unit)", disp.value)
     }
     
     private func startWorkout() {
@@ -723,7 +725,8 @@ struct WorkoutSummaryView: View {
                     HStack(spacing: 12) {
                         SummaryStatTile(title: "Calories", value: String(format: "%.0f kcal", calories), icon: "flame.fill", color: .orange, isDark: isDark)
                         if type != .strength {
-                            SummaryStatTile(title: "Distance", value: String(format: "%.2f mi", distance), icon: "figure.walk", color: .green, isDark: isDark)
+                            let distDisp = LocaleUnits.distanceDisplay(fromMiles: distance)
+                            SummaryStatTile(title: "Distance", value: String(format: "%.2f \(distDisp.unit)", distDisp.value), icon: "figure.walk", color: .green, isDark: isDark)
                         } else {
                             // Strength has no distance — show intensity derived
                             // from real HR, or an honest "—" if none was recorded.

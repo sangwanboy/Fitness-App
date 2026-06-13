@@ -1,5 +1,38 @@
 import SwiftUI
 
+/// Locale-aware DISPLAY conversions. Storage / HealthKit / stored goals stay
+/// imperial everywhere (miles, mi/hr, inches) for history + cross-app
+/// consistency; these helpers convert ONLY for on-screen display and for the
+/// goal-editor slider (which reads/writes the stored imperial value through
+/// `milesFromDisplay`). For a UK (metric) user distance shows km, walking
+/// speed km/h, step length cm.
+public enum LocaleUnits {
+    public static var usesMetric: Bool { Locale.current.measurementSystem == .metric }
+
+    // MARK: Distance (stored in miles)
+    public static func distanceDisplay(fromMiles miles: Double) -> (value: Double, unit: String) {
+        usesMetric ? (miles * 1.60934, "km") : (miles, "mi")
+    }
+    /// Inverse of `distanceDisplay` — converts a slider/display value back to
+    /// the stored miles value. Metric input is km; imperial input is already miles.
+    public static func milesFromDisplay(_ v: Double) -> Double {
+        usesMetric ? v / 1.60934 : v
+    }
+    public static var distanceUnit: String { usesMetric ? "km" : "mi" }
+
+    // MARK: Walking speed (stored in mi/hr)
+    public static func speedDisplay(fromMph mph: Double) -> (value: Double, unit: String) {
+        usesMetric ? (mph * 1.60934, "km/h") : (mph, "mi/hr")
+    }
+    public static var speedUnit: String { usesMetric ? "km/h" : "mi/hr" }
+
+    // MARK: Walking step length (stored in inches)
+    public static func stepLengthDisplay(fromInches inches: Double) -> (value: Double, unit: String) {
+        usesMetric ? (inches * 2.54, "cm") : (inches, "in")
+    }
+    public static var stepLengthUnit: String { usesMetric ? "cm" : "in" }
+}
+
 public enum HealthMetricType: String, CaseIterable, Identifiable {
     // Always-on tiles
     case steps
@@ -88,7 +121,7 @@ public enum HealthMetricType: String, CaseIterable, Identifiable {
         case .heartRate: return "bpm"
         case .activeEnergy: return "kcal"
         case .sleep: return "hrs"
-        case .distance: return "mi"
+        case .distance: return LocaleUnits.distanceUnit
         case .hrv: return "ms"
         case .hydration: return "L"
         case .restingHeartRate: return "bpm"
@@ -100,8 +133,8 @@ public enum HealthMetricType: String, CaseIterable, Identifiable {
         case .oxygenSaturation: return "%"
         case .vo2Max: return "ml/kg·min"
         case .restingEnergy: return "kcal"
-        case .walkingSpeed: return "mi/hr"
-        case .walkingStepLength: return "in"
+        case .walkingSpeed: return LocaleUnits.speedUnit
+        case .walkingStepLength: return LocaleUnits.stepLengthUnit
         case .walkingDoubleSupport: return "%"
         case .walkingAsymmetry: return "%"
         case .headphoneAudio: return "dB"
@@ -267,12 +300,21 @@ public struct MetricSummary: Identifiable, Equatable {
         switch type {
         case .steps, .heartRate, .activeEnergy, .hrv, .restingHeartRate,
              .flightsClimbed, .exerciseMinutes, .standHours, .mindfulMinutes,
-             .oxygenSaturation, .restingEnergy, .walkingStepLength, .headphoneAudio:
+             .oxygenSaturation, .restingEnergy, .headphoneAudio:
             return String(format: "%.0f", currentValue)
-        case .sleep, .hydration, .vo2Max, .walkingSpeed,
+        case .walkingStepLength:
+            // Stored in inches; metric region shows cm (whole number).
+            return String(format: "%.0f", LocaleUnits.stepLengthDisplay(fromInches: currentValue).value)
+        case .sleep, .hydration, .vo2Max,
              .walkingDoubleSupport, .walkingAsymmetry:
             return String(format: "%.1f", currentValue)
-        case .distance, .bodyMass:
+        case .walkingSpeed:
+            // Stored in mi/hr; metric region shows km/h.
+            return String(format: "%.1f", LocaleUnits.speedDisplay(fromMph: currentValue).value)
+        case .distance:
+            // Stored in miles; metric region shows km. 2 decimals like mi.
+            return String(format: "%.2f", LocaleUnits.distanceDisplay(fromMiles: currentValue).value)
+        case .bodyMass:
             return String(format: "%.2f", currentValue)
         }
     }

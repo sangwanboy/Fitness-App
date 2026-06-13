@@ -733,12 +733,14 @@ struct DistanceCard: View {
         let v = summary?.currentValue ?? 0
         let goal = summary?.goal ?? 5.0
         let pct = goal > 0 ? min(v / goal, 1.0) : 0
+        let disp = LocaleUnits.distanceDisplay(fromMiles: v)
+        let goalDisp = LocaleUnits.distanceDisplay(fromMiles: goal)
         return Button(action: { tapped.toggle(); action() }) {
             VStack(alignment: .leading, spacing: 10) {
                 MetricHeaderValue(isWide: isWide, icon: "arrow.triangle.turn.up.right.diamond.fill", title: "Distance", color: .green,
-                                  value: v > 0 ? String(format: "%.2f", v) : "—",
-                                  unit: v > 0 ? "MI" : nil,
-                                  caption: v > 0 ? "Goal \(String(format: "%.1f", goal)) mi" : "Walk + run combined",
+                                  value: v > 0 ? String(format: "%.2f", disp.value) : "—",
+                                  unit: v > 0 ? disp.unit.uppercased() : nil,
+                                  caption: v > 0 ? "Goal \(String(format: "%.1f", goalDisp.value)) \(goalDisp.unit)" : "Walk + run combined",
                                   valueColor: .green)
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
@@ -947,12 +949,25 @@ struct SimpleMetricCard: View {
     private var displayValue: String {
         guard hasData else { return "—" }
         switch type {
+        case .walkingSpeed:
+            return String(format: "%.1f", LocaleUnits.speedDisplay(fromMph: value).value)
+        case .walkingStepLength:
+            return String(format: "%.0f", LocaleUnits.stepLengthDisplay(fromInches: value).value)
         case .bodyMass, .vo2Max,
-             .walkingSpeed, .walkingDoubleSupport, .walkingAsymmetry:
+             .walkingDoubleSupport, .walkingAsymmetry:
             return String(format: "%.1f", value)
-        case .oxygenSaturation, .restingEnergy, .walkingStepLength, .headphoneAudio:
+        case .oxygenSaturation, .restingEnergy, .headphoneAudio:
             return String(format: "%.0f", value)
         default: return String(format: "%.0f", value)
+        }
+    }
+
+    private var displayUnit: String {
+        switch type {
+        case .walkingSpeed:      return LocaleUnits.speedDisplay(fromMph: value).unit
+        case .walkingStepLength: return LocaleUnits.stepLengthDisplay(fromInches: value).unit
+        case .distance:          return LocaleUnits.distanceUnit
+        default:                 return type.unit
         }
     }
 
@@ -979,7 +994,7 @@ struct SimpleMetricCard: View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 10) {
                 MetricHeaderValue(isWide: isWide, icon: type.icon, title: type.displayName, color: type.themeColor,
-                                  value: displayValue, unit: hasData ? type.unit : nil,
+                                  value: displayValue, unit: hasData ? displayUnit : nil,
                                   caption: caption, valueColor: type.themeColor)
                 if !isWide { Spacer(minLength: 0) }
             }

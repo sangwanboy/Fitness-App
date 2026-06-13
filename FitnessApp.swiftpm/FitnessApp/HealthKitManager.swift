@@ -1542,7 +1542,7 @@ public final class HealthKitManager: ObservableObject {
             default: return "—"
             }
         }()
-        let useMetric = Locale.current.measurementSystem == .metric
+        let useMetric = LocaleUnits.usesMetric
         let unitsLabel = useMetric ? "metric" : "imperial"
         let tz = TimeZone.current.identifier
 
@@ -1572,6 +1572,10 @@ public final class HealthKitManager: ObservableObject {
         let sleepAvg = mean(last7(.sleep))
         let rhrAvg = mean(last7(.restingHeartRate))
         let hrvAvg = mean(last7(.hrv))
+        // Distance baseline is fetched/stored in miles; convert to the user's
+        // display units so Astra speaks km to a metric (UK) user.
+        let distAvgMiles = mean(last7(.distance))
+        let distDisplay = LocaleUnits.distanceDisplay(fromMiles: distAvgMiles)
 
         return """
         USER PROFILE
@@ -1591,6 +1595,7 @@ public final class HealthKitManager: ObservableObject {
         - Sleep avg: \(String(format: "%.1f", sleepAvg)) h
         - Resting HR avg: \(rhrAvg > 0 ? String(format: "%.0f bpm", rhrAvg) : "—")
         - HRV avg: \(hrvAvg > 0 ? String(format: "%.0f ms", hrvAvg) : "—")
+        - Daily distance avg: \(distAvgMiles > 0 ? String(format: "%.2f %@", distDisplay.value, distDisplay.unit) : "—")
 
         DEVICE ATTRIBUTION RULES (CRITICAL)
         \(hasWatchClassData
