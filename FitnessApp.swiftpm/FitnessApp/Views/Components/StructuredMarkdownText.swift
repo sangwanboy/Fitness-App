@@ -17,6 +17,11 @@ struct StructuredMarkdownText: View {
     // per block — on EVERY render, which during streaming meant an O(n²)
     // re-parse storm as deltas arrived. No visual change: the parse still runs
     // on every text mutation, just not on unrelated re-renders.
+    //
+    // AttributedString(markdown:) is also pre-rendered once inside parseBlocks
+    // and stored directly in the Block enum cases, so renderBlock() never calls
+    // inline() from body — eliminating the per-render markdown parsing cost on
+    // completed bubbles during streaming.
     @State private var blocks: [Block] = []
 
     var body: some View {
@@ -30,12 +35,14 @@ struct StructuredMarkdownText: View {
     }
 
     // MARK: - Block model
+    // Text-bearing cases carry a pre-rendered AttributedString so renderBlock()
+    // never has to call AttributedString(markdown:) at body-evaluation time.
     private enum Block {
-        case heading(String)
-        case bullets([String])
-        case numbered([String])
-        case next(String)
-        case paragraph(String)
+        case heading(AttributedString)
+        case bullets([AttributedString])
+        case numbered([AttributedString])
+        case next(AttributedString)
+        case paragraph(AttributedString)
         case codeBlock(String)
         case divider
     }
@@ -59,15 +66,15 @@ struct StructuredMarkdownText: View {
         func flushParagraph() {
             if !pendingParagraph.isEmpty {
                 let joined = pendingParagraph.joined(separator: " ").trimmingCharacters(in: .whitespaces)
-                if !joined.isEmpty { result.append(.paragraph(joined)) }
+                if !joined.isEmpty { result.append(.paragraph(inline(joined))) }
                 pendingParagraph.removeAll()
             }
         }
         func flushBullets() {
-            if !pendingBullets.isEmpty { result.append(.bullets(pendingBullets)); pendingBullets.removeAll() }
+            if !pendingBullets.isEmpty { result.append(.bullets(pendingBullets.map { inline($0) })); pendingBullets.removeAll() }
         }
         func flushNumbered() {
-            if !pendingNumbered.isEmpty { result.append(.numbered(pendingNumbered)); pendingNumbered.removeAll() }
+            if !pendingNumbered.isEmpty { result.append(.numbered(pendingNumbered.map { inline($0) })); pendingNumbered.removeAll() }
         }
         func flushAll() { flushParagraph(); flushBullets(); flushNumbered() }
 
@@ -97,7 +104,7 @@ struct StructuredMarkdownText: View {
 
             // Heading: # / ## / ### (treat all alike — section header)
             if let headingText = stripHeading(line) {
-                flushAll(); result.append(.heading(headingText)); continue
+                flushAll(); result.append(.heading(inline(headingText))); continue
             }
 
             // Bullet: - or * (not **)
@@ -119,7 +126,7 @@ struct StructuredMarkdownText: View {
 
             // "Next: …" call-to-action treated as its own block.
             if let nextBody = matchNext(line) {
-                flushAll(); result.append(.next(nextBody)); continue
+                flushAll(); result.append(.next(inline(nextBody))); continue
             }
 
             // Regular paragraph line.
@@ -165,8 +172,8 @@ struct StructuredMarkdownText: View {
     @ViewBuilder
     private func renderBlock(_ block: Block) -> some View {
         switch block {
-        case .heading(let s):
-            Text(inline(s))
+        case .heading(let attr):
+            Text(attr)
                 .font(.system(size: 12, weight: .bold))
                 .foregroundColor(accentColor)
                 .textCase(.uppercase)
@@ -180,7 +187,7 @@ struct StructuredMarkdownText: View {
                         Circle().fill(accentColor)
                             .frame(width: 5, height: 5)
                             .padding(.top, 6)
-                        Text(inline(item))
+                        Text(item)
                             .font(.system(size: 15, weight: .medium, design: .rounded))
                             .foregroundColor(mutedFg)
                             .fixedSize(horizontal: false, vertical: true)
@@ -195,7 +202,7 @@ struct StructuredMarkdownText: View {
                         Text("\(i + 1).")
                             .font(.system(size: 14, weight: .bold, design: .rounded))
                             .foregroundColor(accentColor)
-                        Text(inline(item))
+                        Text(item)
                             .font(.system(size: 15, weight: .medium, design: .rounded))
                             .foregroundColor(mutedFg)
                             .fixedSize(horizontal: false, vertical: true)
@@ -203,7 +210,7 @@ struct StructuredMarkdownText: View {
                 }
             }
 
-        case .next(let s):
+        case .next(let attr):
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text("Next")
                     .font(.system(size: 11, weight: .bold))
@@ -211,15 +218,15 @@ struct StructuredMarkdownText: View {
                     .padding(.horizontal, 7).padding(.vertical, 3)
                     .background(accentColor)
                     .clipShape(Capsule())
-                Text(inline(s))
+                Text(attr)
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
                     .foregroundColor(fg)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.top, 2)
 
-        case .paragraph(let s):
-            Text(inline(s))
+        case .paragraph(let attr):
+            Text(attr)
                 .font(.system(size: 15, weight: .medium, design: .rounded))
                 .foregroundColor(fg)
                 .fixedSize(horizontal: false, vertical: true)

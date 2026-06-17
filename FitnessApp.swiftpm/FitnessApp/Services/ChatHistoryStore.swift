@@ -25,6 +25,10 @@ public final class ChatHistoryStore: ObservableObject {
     /// archived list — saving here can never duplicate an archived session.
     private static let liveKey = "chat_live_session_v1"
 
+    /// Prefix for per-message image blobs stored separately from the live-session
+    /// JSON so the text blob stays small regardless of photo count.
+    private static let liveImageKeyPrefix = "chat_live_img_"
+
     @Published public private(set) var sessions: [ChatSession] = []
 
     private init() {
@@ -85,23 +89,56 @@ public final class ChatHistoryStore: ObservableObject {
 
     /// Overwrite the live-session slot with the current conversation. Reuses
     /// the `SessionMessage` encoding; tool-card-only turns are dropped the same
-    /// way archiving drops them. Cheap (<100 messages) — safe per settled turn.
+    /// way archiving drops them.
+    ///
+    /// Image blobs are stored under separate per-UUID keys so the live-session
+    /// JSON blob stays text-only and small — encoding it is O(text) regardless
+    /// of how many photo turns the conversation contains. Stale image keys from
+    /// previous sessions are cleaned up by `clearLive()`.
     public func saveLive(messages: [ChatMessage]) {
         let persistable = messages.compactMap { SessionMessage(from: $0) }
-        guard let data = try? JSONEncoder().encode(persistable) else { return }
-        UserDefaults.standard.set(data, forKey: Self.liveKey)
+        // Build a text-only snapshot for the JSON blob; write images separately.
+        let textOnly = persistable.map { msg -> SessionMessage in
+            guard msg.imageData != nil else { return msg }
+            return SessionMessage(id: msg.id, role: msg.role, text: msg.text,
+                                  createdAt: msg.createdAt, imageData: nil)
+        }
+        guard let data = try? JSONEncoder().encode(textOnly) else { return }
+        let ud = UserDefaults.standard
+        ud.set(data, forKey: Self.liveKey)
+        // Persist each image blob under its own key (skip if unchanged / nil).
+        for msg in persistable {
+            let key = Self.liveImageKeyPrefix + msg.id.uuidString
+            if let img = msg.imageData {
+                ud.set(img, forKey: key)
+            }
+        }
     }
 
-    /// Restore the live-session slot. Empty when there's no interrupted
-    /// conversation to resume.
+    /// Restore the live-session slot, re-attaching any separately stored image
+    /// blobs. Returns an empty array when there's no interrupted conversation.
     public func loadLive() -> [SessionMessage] {
-        guard let data = UserDefaults.standard.data(forKey: Self.liveKey),
+        let ud = UserDefaults.standard
+        guard let data = ud.data(forKey: Self.liveKey),
               let decoded = try? JSONDecoder().decode([SessionMessage].self, from: data) else { return [] }
-        return decoded
+        return decoded.map { msg in
+            let key = Self.liveImageKeyPrefix + msg.id.uuidString
+            guard let img = ud.data(forKey: key) else { return msg }
+            return SessionMessage(id: msg.id, role: msg.role, text: msg.text,
+                                  createdAt: msg.createdAt, imageData: img)
+        }
     }
 
     public func clearLive() {
-        UserDefaults.standard.removeObject(forKey: Self.liveKey)
+        let ud = UserDefaults.standard
+        // Remove all per-message image blobs that belong to the current live session.
+        if let data = ud.data(forKey: Self.liveKey),
+           let decoded = try? JSONDecoder().decode([SessionMessage].self, from: data) {
+            for msg in decoded {
+                ud.removeObject(forKey: Self.liveImageKeyPrefix + msg.id.uuidString)
+            }
+        }
+        ud.removeObject(forKey: Self.liveKey)
     }
 
     // MARK: - Title derivation

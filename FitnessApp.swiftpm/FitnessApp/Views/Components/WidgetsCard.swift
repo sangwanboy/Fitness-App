@@ -829,10 +829,11 @@ private struct SparklineBlockView: View {
     @ObservedObject var hk: HealthKitManager
 
     @State private var drawProgress: CGFloat = 0
+    @State private var values: [Double] = []
 
-    private var values: [Double] {
+    private func loadValues() {
         let v = WidgetMetric.history(ref: metricRef, days: days, hk: hk)
-        return v.isEmpty ? Array(repeating: 0, count: max(days, 1)) : v
+        values = v.isEmpty ? Array(repeating: 0, count: max(days, 1)) : v
     }
 
     var body: some View {
@@ -877,7 +878,11 @@ private struct SparklineBlockView: View {
         }
         .frame(height: 36)
         .onAppear {
+            loadValues()
             withAnimation(.easeOut(duration: 0.9)) { drawProgress = 1 }
+        }
+        .onChange(of: WidgetMetric.metricType(for: metricRef).flatMap { hk.metricSummaries[$0]?.history.count }) { _, _ in
+            loadValues()
         }
     }
 }
@@ -894,28 +899,37 @@ private struct MiniBarsBlockView: View {
     private var isDark: Bool { themeMode == "dark" }
 
     @State private var heightScale: CGFloat = 0
+    @State private var values: [Double] = []
 
-    private var values: [Double] {
-        WidgetMetric.history(ref: metricRef, days: days, hk: hk)
-    }
     private var nonZero: [Double] { values.filter { $0 > 0 } }
     private var avg: Double { nonZero.isEmpty ? 0 : nonZero.reduce(0, +) / Double(nonZero.count) }
     private var maxV: Double { max(values.max() ?? 1, 1) }
 
+    private func barColor(_ v: Double) -> Color {
+        if v == 0 { return Color.gray.opacity(0.2) }
+        return (v > avg && avg > 0) ? color : color.opacity(0.55)
+    }
+    private func barHeight(_ v: Double) -> CGFloat {
+        max(2, 32 * CGFloat(v / maxV) * heightScale)
+    }
+
     var body: some View {
         HStack(alignment: .bottom, spacing: 3) {
             ForEach(Array(values.enumerated()), id: \.offset) { idx, v in
-                let frac = CGFloat(v / maxV)
-                let aboveAvg = v > avg && avg > 0
                 RoundedRectangle(cornerRadius: 2)
-                    .fill(v == 0 ? Color.gray.opacity(0.2)
-                          : (aboveAvg ? color : color.opacity(0.55)))
-                    .frame(height: max(2, 32 * frac * heightScale))
+                    .fill(barColor(v))
+                    .frame(height: barHeight(v))
                     .animation(.spring(response: 0.6, dampingFraction: 0.8).delay(Double(idx) * 0.04), value: heightScale)
             }
         }
         .frame(height: 32)
-        .onAppear { heightScale = 1 }
+        .onAppear {
+            values = WidgetMetric.history(ref: metricRef, days: days, hk: hk)
+            heightScale = 1
+        }
+        .onChange(of: WidgetMetric.metricType(for: metricRef).flatMap { hk.metricSummaries[$0]?.history.count }) { _, _ in
+            values = WidgetMetric.history(ref: metricRef, days: days, hk: hk)
+        }
     }
 }
 
@@ -934,10 +948,8 @@ private struct ComparisonBlockView: View {
     private var isDark: Bool { themeMode == "dark" }
 
     @State private var animatedScale: CGFloat = 0
+    @State private var values: [Double] = []
 
-    private var values: [Double] {
-        WidgetMetric.history(ref: metricRef, days: periodA + periodB, hk: hk)
-    }
     private var sumA: Double {
         Array(values.suffix(periodA)).reduce(0, +) / Double(max(periodA, 1))
     }
@@ -966,7 +978,13 @@ private struct ComparisonBlockView: View {
             }
         }
         .frame(height: 40)
-        .onAppear { animatedScale = 1 }
+        .onAppear {
+            values = WidgetMetric.history(ref: metricRef, days: periodA + periodB, hk: hk)
+            animatedScale = 1
+        }
+        .onChange(of: WidgetMetric.metricType(for: metricRef).flatMap { hk.metricSummaries[$0]?.history.count }) { _, _ in
+            values = WidgetMetric.history(ref: metricRef, days: periodA + periodB, hk: hk)
+        }
     }
 
     private func barPair(value: Double, label: String, emphasised: Bool) -> some View {
@@ -1000,20 +1018,15 @@ private struct DeltaBlockView: View {
     let color: Color
     @ObservedObject var hk: HealthKitManager
 
-    private var values: [Double] {
-        WidgetMetric.history(ref: metricRef, days: vsDays + 1, hk: hk)
-    }
-    private var current: Double {
-        WidgetMetric.currentValue(ref: metricRef, hk: hk) ?? values.last ?? 0
-    }
-    private var baseline: Double {
+    @State private var pct: Double = 0
+
+    private func computePct() {
+        let values = WidgetMetric.history(ref: metricRef, days: vsDays + 1, hk: hk)
+        let current = WidgetMetric.currentValue(ref: metricRef, hk: hk) ?? values.last ?? 0
         let prior = Array(values.dropLast()).filter { $0 > 0 }
-        guard !prior.isEmpty else { return 0 }
-        return prior.reduce(0, +) / Double(prior.count)
-    }
-    private var pct: Double {
-        guard baseline > 0 else { return 0 }
-        return (current - baseline) / baseline * 100
+        guard !prior.isEmpty else { pct = 0; return }
+        let baseline = prior.reduce(0, +) / Double(prior.count)
+        pct = baseline > 0 ? (current - baseline) / baseline * 100 : 0
     }
 
     var body: some View {
@@ -1033,6 +1046,10 @@ private struct DeltaBlockView: View {
             Capsule()
                 .fill((up ? Color.green : Color.red).opacity(0.12))
         )
+        .onAppear { computePct() }
+        .onChange(of: WidgetMetric.metricType(for: metricRef).flatMap { hk.metricSummaries[$0]?.history.count }) { _, _ in
+            computePct()
+        }
     }
 }
 

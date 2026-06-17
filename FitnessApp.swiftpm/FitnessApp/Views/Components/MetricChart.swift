@@ -302,16 +302,29 @@ public struct MetricChart: View {
         }
     }
 
+    private static let _fmtHRMultiDay: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "EEE MMM d, ha"; return f
+    }()
+    private static let _fmtHRIntraday: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "MMM d, h:mm a"; return f
+    }()
+    private static let _fmtYearScale: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "MMMM yyyy"; return f
+    }()
+    private static let _fmtDaily: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "EEEE, MMM d"; return f
+    }()
+
     private func formatSelectedDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
+        let formatter: DateFormatter
         if (type == .heartRate || type == .hrv) && isHRMultiDay {
-            formatter.dateFormat = "EEE MMM d, ha"
+            formatter = Self._fmtHRMultiDay
         } else if type == .heartRate || type == .hrv {
-            formatter.dateFormat = "MMM d, h:mm a"
+            formatter = Self._fmtHRIntraday
         } else if isYearScale {
-            formatter.dateFormat = "MMMM yyyy"
+            formatter = Self._fmtYearScale
         } else {
-            formatter.dateFormat = "EEEE, MMM d"
+            formatter = Self._fmtDaily
         }
         return formatter.string(from: date)
     }

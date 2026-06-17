@@ -24,11 +24,17 @@ public struct CalendarView: View {
     @State private var newEventTitle = ""
     @State private var newEventStart = Date()
     @State private var newEventEnd = Date().addingTimeInterval(3600)
+    /// Cached set of ISO week-start dates for active streak weeks.
+    /// Refreshed once when streak data changes, not recomputed per cell render.
+    @State private var cachedActiveWeekStarts: Set<Date> = []
 
     enum CalendarViewKind: String, CaseIterable { case week = "Week", month = "Month" }
 
     private var isDark: Bool { themeMode == "dark" }
     private var accentColor: Color { ThemeHelper.color(from: accentColorHex) }
+
+    /// Shared ISO 8601 calendar — allocated once, never reallocated per cell.
+    private static let isoCal = Calendar(identifier: .iso8601)
 
     public init(onBack: @escaping () -> Void,
                 onOpenWorkout: @escaping () -> Void,
@@ -70,8 +76,16 @@ public struct CalendarView: View {
             headerBar
         }
         .sheet(isPresented: $showAddSheet) { addEventSheet }
-        .task { reloadEvents() }
-        .onChange(of: selectedDate) { reloadEvents() }
+        .task {
+            reloadEventsIfNeeded(for: selectedDate)
+            cachedActiveWeekStarts = buildActiveWeekStarts()
+        }
+        .onChange(of: selectedDate) { _, newDate in
+            reloadEventsIfNeeded(for: newDate)
+        }
+        .onChange(of: streakEngine.weeklyActivity) { _, _ in
+            cachedActiveWeekStarts = buildActiveWeekStarts()
+        }
     }
 
     private var headerBar: some View {
@@ -154,6 +168,22 @@ public struct CalendarView: View {
             : Self.weekdayFormatter.string(from: selectedDate)
     }
 
+    /// Tracks the week-start of the last EK fetch so we skip refetching when
+    /// the user taps a day within the already-loaded window.
+    @State private var lastFetchedWeekStart: Date? = nil
+
+    private func reloadEventsIfNeeded(for date: Date) {
+        let cal = Calendar.current
+        let weekStart = cal.date(
+            byAdding: .day,
+            value: -(cal.component(.weekday, from: date) - cal.firstWeekday),
+            to: cal.startOfDay(for: date)
+        ) ?? cal.startOfDay(for: date)
+        guard weekStart != lastFetchedWeekStart else { return }
+        lastFetchedWeekStart = weekStart
+        reloadEvents()
+    }
+
     private func reloadEvents() {
         let cal = Calendar.current
         let start = cal.startOfDay(for: cal.date(byAdding: .day, value: -7, to: selectedDate) ?? selectedDate)
@@ -176,10 +206,10 @@ public struct CalendarView: View {
 
     // MARK: - Streak helpers
 
-    /// Active week starts from StreakEngine (start-of-day, local).
-    /// Uses ISO 8601 calendar to match StreakEngine's week bucketing.
-    private var activeWeekStarts: Set<Date> {
-        let cal = Calendar(identifier: .iso8601)
+    /// Build the set of active ISO week-start dates. Called once on appear and
+    /// once when `streakEngine.weeklyActivity` changes — not on every render.
+    private func buildActiveWeekStarts() -> Set<Date> {
+        let cal = Self.isoCal
         return Set(
             streakEngine.weeklyActivity
                 .filter { $0.isActive }
@@ -188,15 +218,13 @@ public struct CalendarView: View {
     }
 
     /// True if `date` falls within a week that counts toward the streak.
-    /// Used ONLY for the subtle background tint on month-grid cells — the
-    /// per-day flame icon was removed because this flag is week-level and would
-    /// incorrectly light all 7 days even when only 3 had workouts.
+    /// Reads from the cached set computed once per streak update, not per cell.
     private func isInStreakWeek(_ date: Date) -> Bool {
-        let cal = Calendar(identifier: .iso8601)
+        let cal = Self.isoCal
         var comps = cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
         comps.weekday = 2
         guard let monday = cal.date(from: comps) else { return false }
-        return activeWeekStarts.contains(cal.startOfDay(for: monday))
+        return cachedActiveWeekStarts.contains(cal.startOfDay(for: monday))
     }
 
     /// Flame color matching StreakCard logic.

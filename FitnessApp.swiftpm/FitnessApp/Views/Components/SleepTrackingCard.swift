@@ -13,9 +13,7 @@ public struct SleepTrackingCard: View {
     @AppStorage("sleep_snore_enabled") private var snoreEnabled = true
     private var isDark: Bool { themeMode == "dark" }
 
-    private var pattern: SleepPattern {
-        SleepPatternAnalyzer.compute(from: store.sessions)
-    }
+    @State private var pattern: SleepPattern = .empty
 
     public init(onStartTracking: @escaping () -> Void,
                 onOpenLast: @escaping (SleepSession) -> Void) {
@@ -42,6 +40,12 @@ public struct SleepTrackingCard: View {
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 22))
+        .onAppear {
+            pattern = SleepPatternAnalyzer.compute(from: store.sessions)
+        }
+        .onChange(of: store.sessions.count) { _, _ in
+            pattern = SleepPatternAnalyzer.compute(from: store.sessions)
+        }
     }
 
     /// Toggle row above the start button. Defaults to ON (snore detection).
@@ -130,10 +134,13 @@ public struct SleepTrackingCard: View {
         return "Tap to start tracking"
     }
 
+    private static let hmFormatter: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "h:mm a"; return f
+    }()
+
     private func formatHM(_ h: Int, _ m: Int) -> String {
-        let f = DateFormatter(); f.dateFormat = "h:mm a"
         var c = DateComponents(); c.hour = h; c.minute = m
-        return Calendar.current.date(from: c).map { f.string(from: $0) } ?? "\(h):\(String(format: "%02d", m))"
+        return Calendar.current.date(from: c).map { Self.hmFormatter.string(from: $0) } ?? "\(h):\(String(format: "%02d", m))"
     }
 
     private var header: some View {

@@ -13,9 +13,9 @@ public struct ContentView: View {
     @State private var didFinishInitialLoad = false
 
     @Environment(\.scenePhase) private var scenePhase
-    /// Polls HealthKit every 15s while the app is on-screen. Silent — fetchTodayData
+    /// Polls HealthKit every 60s while the app is on-screen. Silent — fetchTodayData
     /// no longer toggles any loading overlay, so this never shows a spinner.
-    private let healthSyncTimer = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
+    private let healthSyncTimer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
 
     private var isDark: Bool { themeMode == "dark" }
 
@@ -156,7 +156,7 @@ public struct ContentView: View {
 
             // Minimum brand-moment hold so the animation always reads, even when
             // data is already cached and the fetches resolve instantly.
-            let minHold: TimeInterval = 1.7
+            let minHold: TimeInterval = 0.7
             let elapsed = Date().timeIntervalSince(launchedAt)
             if elapsed < minHold {
                 try? await Task.sleep(nanoseconds: UInt64((minHold - elapsed) * 1_000_000_000))
@@ -165,7 +165,7 @@ public struct ContentView: View {
                 didFinishInitialLoad = true
             }
         }
-        // Periodic silent health-data sync every 15s while the app is on-screen.
+        // Periodic silent health-data sync every 60s while the app is on-screen.
         .onReceive(healthSyncTimer) { _ in
             guard isOnboarded, isLoggedIn, didFinishInitialLoad, scenePhase == .active else { return }
             Task { await healthKitManager.fetchTodayData() }

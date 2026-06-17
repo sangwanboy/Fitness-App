@@ -2912,3 +2912,54 @@ needed (no code change); committed + pushed.
 
 Latest deployed sequence: **3004** (unchanged — docs only).
 
+---
+
+## Session 50 — 2026-06-15 (Lag audit + fixes; signing-account blocker)
+
+### Blocker (needs the user)
+The app expired on device AND can't be rebuilt: Xcode has **no Apple ID account** logged in
+(`xcodebuild` → "No Accounts: Add a new account in Accounts settings"). A valid signing cert exists
+on the keychain for team **234JUMCBR2** (tusharsangwan83@gmail.com), but the project was pinned to
+**RM42FV53FU** whose account was dropped. Automatic provisioning can't mint a device profile without
+the account. RESOLUTION: user re-adds Apple ID in Xcode → Settings → Accounts, then rebuild with the
+matching DEVELOPMENT_TEAM. Device console capture (`devicectl --console`) also failed — control
+channel reset + the expired app couldn't launch.
+
+### Lag audit (static — didn't need the device)
+Workflow `perf-lag-audit`: 4 Sonnet lenses → Opus verification → Sonnet fixers. 12 confirmed
+(1 high, 4 medium, 7 low). Root cause of the perceptible hitch: **GoalsEditorSheet slider drag called
+`hk.setGoal` every tick, and setGoal runs `recomputePredictions()` synchronously** (full engine over
+28/30-day arrays + workout maps) while the whole dashboard behind the sheet re-rendered twice per tick
+— a regression from Session 43's "setGoal recomputes so every surface updates instantly" (right for the
+one-tap Apply, catastrophic for a continuous drag).
+
+### Fixes (11 files, simulator BUILD SUCCEEDED; 3 orchestrator repairs of agent integration errors)
+- **GoalsEditorSheet**: debounced setGoal during drag (live local slider value, commit on settle);
+  the GoalRowView extracted with display constants computed once at init.
+- **ContentView**: idle HealthKit poll 15s → 60s; splash min-hold 1.7s → 0.7s.
+- **ChatHistoryStore**: live-session save no longer JSON-encodes JPEG imageData inline — images stored
+  under per-UUID keys, re-attached on load (was encoding the full blob 3–4× per chat turn).
+- **StructuredMarkdownText**: blocks now carry pre-rendered AttributedString (markdown parsed once per
+  block at parse time, not every render).
+- **MetricChart**: static DateFormatters (was allocating per drag tick at 120 Hz).
+- **WidgetsCard**: live-data block views cache history() in @State (was O(N) per render); + orchestrator
+  repairs (optional-key subscript → flatMap on all 4 onChange; mini-bars ForEach body extracted to
+  barColor/barHeight helpers to beat the type-checker timeout).
+- **DailyChallengeCard**: dropped whole-singleton @ObservedObject hk (was re-rendering on ~8 ungated
+  publishes per poll).
+- **MetricCards**: StepsCard NumberFormatter hoisted static.
+- **SleepTrackingCard**: pattern computed once in .onAppear into @State (+ orchestrator added
+  `SleepPattern.empty` the agent assumed existed).
+- **ProgressHubView**: stagger animation runs once, not on every tab switch.
+- **CalendarView**: shared static ISO calendar + memoized active-week starts.
+
+Refuted by Opus: several "whole-singleton re-render" findings that the Session-29 equality gate already
+neutralizes (they fire once per 60s poll now, not per frame).
+
+### Status
+Perf fixes committed + pushed, verified green on the iOS Simulator. **NOT yet on device** — blocked on
+the signing account above. Latest ON-DEVICE build remains seq 3004 (now expired). Deploy + device-log
+capture pending the Apple ID restore.
+
+Latest deployed sequence: **3004** (device); perf fixes staged on `main`, awaiting signing to deploy.
+

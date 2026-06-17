@@ -91,11 +91,13 @@ public struct ProgressHubView: View {
         .navigationSubtitle(currentDateString())
         .toolbarTitleDisplayMode(.inlineLarge)
         .onAppear {
-            animateCards = true
-            Task {
-                for i in 1...6 {
-                    try? await Task.sleep(nanoseconds: 60_000_000)
-                    await MainActor.run { cardVisibleCount = i }
+            if !animateCards {
+                animateCards = true
+                Task {
+                    for i in 1...6 {
+                        try? await Task.sleep(nanoseconds: 60_000_000)
+                        await MainActor.run { cardVisibleCount = i }
+                    }
                 }
             }
             let isStale = lastRefreshed.map { Date().timeIntervalSince($0) > 300 } ?? true

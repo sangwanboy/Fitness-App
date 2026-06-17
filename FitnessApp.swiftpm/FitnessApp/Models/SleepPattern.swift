@@ -42,6 +42,19 @@ public struct SleepPattern: Codable {
 
     public var hasEnoughHistory: Bool { sessionCount >= 3 }
 
+    /// Neutral placeholder used as the initial @State value before
+    /// `SleepPatternAnalyzer.compute` runs in `.onAppear`. `hasEnoughHistory`
+    /// is false, so no pattern UI renders until real data is computed.
+    public static let empty = SleepPattern(
+        sessionCount: 0,
+        typicalBedtimeHour: nil, typicalBedtimeMinute: nil,
+        typicalWakeHour: nil, typicalWakeMinute: nil,
+        medianDurationMinutes: 0, bestDurationMinutes: 0,
+        medianRestlessness: 0, medianSnoreEpisodes: 0, medianSnoreMinutes: 0,
+        consistencyScore: 0, weekendDelayMinutes: nil, weeklyTrendMinutes: nil,
+        recentDurations: []
+    )
+
     /// One-line summary for chat / card injection. "—" when no history.
     public var summary: String {
         guard hasEnoughHistory else { return "Not enough history yet — track a few nights to unlock your pattern." }

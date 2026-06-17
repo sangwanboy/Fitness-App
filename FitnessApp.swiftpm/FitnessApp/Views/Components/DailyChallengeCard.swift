@@ -5,7 +5,6 @@ import SwiftUI
 public struct DailyChallengeCard: View {
 
     @ObservedObject private var engine = ChallengeEngine.shared
-    @ObservedObject private var hk = HealthKitManager.shared
 
     @AppStorage("accent_color") private var accentColorHex = "#30D158"
     @AppStorage("theme_mode") private var themeMode = "dark"
@@ -160,8 +159,8 @@ public struct DailyChallengeCard: View {
     }
 
     private func progressLabel(challenge: Challenge, color: Color) -> some View {
-        let current = hk.metricSummaries[challenge.metric]?.currentValue ?? 0
         let target = challenge.targetValue
+        let current = engine.progress * target
         let unit = challenge.metric.unit
         let isComplete = engine.progress >= 1.0
 

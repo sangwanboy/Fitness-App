@@ -315,6 +315,10 @@ struct StepsCard: View {
     private var isDark: Bool { themeMode == "dark" }
     @State private var tapped = false
 
+    private static let stepsFormatter: NumberFormatter = {
+        let f = NumberFormatter(); f.numberStyle = .decimal; return f
+    }()
+
     var body: some View {
         let value = summary?.currentValue ?? 0
         let pct = Int((summary?.percentComplete ?? 0) * 100)
@@ -343,8 +347,7 @@ struct StepsCard: View {
 
     private func formatSteps(_ v: Double) -> String {
         guard v > 0 else { return "—" }
-        let f = NumberFormatter(); f.numberStyle = .decimal
-        return f.string(from: NSNumber(value: Int(v))) ?? "\(Int(v))"
+        return Self.stepsFormatter.string(from: NSNumber(value: Int(v))) ?? "\(Int(v))"
     }
 }
 
