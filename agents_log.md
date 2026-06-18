@@ -2963,3 +2963,38 @@ capture pending the Apple ID restore.
 
 Latest deployed sequence: **3004** (device); perf fixes staged on `main`, awaiting signing to deploy.
 
+---
+
+## Session 51 — 2026-06-19 (Signing restored; perf fixes + breathing animation enhancement deployed)
+
+### Signing unblocked
+User re-added their Apple ID in Xcode → Accounts. Team **RM42FV53FU** ("Tushar Sangwan Personal
+Team", free provisioning) reappeared in `IDEProvisioningTeamByIdentifier`; build signed with the
+`tusharsangwan83@gmail.com (234JUMCBR2)` Apple Development identity. First device launch was blocked
+by the untrusted-profile gate (FBSOpenApplicationErrorDomain 3) until the user trusted it on-device
+(Settings → General → VPN & Device Management → Trust). After trust, launch succeeded.
+
+### Deployed
+- The Session-50 **perf fix wave** (goal-slider debounce + 11-file render cleanup) reached the device
+  — expiry cleared. Build **seq 3488** (first signed rebuild), then **seq 3496** with the breathing work.
+
+### Breathing animation enhancement (Opus, `GuidedBreathingView.swift` only)
+Five additive layers on top of the Session-31 system, no change to session/phase timing, every motion
+layer reduce-motion gated:
+1. **PhaseProgressRing** — thin tinted ring hugging the orb, fills 0→1 on inhale / drains on exhale /
+   holds during holds; isolated leaf view so its 20 Hz `phaseProgress` ticks don't re-render the orb
+   (preserves Session 31 perf). Still fills under reduce-motion (informational, non-vestibular).
+2. **Phase color journey** — orb/halo hue cross-fades calm teal (inhale) → indigo (hold) → warm dusk
+   (exhale) via a new alpha-aware `Color.blended(toward:fraction:)`.
+3. **AmbientBloomField** — TimelineView+Canvas, 9 heavily-blurred low-opacity specks drifting and
+   breathing with `orbScale`; gated behind `!reduceMotion && isRunning`.
+4. **Easing polish** — per-phase `timingCurve` (snappier inhale draw, longer exhale settle); durations
+   unchanged.
+5. **Completion flourish** — one-shot radial bloom on session end; opacity-only under reduce-motion.
+
+### Build / deploy
+- Simulator + device **BUILD SUCCEEDED**, zero errors. Installed AND launched (profile trusted).
+- **databaseSequenceNumber: 3496**.
+
+Latest deployed sequence: **3496**.
+

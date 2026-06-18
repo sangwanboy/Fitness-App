@@ -23,6 +23,11 @@ public struct GuidedBreathingView: View {
     @State private var orbScale: CGFloat = 0.7
     @State private var rippleTrigger: Int = 0   // increment to fire a ripple burst
 
+    // Phase color journey — cross-faded across phases, never hard-cut.
+    @State private var phaseTint: Color = .clear
+    // One-shot completion flourish: brief calm bloom when a session ends.
+    @State private var completionBloom: Double = 0
+
     private var isDark: Bool { themeMode == "dark" }
     private var accentColor: Color { ThemeHelper.color(from: accentColorHex) }
 
@@ -165,10 +170,23 @@ public struct GuidedBreathingView: View {
 
     private var breathingCircle: some View {
         let proto = manager.isRunning ? manager.selectedProtocol : selectedProtocol
-        let color = proto.color
+        let baseColor = proto.color
         let phase = manager.isRunning ? manager.currentPhase : .inhale
+        // Color journey: blend the protocol color toward the current phase's hue.
+        // phaseTint cross-fades via withAnimation in .onChange(of: phase).
+        let color = manager.isRunning
+            ? baseColor.blended(toward: phaseTint, fraction: 0.5)
+            : baseColor
 
         return ZStack {
+            // ── Ambient bloom field: faint slow-drifting dots behind the orb that
+            // expand on inhale / contract on exhale (reuses orbScale). Motion-gated. ──
+            if !reduceMotion && manager.isRunning {
+                AmbientBloomField(color: color, breath: orbScale)
+                    .frame(width: 300, height: 300)
+                    .allowsHitTesting(false)
+            }
+
             // ── Ripple rings (inhale only, not shown when reduce-motion is on) ──
             if !reduceMotion && manager.isRunning {
                 ForEach(0..<3, id: \.self) { i in
@@ -242,6 +260,32 @@ public struct GuidedBreathingView: View {
             }
             .scaleEffect(orbScale)
 
+            // ── Completion flourish: a one-shot calm bloom on session end. ──
+            if completionBloom > 0 {
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [color.opacity(0.45), color.opacity(0.12), .clear],
+                            center: .center,
+                            startRadius: 30,
+                            endRadius: 150
+                        )
+                    )
+                    .frame(width: 210, height: 210)
+                    .blur(radius: 14)
+                    .scaleEffect(reduceMotion ? 1.0 : (1.0 + completionBloom * 0.6))
+                    .opacity(completionBloom)
+                    .allowsHitTesting(false)
+            }
+
+            // ── Phase-synced progress ring: hugs the orb and fills over each phase's
+            // duration (inhale 0→1, exhale 1→0, holds steady) so the user can SEE how
+            // long to keep breathing. Informational, so it fills even under reduce-motion.
+            // Isolated as a leaf so its 20 Hz phaseProgress ticks don't invalidate the orb. ──
+            if manager.isRunning {
+                PhaseProgressRing(manager: manager, color: color)
+            }
+
             // ── Inner content: phase icon + label + countdown ──
             // Countdown is isolated in BreathingCountdownView so phaseProgress
             // ticks (20 Hz) only re-evaluate that leaf node, not the whole orb.
@@ -292,29 +336,136 @@ public struct GuidedBreathingView: View {
             case .hold2:
                 dur = manager.selectedProtocol.activePhases.first(where: { $0.phase == .hold2 })?.duration ?? 2
             }
-            let spring: Animation = {
+            // Inhale = a gentle accelerating draw (snappier rise); exhale = a long
+            // settling release (extended easeOut); holds breathe to a calm rest.
+            let breathAnim: Animation = {
                 switch newPhase {
-                case .inhale:  return .spring(response: dur * 0.85, dampingFraction: 0.72)
+                case .inhale:  return .timingCurve(0.32, 0, 0.34, 1, duration: dur * 0.92)
                 case .hold1, .hold2: return .spring(response: 0.55, dampingFraction: 0.85)
-                case .exhale:  return .spring(response: dur * 0.88, dampingFraction: 0.68)
+                case .exhale:  return .timingCurve(0.22, 0.04, 0.18, 1, duration: dur * 0.96)
                 }
             }()
             let target: CGFloat = (newPhase == .inhale || newPhase == .hold1) ? 1.0 : 0.6
-            withAnimation(spring) { orbScale = target }
+            withAnimation(breathAnim) { orbScale = target }
+            // Color journey — cross-fade the orb/halo hue toward the phase tint.
+            withAnimation(.easeInOut(duration: min(dur, 1.6))) {
+                phaseTint = Self.tint(for: newPhase)
+            }
             if newPhase == .inhale && !reduceMotion { rippleTrigger += 1 }
         }
         .onChange(of: manager.isRunning) { _, running in
             if running {
                 // Session just started — set initial scale for the first inhale
                 withAnimation(.spring(response: 0.5, dampingFraction: 0.78)) { orbScale = 0.62 }
+                phaseTint = Self.tint(for: manager.currentPhase)
             } else {
-                withAnimation(.spring(response: 0.6, dampingFraction: 0.85)) { orbScale = 0.7 }
+                // Completion moment — a brief calm bloom that blossoms then settles.
+                completionBloom = 0
+                withAnimation(.easeOut(duration: 0.5)) { completionBloom = 1 }
+                withAnimation(.easeInOut(duration: 1.4).delay(0.45)) { completionBloom = 0 }
+                withAnimation(.spring(response: 0.7, dampingFraction: 0.85)) { orbScale = 0.7 }
             }
         }
         .onAppear {
             orbScale = manager.isRunning
                 ? ((manager.currentPhase == .inhale || manager.currentPhase == .hold1) ? 1.0 : 0.6)
                 : 0.7
+            phaseTint = manager.isRunning ? Self.tint(for: manager.currentPhase) : .clear
+        }
+    }
+
+    // MARK: - Phase color journey
+
+    /// Hue each phase is guided toward: calm teal/blue inhale → soft indigo hold
+    /// → warm dusk exhale. Blended with the protocol color, never replacing it.
+    private static func tint(for phase: BreathPhase) -> Color {
+        switch phase {
+        case .inhale: return Color(red: 0.20, green: 0.78, blue: 0.82)   // calm teal
+        case .hold1:  return Color(red: 0.42, green: 0.40, blue: 0.86)   // soft indigo
+        case .exhale: return Color(red: 0.95, green: 0.55, blue: 0.42)   // warm dusk
+        case .hold2:  return Color(red: 0.42, green: 0.40, blue: 0.86)   // soft indigo
+        }
+    }
+
+    // MARK: - Phase Progress Ring (leaf)
+
+    /// Thin ring hugging the orb. Fills 0→1 over an inhale, drains 1→0 over an exhale,
+    /// holds steady during holds — so the user sees how long to keep breathing.
+    /// Observes the manager directly and is a leaf, so its 20 Hz phaseProgress ticks
+    /// only invalidate this node (mirrors BreathingCountdownView's isolation).
+    private struct PhaseProgressRing: View {
+        @ObservedObject var manager: BreathingSessionManager
+        let color: Color
+
+        /// 0→1 fill amount for the ring, shaped by the current phase.
+        private var fill: Double {
+            let p = manager.phaseProgress
+            switch manager.currentPhase {
+            case .inhale: return p            // draw in
+            case .hold1:  return 1.0          // held full
+            case .exhale: return 1.0 - p      // settle out
+            case .hold2:  return 0.0          // held empty
+            }
+        }
+
+        var body: some View {
+            ZStack {
+                Circle()
+                    .stroke(color.opacity(0.12), lineWidth: 3)
+                Circle()
+                    .trim(from: 0, to: fill)
+                    .stroke(
+                        color.opacity(0.85),
+                        style: StrokeStyle(lineWidth: 3, lineCap: .round)
+                    )
+                    .rotationEffect(.degrees(-90))
+            }
+            .frame(width: 232, height: 232)
+            .allowsHitTesting(false)
+        }
+    }
+
+    // MARK: - Ambient Bloom Field (leaf)
+
+    /// A faint, low-density set of slow-drifting soft dots behind the orb. Reuses the
+    /// shared `breath` (orbScale) so the whole field gently expands on inhale and
+    /// contracts on exhale. GPU-light: small count, heavy blur, low opacity, Canvas.
+    private struct AmbientBloomField: View {
+        let color: Color
+        let breath: CGFloat
+
+        private struct Speck { let angle: Double; let radius: Double; let size: Double; let phase: Double }
+        private static let specks: [Speck] = (0..<9).map { i in
+            let f = Double(i)
+            return Speck(
+                angle: f * 0.698,                       // ~40° apart, irregular
+                radius: 70 + (f.truncatingRemainder(dividingBy: 3)) * 22,
+                size: 14 + (f.truncatingRemainder(dividingBy: 4)) * 5,
+                phase: f * 0.9
+            )
+        }
+
+        var body: some View {
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: false)) { ctx in
+                let t = ctx.date.timeIntervalSinceReferenceDate
+                Canvas { gc, size in
+                    let center = CGPoint(x: size.width / 2, y: size.height / 2)
+                    for s in Self.specks {
+                        // Slow orbital drift + gentle bob, scaled by the breath.
+                        let drift = sin(t * 0.18 + s.phase) * 0.16
+                        let ang = s.angle + drift
+                        let r = s.radius * Double(breath)
+                        let x = center.x + CGFloat(cos(ang) * r)
+                        let y = center.y + CGFloat(sin(ang) * r)
+                        let pulse = 0.5 + 0.5 * sin(t * 0.5 + s.phase)
+                        let d = s.size * (0.85 + 0.3 * pulse)
+                        let rect = CGRect(x: x - d / 2, y: y - d / 2, width: d, height: d)
+                        gc.opacity = 0.05 + 0.06 * pulse
+                        gc.fill(Circle().path(in: rect), with: .color(color))
+                    }
+                }
+                .blur(radius: 9)
+            }
         }
     }
 
@@ -700,5 +851,29 @@ private struct CustomRatioEditorView: View {
             }
             .tint(.orange)
         }
+    }
+}
+
+// MARK: - Color blend helper (phase color journey)
+
+private extension Color {
+    /// Linearly blends the receiver's RGB toward `target` by `fraction` (0…1).
+    /// The blend is scaled by the target's own alpha, so a `.clear` target leaves
+    /// the receiver unchanged — letting `phaseTint` start transparent before the
+    /// first phase resolves. Resolved in the sRGB space via UIColor.
+    func blended(toward target: Color, fraction: Double) -> Color {
+        let a = UIColor(self)
+        let b = UIColor(target)
+        var ar: CGFloat = 0, ag: CGFloat = 0, ab: CGFloat = 0, aa: CGFloat = 0
+        var br: CGFloat = 0, bg: CGFloat = 0, bb: CGFloat = 0, ba: CGFloat = 0
+        a.getRed(&ar, green: &ag, blue: &ab, alpha: &aa)
+        b.getRed(&br, green: &bg, blue: &bb, alpha: &ba)
+        let f = CGFloat(max(0, min(1, fraction))) * ba   // fade out when target is clear
+        return Color(
+            red:   Double(ar + (br - ar) * f),
+            green: Double(ag + (bg - ag) * f),
+            blue:  Double(ab + (bb - ab) * f),
+            opacity: Double(aa)
+        )
     }
 }
