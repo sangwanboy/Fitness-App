@@ -2998,3 +2998,55 @@ layer reduce-motion gated:
 
 Latest deployed sequence: **3496**.
 
+---
+
+## Session 52 — 2026-06-19 (Breathing review, App Store readiness assessment, dev-program status — no code change)
+
+Advisory/analysis session — no code edits, no new build. Device remains on seq **3496**. Recorded
+here because these are project-state facts a future agent needs.
+
+### Breathing animation review (user screen recording)
+Extracted frames from a 23 s screen recording (`/tmp/frames.swift` via AVFoundation — no ffmpeg on
+this Mac) and critiqued the shipped breathing orb. Verdict: **good and shippable, not yet great.**
+- WIN: the new PhaseProgressRing genuinely improves the guide (you can see how long to hold a phase).
+- WEAK / candidate refinements (OFFERED, user hasn't accepted yet):
+  1. **Orb scale barely swings between phases** — the #1 lever; the orb should grow large on inhale /
+     shrink small on exhale (~0.55→1.0) so it's the dominant motion. Currently the ring does the
+     guiding and the orb is near-static.
+  2. Color journey (teal→indigo→dusk) reads blue/indigo throughout — too subtle; commit to a real
+     warm-on-exhale shift or drop it.
+  3. The red/maroon "End Session" button fights the calm vibe — cooler/neutral glass would fit.
+  4. Orb floats in the top third with dead space below — larger, more centered would feel immersive.
+  5. Ambient bloom/particles don't read — likely too faint.
+
+### App Store readiness assessment (asked: "would it pass review as-is?")
+Verdict: **No, and it can't even be submitted yet.** App QUALITY is above bar (no mock data, every
+control acts, real functionality, native UI) — DISTRIBUTION readiness is not. Hard blockers:
+1. **Not enrolled in the paid Apple Developer Program** (see below) — step zero.
+2. **Vertex credential architecture** — service-account private key embedded/pasted + on-device JWT
+   signing. Extractable from the binary, one shared key for all users = abuse/billing risk. Must move
+   AI behind a backend proxy (the app's key never ships). This is the biggest pre-Store work item and
+   ties to the still-open GCP key rotation.
+3. **No privacy policy + no App Privacy labels** — mandatory for HealthKit; must disclose health data
+   sent to a third party (Google/Vertex).
+4. **Background audio mode for sleep mic** (`UIBackgroundModes:[audio]`) — high rejection risk (2.5.4);
+   audio bg mode is for playback, used here to stay alive for mic/accelerometer overnight.
+5. **Sign in with Apple (4.8)** likely required since Google sign-in is offered.
+6. **Medical framing (1.4.1)** — Illness Warning / Health Meter / Recovery need visible
+   "not medical advice" disclaimers on the UI surfaces (Astra's prompt already says never-diagnose).
+7. HealthKit clinical-records entitlement needs Apple approval; reviewer needs working AI access.
+OFFERED to write a full App Store readiness plan into `docs/` (backend-proxy design + compliance
+checklist) — user hasn't accepted yet.
+
+### Apple Developer Program enrollment status
+Checked the Mac's signed-in account: **free Personal Team** (`teamID RM42FV53FU`,
+`isFreeProvisioningTeam = 1`, `teamType "Personal Team"`, only an **Apple Development** cert — no
+Apple Distribution). Signed-in Apple ID is **tusharsangwan83@gmail.com**. User then said they JUST
+enrolled; re-checked — local Xcode still shows free (expected cache lag; enrollment lands on Apple's
+servers first). To sync: confirm the enrolled Apple ID matches the one in Xcode, then Xcode →
+Settings → Accounts → Download Manual Profiles (or sign out/in + restart). Enrollment is CONFIRMED
+once an **Apple Distribution** identity becomes available and `isFreeProvisioningTeam` flips to 0.
+Pending re-check.
+
+Latest deployed sequence: **3496**.
+
