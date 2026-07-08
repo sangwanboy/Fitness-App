@@ -31,8 +31,10 @@ Do this for each codebase change (in order):
    - Scan the staged diff and abort if you see any of: `BEGIN ... PRIVATE KEY`, `"private_key"`,
      `AIza...`, or a long `MII...` base64 blob.
      `git diff --cached -- '*.swift' '*.json' '*.plist' | grep -iE "PRIVATE KEY|private_key|AIza|MII[A-Za-z0-9+/]{40}"` should be empty.
-   - The real `vertex-service-account.json` lives on disk only (gitignored). The outstanding
-     action in `agents_log.md` — rotate GCP key `4d33d3bc…` for project `vertexi-ai-493516` — still stands.
+   - The real `vertex-service-account.json` lives on disk only (gitignored) and now feeds only
+     the local gateway. GCP key rotation (`4d33d3bc…`, project `vertexi-ai-493516`): **deferred
+     by the user on 2026-07-08** — keep using the existing key for now; do NOT rotate it without
+     asking. Revisit before any public/App Store release.
 2. Update `agents_log.md` (the change + the new `databaseSequenceNumber` when a build was
    deployed) and stage it alongside the code, so the log rides in the same commit.
 3. Commit with a clear Conventional-Commit message (`feat:`/`fix:`/`perf:`/`docs:`) describing the

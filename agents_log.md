@@ -3136,8 +3136,9 @@ ship-blocker #2 (Vertex credential architecture) from Session 52.**
 - Deployed to device and launched: **databaseSequenceNumber: 5544**.
 
 ### Outstanding
-- GCP key rotation `4d33d3bc…` (project `vertexi-ai-493516`) — STILL OPEN, now lower blast
-  radius (key never ships in the app).
+- GCP key rotation `4d33d3bc…` (project `vertexi-ai-493516`) — **user decided 2026-07-08 to keep
+  the existing key for now** ("use the older key for now"); lower blast radius since the key
+  never ships in the app. Do not rotate without asking; revisit before any public release.
 - No production gateway URL yet (`azd up` pending in the gateway repo) — release builds
   intentionally report "AI backend not configured".
 - Real SIWA needs the paid-team entitlement once enrollment lands (then add
