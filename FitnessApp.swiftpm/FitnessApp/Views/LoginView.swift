@@ -1,4 +1,5 @@
 import SwiftUI
+import AuthenticationServices
 
 public struct LoginView: View {
     @AppStorage("is_logged_in") private var isLoggedIn = false
@@ -6,6 +7,12 @@ public struct LoginView: View {
     @AppStorage("theme_mode") private var themeMode = "dark"
     @State private var appeared = false
     @State private var ringProgress: Double = 0
+
+    // Real gateway sign-in state
+    @State private var isSigningIn = false
+    @State private var signInError: String?
+    /// Retained for the duration of the SIWA flow (release builds).
+    @State private var appleSignIn = AppleSignInCoordinator()
 
     public init() {}
 
@@ -18,7 +25,7 @@ public struct LoginView: View {
 
             VStack {
                 Spacer()
-                
+
                 // Centered concentric activity rings logo
                 VStack(spacing: 24) {
                     ZStack {
@@ -26,7 +33,7 @@ public struct LoginView: View {
                             .fill(Color.clear)
                             .frame(width: 130, height: 130)
                             .glassEffect(.regular, in: .rect(cornerRadius: 36))
-                        
+
                         // Internal glowing gradient backing
                         RoundedRectangle(cornerRadius: 22)
                             .fill(
@@ -47,7 +54,7 @@ public struct LoginView: View {
                                     endRadius: 30
                                 )
                             )
-                        
+
                         // Rings overlay (Move / Exercise / Stand representation)
                         ZStack {
                             // Steps/Move ring
@@ -81,13 +88,13 @@ public struct LoginView: View {
                                 .rotationEffect(.degrees(-90))
                         }
                     }
-                    
+
                     VStack(spacing: 8) {
                         Text("Fitness Guru")
                             .font(.system(size: 38, weight: .bold, design: .rounded))
                             .foregroundColor(isDark ? .white : .black)
                             .tracking(-1.2)
-                        
+
                         Text("Your AI training partner. Connected to your health, calendar, and goals.")
                             .font(.system(size: 16, weight: .medium))
                             .foregroundColor(isDark ? .white.opacity(0.65) : .black.opacity(0.65))
@@ -97,60 +104,25 @@ public struct LoginView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                
+
                 Spacer()
-                
-                // Login Buttons
+
+                // Sign-in actions — every button here does real work.
                 VStack(spacing: 12) {
-                    // Get started button
-                    Button(action: {
-                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                        withAnimation { isLoggedIn = true }
-                    }) {
+                    // Continue with Apple → gateway session.
+                    // DEBUG: dev fake-auth against the local gateway.
+                    // Release: real Sign in with Apple (compiles now; succeeds
+                    // once the paid-team SIWA entitlement is added).
+                    Button(action: signInTapped) {
                         HStack(spacing: 8) {
-                            Image(systemName: "bolt.fill")
-                                .font(.system(size: 20))
-                                .accessibilityHidden(true)
-                            Text("Get started — it's free")
-                                .fontWeight(.bold)
-                        }
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 56)
-                        .background(
-                            LinearGradient(
-                                colors: [accentColor, accentColor.opacity(0.8)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .cornerRadius(16)
-                        .shadow(color: accentColor.opacity(0.4), radius: 14, x: 0, y: 6)
-                    }
-                    .padding(.horizontal, 24)
-                    
-                    HStack(spacing: 12) {
-                        Rectangle()
-                            .fill(isDark ? Color.white.opacity(0.12) : Color.black.opacity(0.08))
-                            .frame(height: 0.5)
-                        Text("OR CONTINUE WITH")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundColor(isDark ? .white.opacity(0.4) : .black.opacity(0.4))
-                            .tracking(1)
-                        Rectangle()
-                            .fill(isDark ? Color.white.opacity(0.12) : Color.black.opacity(0.08))
-                            .frame(height: 0.5)
-                    }
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 4)
-                    
-                    // Continue with Apple
-                    Button(action: {
-                        withAnimation { isLoggedIn = true }
-                    }) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "apple.logo")
-                                .font(.system(size: 18))
+                            if isSigningIn {
+                                ProgressView()
+                                    .controlSize(.small)
+                                    .tint(isDark ? .black : .white)
+                            } else {
+                                Image(systemName: "apple.logo")
+                                    .font(.system(size: 18))
+                            }
                             Text("Continue with Apple")
                                 .fontWeight(.semibold)
                         }
@@ -160,44 +132,34 @@ public struct LoginView: View {
                         .background(isDark ? Color.white : Color.black)
                         .cornerRadius(16)
                     }
-                    .padding(.horizontal, 24)
-                    
-                    // Continue with Google (native glass)
-                    Button(action: {
-                        withAnimation { isLoggedIn = true }
-                    }) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "globe")
-                                .font(.system(size: 18))
-                            Text("Continue with Google")
-                                .fontWeight(.semibold)
-                        }
-                        .foregroundColor(isDark ? .white : .black)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 54)
-                        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 16))
-                    }
+                    .disabled(isSigningIn)
                     .padding(.horizontal, 24)
 
-                    // Face ID
+                    if let signInError {
+                        Text(signInError)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.red)
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.horizontal, 28)
+                    }
+
+                    // Honest escape hatch: HealthKit features work without an
+                    // AI session — only Astra needs the gateway sign-in.
                     Button(action: {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
                         withAnimation { isLoggedIn = true }
                     }) {
-                        HStack(spacing: 10) {
-                            Image(systemName: "faceid")
-                                .font(.system(size: 20))
-                                .foregroundColor(accentColor)
-                            Text("Face ID")
-                                .fontWeight(.semibold)
-                                .foregroundColor(isDark ? .white : .black)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 54)
-                        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 16))
+                        Text("Continue without AI coach")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(isDark ? .white.opacity(0.7) : .black.opacity(0.7))
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 44)
+                            .glassEffect(.regular.interactive(), in: .capsule)
                     }
-                    .accessibilityLabel("Sign in with Face ID")
+                    .disabled(isSigningIn)
                     .padding(.horizontal, 24)
-                    
+
                     Text("By continuing you agree to our Terms and Privacy Policy. We never sell your health data.")
                         .font(.system(size: 11))
                         .foregroundColor(isDark ? .white.opacity(0.4) : .black.opacity(0.4))
@@ -218,5 +180,83 @@ public struct LoginView: View {
                 ringProgress = 1
             }
         }
+    }
+
+    /// Sign in against the Atlas AI Gateway, then enter the app.
+    /// Failure keeps the user on this screen with an honest inline error and
+    /// the "Continue without AI coach" fallback right below.
+    private func signInTapped() {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        signInError = nil
+        isSigningIn = true
+        Task {
+            do {
+                #if DEBUG
+                try await GatewayAuth.shared.signInDev()
+                #else
+                let identityToken = try await appleSignIn.requestIdentityToken()
+                try await GatewayAuth.shared.signIn(appleIdentityToken: identityToken)
+                #endif
+                withAnimation { isLoggedIn = true }
+            } catch let error as ASAuthorizationError where error.code == .canceled {
+                // User dismissed the Apple sheet — not an error worth shouting about.
+            } catch {
+                signInError = (error as? GatewayError)?.userMessage
+                    ?? "Couldn't sign in: \(error.localizedDescription)"
+            }
+            isSigningIn = false
+        }
+    }
+}
+
+// MARK: - Sign in with Apple coordinator
+
+/// Wraps ASAuthorizationController in an async call that returns the raw
+/// Apple identity token (JWT) for the gateway's /v1/auth/apple exchange.
+/// NOTE: succeeding at runtime requires the Sign in with Apple entitlement
+/// (paid team) — deliberately NOT added yet; until then the request fails
+/// and LoginView surfaces the error honestly.
+@MainActor
+final class AppleSignInCoordinator: NSObject, ASAuthorizationControllerDelegate,
+                                    ASAuthorizationControllerPresentationContextProviding {
+    private var continuation: CheckedContinuation<String, Error>?
+
+    func requestIdentityToken() async throws -> String {
+        try await withCheckedThrowingContinuation { continuation in
+            self.continuation = continuation
+            let request = ASAuthorizationAppleIDProvider().createRequest()
+            // Identity token only — no name/email scopes needed; the gateway
+            // keys the account off the token's stable `sub`.
+            request.requestedScopes = []
+            let controller = ASAuthorizationController(authorizationRequests: [request])
+            controller.delegate = self
+            controller.presentationContextProvider = self
+            controller.performRequests()
+        }
+    }
+
+    func authorizationController(controller: ASAuthorizationController,
+                                 didCompleteWithAuthorization authorization: ASAuthorization) {
+        guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
+              let tokenData = credential.identityToken,
+              let token = String(data: tokenData, encoding: .utf8) else {
+            continuation?.resume(throwing: GatewayError.badRequest("Apple did not return an identity token."))
+            continuation = nil
+            return
+        }
+        continuation?.resume(returning: token)
+        continuation = nil
+    }
+
+    func authorizationController(controller: ASAuthorizationController,
+                                 didCompleteWithError error: Error) {
+        continuation?.resume(throwing: error)
+        continuation = nil
+    }
+
+    func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
+        UIApplication.shared.connectedScenes
+            .compactMap { ($0 as? UIWindowScene)?.keyWindow }
+            .first ?? ASPresentationAnchor()
     }
 }

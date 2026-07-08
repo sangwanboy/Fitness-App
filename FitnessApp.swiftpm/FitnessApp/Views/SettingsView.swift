@@ -25,17 +25,21 @@ public struct SettingsView: View {
     @AppStorage("account_created_date") private var accountCreatedDate: Double = 0
     @AppStorage("is_onboarded")       private var isOnboarded = true
 
-    // Vertex AI key paste state
-    @AppStorage(VertexConfig.userDefaultsKey) private var pastedVertexJSON: String = ""
-    @State private var vertexJSONDraft: String = ""
-    @State private var vertexStatus: VertexStatus = .unknown
-    @State private var isTestingVertex = false
+    // Astra AI backend (gateway) state
+    @AppStorage(GatewayConfig.baseURLDefaultsKey) private var gatewayBaseURLOverride: String = ""
+    /// Gateway user id of the stored session; nil = signed out. Refreshed
+    /// onAppear and after every sign-in/out so the UI shows the real state.
+    @State private var gatewaySessionUserId: String? = GatewayAuth.shared.currentUserId
+    @State private var isGatewayAuthWorking = false
+    @State private var gatewayAuthError: String?
+    @State private var gatewayTest: GatewayTestState = .idle
+    @State private var showFeedbackSheet = false
 
-    enum VertexStatus: Equatable {
-        case unknown
-        case checking
-        case ok(projectId: String, source: String)
-        case error(String)
+    enum GatewayTestState: Equatable {
+        case idle
+        case testing
+        case ok
+        case failed(String)
     }
 
     private var isDark: Bool { themeMode == "dark" }
@@ -70,7 +74,7 @@ public struct SettingsView: View {
                 connectedSection
                 coachSection
                 healthRecordsSection
-                vertexKeySection
+                gatewaySection
                 appearanceSection
                 accountSection
                 versionFooter
@@ -113,6 +117,9 @@ public struct SettingsView: View {
         .sheet(isPresented: $showTokenUsage) {
             TokenUsageView()
         }
+        .sheet(isPresented: $showFeedbackSheet) {
+            FeedbackSheet()
+        }
         .alert("Sign out?", isPresented: $showSignOutConfirm) {
             Button("Cancel", role: .cancel) {}
             Button("Sign Out", role: .destructive) {
@@ -123,8 +130,7 @@ public struct SettingsView: View {
         }
         .onAppear {
             glassTintColorHex = "#FFFFFF"
-            vertexJSONDraft = pastedVertexJSON
-            refreshVertexStatus()
+            gatewaySessionUserId = GatewayAuth.shared.currentUserId
         }
     }
 
@@ -159,10 +165,18 @@ public struct SettingsView: View {
                     .foregroundColor(isDark ? .white.opacity(0.55) : .black.opacity(0.55))
             }
 
+            // Real gateway session state — no fake badges.
             HStack(spacing: 6) {
-                Image(systemName: "apple.logo")
+                Image(systemName: gatewaySessionUserId != nil
+                      ? "checkmark.seal.fill"
+                      : "person.crop.circle.badge.xmark")
                     .font(.system(size: 12, weight: .semibold))
-                Text("Signed in with Apple")
+                    .foregroundColor(gatewaySessionUserId != nil
+                                     ? .green
+                                     : (isDark ? .white.opacity(0.55) : .black.opacity(0.55)))
+                Text(gatewaySessionUserId != nil
+                     ? "Astra session active"
+                     : "Not signed in to Astra AI")
                     .font(.system(size: 12, weight: .semibold))
             }
             .foregroundColor(isDark ? .white.opacity(0.55) : .black.opacity(0.55))
@@ -349,148 +363,163 @@ public struct SettingsView: View {
         }
     }
 
-    // MARK: - Vertex AI Key Section
-    private var vertexKeySection: some View {
-        ProfileListGroup(header: "Vertex AI (Gemini)") {
-            VStack(alignment: .leading, spacing: 10) {
-                // Status row
+    // MARK: - Astra AI backend (gateway) section
+    private var gatewaySection: some View {
+        ProfileListGroup(header: "Astra AI backend") {
+            VStack(alignment: .leading, spacing: 12) {
+                // Session status row — real state, never a fake badge.
                 HStack(spacing: 8) {
-                    Image(systemName: vertexStatusIcon)
-                        .foregroundColor(vertexStatusColor)
+                    Image(systemName: gatewaySessionUserId != nil
+                          ? "checkmark.circle.fill" : "person.crop.circle.badge.xmark")
+                        .foregroundColor(gatewaySessionUserId != nil ? .green : .secondary)
                         .contentTransition(.symbolEffect(.replace))
-                    Text(vertexStatusText)
+                    Text(sessionStatusText)
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundColor(isDark ? .white.opacity(0.85) : .black.opacity(0.85))
+                        .lineLimit(1)
                     Spacer()
-                    if isTestingVertex {
+                    if isGatewayAuthWorking {
                         ProgressView().controlSize(.small)
+                    } else if gatewaySessionUserId != nil {
+                        Button("Sign out") {
+                            Task {
+                                isGatewayAuthWorking = true
+                                await GatewayAuth.shared.signOut()
+                                gatewaySessionUserId = GatewayAuth.shared.currentUserId
+                                gatewayAuthError = nil
+                                isGatewayAuthWorking = false
+                            }
+                        }
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.red)
                     } else {
-                        Button("Test") { Task { await testVertexAuth() } }
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(accentColor)
-                            .disabled(isTestingVertex)
+                        #if DEBUG
+                        Button("Sign in (dev)") {
+                            Task {
+                                isGatewayAuthWorking = true
+                                do {
+                                    try await GatewayAuth.shared.signInDev()
+                                    gatewayAuthError = nil
+                                } catch {
+                                    gatewayAuthError = (error as? GatewayError)?.userMessage
+                                        ?? error.localizedDescription
+                                }
+                                gatewaySessionUserId = GatewayAuth.shared.currentUserId
+                                isGatewayAuthWorking = false
+                            }
+                        }
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(accentColor)
+                        #endif
                     }
                 }
-                .animation(.easeInOut(duration: 0.2), value: vertexStatus)
 
-                Text("Paste a Google Cloud service-account JSON key with Vertex AI access. Stored locally on device only.")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(isDark ? .white.opacity(0.55) : .black.opacity(0.55))
+                if let authError = gatewayAuthError {
+                    Text(authError)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
-                TextEditor(text: $vertexJSONDraft)
-                    .font(.system(size: 11, design: .monospaced))
-                    .frame(minHeight: 140, maxHeight: 220)
-                    .scrollContentBackground(.hidden)
-                    .padding(8)
-                    .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 12))
+                #if !DEBUG
+                if gatewaySessionUserId == nil {
+                    Text("Sign in with Apple from the welcome screen (Account → Sign out brings you there).")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(isDark ? .white.opacity(0.55) : .black.opacity(0.55))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                #endif
 
-                HStack(spacing: 10) {
-                    Button {
-                        VertexConfig.setPastedJSON(vertexJSONDraft)
-                        VertexAuth.shared.invalidateCache()
-                        Task { await testVertexAuth() }
-                    } label: {
-                        Text("Save key")
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 36)
-                            .background(accentColor)
-                            .clipShape(Capsule())
-                    }
-                    .buttonStyle(PlainButtonStyle())
-                    .disabled(vertexJSONDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Rectangle()
+                    .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.06))
+                    .frame(height: 0.5)
 
-                    Button {
-                        VertexConfig.clearPastedJSON()
-                        VertexAuth.shared.invalidateCache()
-                        vertexJSONDraft = ""
-                        refreshVertexStatus()
-                    } label: {
-                        Text("Use bundled key")
+                // Base URL override + connection test.
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Gateway URL")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(isDark ? .white.opacity(0.85) : .black.opacity(0.85))
+
+                    TextField("http://10.130.154.45:8787", text: $gatewayBaseURLOverride)
+                        .font(.system(size: 12, design: .monospaced))
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .padding(10)
+                        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 12))
+                        .onChange(of: gatewayBaseURLOverride) { _, _ in
+                            gatewayTest = .idle
+                        }
+
+                    HStack(spacing: 8) {
+                        Text("Using: \(GatewayConfig.baseURL?.absoluteString ?? "not configured")")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(isDark ? .white.opacity(0.5) : .black.opacity(0.5))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Spacer()
+                        switch gatewayTest {
+                        case .testing:
+                            ProgressView().controlSize(.small)
+                        case .ok:
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(.green)
+                        default:
+                            EmptyView()
+                        }
+                        Button("Test connection") { Task { await testGatewayConnection() } }
                             .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(isDark ? .white : .black)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 36)
-                            .glassEffect(.regular.interactive(), in: .capsule)
+                            .foregroundStyle(accentColor)
+                            .disabled(gatewayTest == .testing)
                     }
-                    .buttonStyle(PlainButtonStyle())
+
+                    if case .failed(let message) = gatewayTest {
+                        Text(message)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.red)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
+
+            ProfileListDivider()
+            ProfileListRow(icon: "bubble.left.and.text.bubble.right.fill",
+                           iconColor: .pink, title: "Send feedback",
+                           action: { showFeedbackSheet = true })
         }
     }
 
-    private var vertexStatusIcon: String {
-        switch vertexStatus {
-        case .ok: return "checkmark.circle.fill"
-        case .checking: return "ellipsis.circle"
-        case .error: return "exclamationmark.triangle.fill"
-        case .unknown: return "questionmark.circle"
+    private var sessionStatusText: String {
+        if let uid = gatewaySessionUserId {
+            return "Signed in · \(String(uid.prefix(14)))\(uid.count > 14 ? "…" : "")"
         }
+        return "Signed out"
     }
 
-    private var vertexStatusColor: Color {
-        switch vertexStatus {
-        case .ok: return .green
-        case .checking: return .yellow
-        case .error: return .red
-        case .unknown: return .secondary
+    /// GET /healthz (no auth) against the effective base URL and show an
+    /// honest ✓ / error.
+    private func testGatewayConnection() async {
+        guard let base = GatewayConfig.baseURL else {
+            gatewayTest = .failed("No gateway URL configured.")
+            return
         }
-    }
-
-    private var vertexStatusText: String {
-        switch vertexStatus {
-        case .unknown: return "Status unknown"
-        case .checking: return "Checking…"
-        case .ok(let projectId, let source): return "Connected · \(projectId) · \(source)"
-        case .error(let msg): return shortError(msg)
-        }
-    }
-
-    /// Boil long Google OAuth JSON errors down to a one-line reason.
-    private func shortError(_ raw: String) -> String {
-        let lower = raw.lowercased()
-        if lower.contains("invalid_grant") && lower.contains("account not found") {
-            return "Service account not found — tap Use bundled key"
-        }
-        if lower.contains("invalid_grant") {
-            return "Invalid grant — key may be revoked or expired"
-        }
-        if lower.contains("malformed") || lower.contains("decode") {
-            return "JSON malformed — paste the full service-account file"
-        }
-        if lower.contains("forbidden") || lower.contains("403") {
-            return "Project lacks Vertex AI access — enable the API in GCP"
-        }
-        if lower.contains("404") || lower.contains("not found") {
-            return "Endpoint not found — wrong region or project"
-        }
-        // Fallback: first 80 chars of the raw message.
-        let trimmed = raw.replacingOccurrences(of: "\n", with: " ")
-        return String(trimmed.prefix(80))
-    }
-
-    private func refreshVertexStatus() {
+        gatewayTest = .testing
         do {
-            let (sa, source) = try VertexConfig.current()
-            vertexStatus = .ok(projectId: sa.projectId, source: source == .userPasted ? "your key" : "bundled")
+            let url = base.appendingPathComponent("healthz")
+            let request = URLRequest(url: url, timeoutInterval: 8)
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200,
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  (obj["ok"] as? Bool) == true else {
+                gatewayTest = .failed("Unexpected response from \(url.absoluteString).")
+                return
+            }
+            gatewayTest = .ok
         } catch {
-            vertexStatus = .error(error.localizedDescription)
-        }
-    }
-
-    private func testVertexAuth() async {
-        isTestingVertex = true
-        vertexStatus = .checking
-        defer { isTestingVertex = false }
-        do {
-            _ = try await VertexAuth.shared.getAccessToken()
-            let (sa, source) = try VertexConfig.current()
-            vertexStatus = .ok(projectId: sa.projectId, source: source == .userPasted ? "your key" : "bundled")
-        } catch {
-            vertexStatus = .error(error.localizedDescription)
+            gatewayTest = .failed(error.localizedDescription)
         }
     }
 
@@ -623,5 +652,154 @@ struct ProfileListDivider: View {
             .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.06))
             .frame(height: 0.5)
             .padding(.leading, 56)
+    }
+}
+
+// MARK: - Feedback sheet (POST /v1/feedback via the gateway)
+
+struct FeedbackSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @AppStorage("theme_mode") private var themeMode = "dark"
+    @AppStorage("accent_color") private var accentColorHex = "#30D158"
+
+    @State private var thumb: FeedbackService.Thumb?
+    @State private var text = ""
+    @State private var tag = "chat"
+    @State private var isSending = false
+    @State private var sendError: String?
+    @State private var sent = false
+
+    private static let tags = ["chat", "food", "sleep", "widgets", "other"]
+
+    private var isDark: Bool { themeMode == "dark" }
+    private var accentColor: Color { ThemeHelper.color(from: accentColorHex) }
+    private var canSend: Bool {
+        thumb != nil || !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 18) {
+                    // Thumb selector
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("How is Astra doing?")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(isDark ? .white.opacity(0.5) : .black.opacity(0.5))
+                            .textCase(.uppercase)
+                            .tracking(0.4)
+                        HStack(spacing: 12) {
+                            thumbButton(.up,   icon: "hand.thumbsup.fill",   tint: .green)
+                            thumbButton(.down, icon: "hand.thumbsdown.fill", tint: .red)
+                        }
+                    }
+
+                    // Topic tag
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("About")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(isDark ? .white.opacity(0.5) : .black.opacity(0.5))
+                            .textCase(.uppercase)
+                            .tracking(0.4)
+                        Picker("Topic", selection: $tag) {
+                            ForEach(Self.tags, id: \.self) { Text($0.capitalized).tag($0) }
+                        }
+                        .pickerStyle(.segmented)
+                    }
+
+                    // Free text
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Details (optional)")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(isDark ? .white.opacity(0.5) : .black.opacity(0.5))
+                            .textCase(.uppercase)
+                            .tracking(0.4)
+                        TextEditor(text: $text)
+                            .font(.system(size: 14))
+                            .frame(minHeight: 120, maxHeight: 200)
+                            .scrollContentBackground(.hidden)
+                            .padding(8)
+                            .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 14))
+                    }
+
+                    if let sendError {
+                        Text(sendError)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.red)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    // Send
+                    Button {
+                        Task { await send() }
+                    } label: {
+                        HStack(spacing: 8) {
+                            if isSending {
+                                ProgressView().controlSize(.small).tint(.white)
+                            } else if sent {
+                                Image(systemName: "checkmark.circle.fill")
+                            } else {
+                                Image(systemName: "paperplane.fill")
+                            }
+                            Text(sent ? "Sent — thank you!" : "Send feedback")
+                                .fontWeight(.bold)
+                        }
+                        .font(.system(size: 15))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 48)
+                        .background(sent ? Color.green : accentColor, in: .capsule)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                    .disabled(!canSend || isSending || sent)
+                    .opacity((!canSend && !sent) ? 0.5 : 1)
+                }
+                .padding(20)
+            }
+            .background(AdaptiveBackground())
+            .navigationTitle("Send feedback")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func thumbButton(_ value: FeedbackService.Thumb, icon: String, tint: Color) -> some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            thumb = (thumb == value) ? nil : value
+        } label: {
+            Image(systemName: icon)
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundColor(thumb == value ? .white : tint)
+                .frame(maxWidth: .infinity)
+                .frame(height: 48)
+                .background {
+                    if thumb == value {
+                        Capsule().fill(tint)
+                    }
+                }
+                .glassEffect(.regular.interactive(), in: .capsule)
+        }
+        .buttonStyle(PlainButtonStyle())
+        .accessibilityLabel(value == .up ? "Thumbs up" : "Thumbs down")
+    }
+
+    private func send() async {
+        isSending = true
+        sendError = nil
+        defer { isSending = false }
+        do {
+            try await FeedbackService.send(thumb: thumb, text: text, tag: tag)
+            sent = true
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            try? await Task.sleep(nanoseconds: 900_000_000)
+            dismiss()
+        } catch {
+            sendError = (error as? GatewayError)?.userMessage ?? error.localizedDescription
+        }
     }
 }

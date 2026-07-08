@@ -1,7 +1,12 @@
 import Foundation
 
-public actor VertexGeminiClient {
-    public static let shared = VertexGeminiClient()
+/// Astra's chat client, now speaking to the Atlas AI Gateway's /v1/chat
+/// proxy instead of Vertex AI directly. The gateway holds the Google
+/// credentials server-side; the app sends the logical model name "chat"
+/// and receives Vertex-shaped streaming chunks over SSE, so ChatChunk
+/// emission, the tool loop, and TokenMeter accounting are unchanged.
+public actor GatewayChatClient {
+    public static let shared = GatewayChatClient()
 
     private init() {}
 
@@ -15,12 +20,12 @@ public actor VertexGeminiClient {
         systemInstruction: String,
         imageData: Data? = nil,
         imageMimeType: String = "image/jpeg",
-        model: String = "gemini-3.5-flash"
+        model: String = GatewayConfig.chatModel
     ) -> AsyncThrowingStream<ChatChunk, Error> {
         let capturedSelf = self
-        // gemini-3.5-flash only — no silent fallback to older models. If 3.5
-        // isn't available the request surfaces the error to the user instead
-        // of degrading quality without notice.
+        // "chat" is a logical name — the gateway maps it to the concrete
+        // Gemini model server-side. No silent fallback to older models: if
+        // the backend can't serve it, the error surfaces to the user.
 
         return AsyncThrowingStream<ChatChunk, Error>(ChatChunk.self) { continuation in
             let work = Task {
@@ -51,7 +56,7 @@ public actor VertexGeminiClient {
                 guard !Task.isCancelled, !work.isCancelled else { return }
                 work.cancel()
                 continuation.finish(throwing: NSError(
-                    domain: "VertexGeminiClient", code: 408,
+                    domain: "GatewayChatClient", code: 408,
                     userInfo: [NSLocalizedDescriptionKey: "LLM timed out after 2 minutes."]))
             }
 
@@ -424,53 +429,27 @@ public actor VertexGeminiClient {
         model: String,
         continuation: AsyncThrowingStream<ChatChunk, Error>.Continuation
     ) async throws {
-        let token = try await VertexAuth.shared.getAccessToken()
-        let (sa, _) = try VertexConfig.current()
-        let projectId = sa.projectId
-
-        // gemini-3.5-flash is only available via the global routing endpoint
-        // — every regional endpoint (us-central1, europe-west1, etc.) returns
-        // 404 NOT_FOUND for the 3.x family. Confirmed via direct API ping.
-        let urlString = "https://aiplatform.googleapis.com/v1/projects/\(projectId)/locations/global/publishers/google/models/\(model):streamGenerateContent"
-        guard let requestURL = URL(string: urlString) else {
-            throw NSError(domain: "VertexGeminiClient", code: 400,
-                userInfo: [NSLocalizedDescriptionKey: "Invalid request URL."])
-        }
-
-        var request = URLRequest(url: requestURL)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        // Idle timeout: if the connection sits silent for more than 60s mid-stream,
-        // URLSession will abort. Total wall-clock cap is enforced separately below.
-        request.timeoutInterval = 60
-
-        // Build body as [String: Any] so we can embed the tools manifest (deep nested).
-        // History serialization is tool-aware: each ChatMessage may carry a toolCall
-        // (model emits a `functionCall` part) and a tool status that, when terminal,
-        // gets re-injected as a synthetic user-role `functionResponse` turn so the
+        // Build the gateway messages array. History serialization is
+        // tool-aware: each ChatMessage may carry a toolCall (model emits a
+        // `functionCall` part) and a tool status that, when terminal, gets
+        // re-injected as a synthetic user-role `functionResponse` turn so the
         // model can attach its acknowledgment to a specific tool.
-        var contents: [[String: Any]] = []
+        var messages: [[String: Any]] = []
         for msg in history {
             var parts: [[String: Any]] = []
-            if !msg.text.isEmpty { parts.append(["text": msg.text]) }
+            if !msg.text.isEmpty { parts.append(GatewayChatPayload.textPart(msg.text)) }
             if msg.role == .model, let call = msg.toolCall {
-                var fcPart: [String: Any] = [
-                    "functionCall": [
-                        "name": call.name,
-                        "args": call.asFunctionCallPayload
-                    ]
-                ]
-                // Round-trip the signature Vertex emitted with this call.
-                // Required by Gemini 3.x — followups without it fail with
-                // 400 INVALID_ARGUMENT.
-                if let sig = msg.thoughtSignature, !sig.isEmpty {
-                    fcPart["thoughtSignature"] = sig
-                }
-                parts.append(fcPart)
+                // Round-trip the thoughtSignature Gemini emitted with this
+                // call — required by 3.x; followups without it fail with 400
+                // INVALID_ARGUMENT. Part-level sibling, functionCall parts only.
+                parts.append(GatewayChatPayload.functionCallPart(
+                    name: call.name,
+                    args: call.asFunctionCallPayload,
+                    thoughtSignature: msg.thoughtSignature
+                ))
             }
             if parts.isEmpty { continue }
-            contents.append(["role": msg.role.apiRoleName, "parts": parts])
+            messages.append(GatewayChatPayload.message(role: msg.role.apiRoleName, parts: parts))
 
             // After a model message that emitted a tool call, inject a synthetic
             // user-role `functionResponse` whenever the tool reached a terminal state.
@@ -489,114 +468,54 @@ public actor VertexGeminiClient {
                    let parsed = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any] {
                     response.merge(parsed) { _, new in new }
                 }
-                contents.append([
-                    "role": "user",
-                    "parts": [[
-                        "functionResponse": [
-                            "name": call.name,
-                            "response": response
-                        ]
-                    ]]
-                ])
+                messages.append(GatewayChatPayload.message(
+                    role: "user",
+                    parts: [GatewayChatPayload.functionResponsePart(name: call.name, response: response)]
+                ))
             }
         }
         var userParts: [[String: Any]] = []
-        if !prompt.isEmpty { userParts.append(["text": prompt]) }
+        if !prompt.isEmpty { userParts.append(GatewayChatPayload.textPart(prompt)) }
         if let imageData {
-            userParts.append([
-                "inlineData": [
-                    "mimeType": imageMimeType,
-                    "data": imageData.base64EncodedString()
-                ]
-            ])
+            userParts.append(GatewayChatPayload.imagePart(data: imageData, mimeType: imageMimeType))
         }
         // On tool-follow-up turns the new prompt is empty — the trailing
         // functionResponse already serves as the "user" content for this turn,
         // so don't pad with an empty text part that confuses the model.
         if !userParts.isEmpty {
-            contents.append(["role": "user", "parts": userParts])
+            messages.append(GatewayChatPayload.message(role: "user", parts: userParts))
         }
 
-        // gemini-3.5-flash has reasoning enabled by default — `thoughtsTokenCount`
+        // The chat model has reasoning enabled by default — `thoughtsTokenCount`
         // is consumed from `maxOutputTokens` before any visible text is emitted.
         // Read the user's `thinking_level` preference (set from the Coach picker)
         // and translate to a token budget. Medium is the default. Bump the
         // overall cap so visible output always has room AFTER thoughts.
         let thinkingBudget = Self.thinkingBudgetTokens()
-        var body: [String: Any] = [
-            "contents": contents,
-            "generationConfig": [
+        let body = GatewayChatPayload.body(
+            model: model,
+            stream: true,
+            system: systemInstruction,
+            messages: messages,
+            tools: [toolsManifest],
+            generationConfig: [
                 "temperature": 0.4,
                 "maxOutputTokens": 2500 + thinkingBudget,
                 "thinkingConfig": ["thinkingBudget": thinkingBudget]
-            ],
-            "tools": [toolsManifest]
-        ]
-        if !systemInstruction.isEmpty {
-            body["systemInstruction"] = ["parts": [["text": systemInstruction]]]
-        }
+            ]
+        )
 
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
-
-        let (bytes, response) = try await URLSession.shared.bytes(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw NSError(domain: "VertexGeminiClient", code: 500,
-                userInfo: [NSLocalizedDescriptionKey: "Invalid response from Vertex AI API."])
-        }
-
-        guard httpResponse.statusCode == 200 else {
-            var responseBody = ""
-            do {
-                for try await byte in bytes {
-                    let scalar = UnicodeScalar(byte)
-                    responseBody.append(Character(scalar))
-                }
-            } catch {}
-            print("Vertex AI Error Code \(httpResponse.statusCode): \(responseBody)")
-            throw NSError(domain: "VertexGeminiClient", code: httpResponse.statusCode,
-                userInfo: [NSLocalizedDescriptionKey: "Vertex AI API error \(httpResponse.statusCode): \(responseBody)"])
-        }
-
-        // Brace-matching scanner — extract complete JSON objects from stream
-        var braceDepth = 0
-        var buffer = ""
-        var inString = false
-        var escaped = false
-
-        for try await byte in bytes {
+        // Idle timeout of 60s mid-stream (URLSession aborts a silent
+        // connection); the 120s wall-clock watchdog is enforced by the caller.
+        // Each yielded element is one Vertex-shaped JSON chunk — the SSE
+        // framing is handled inside GatewayTransport.
+        let events = try await GatewayTransport.streamChat(body: body, idleTimeout: 60)
+        for try await eventData in events {
             if Task.isCancelled {
                 continuation.finish()
                 return
             }
-
-            let char = Character(UnicodeScalar(byte))
-
-            if braceDepth > 0 { buffer.append(char) }
-
-            if inString {
-                if escaped {
-                    escaped = false
-                } else if char == "\\" {
-                    escaped = true
-                } else if char == "\"" {
-                    inString = false
-                }
-            } else {
-                switch char {
-                case "\"": inString = true
-                case "{":
-                    braceDepth += 1
-                    if braceDepth == 1 { buffer = "{" }
-                case "}":
-                    braceDepth -= 1
-                    if braceDepth == 0 {
-                        emitChunks(from: buffer, into: continuation)
-                        buffer = ""
-                    }
-                default: break
-                }
-            }
+            emitChunks(from: eventData, into: continuation)
         }
     }
 
@@ -605,7 +524,7 @@ public actor VertexGeminiClient {
     /// concrete token budget for `thinkingConfig.thinkingBudget`. The Coach
     /// header picker writes "minimal" / "low" / "medium" / "high" into this
     /// key; medium is the default if absent.
-    /// Mapping is deliberately conservative — gemini-3.5-flash reasoning is
+    /// Mapping is deliberately conservative — flash-class reasoning is
     /// cheap but high budgets can add seconds to first-token latency.
     nonisolated static func thinkingBudgetTokens() -> Int {
         let level = UserDefaults.standard.string(forKey: "thinking_level") ?? "medium"
@@ -617,10 +536,9 @@ public actor VertexGeminiClient {
         }
     }
 
-    private func emitChunks(from jsonStr: String,
+    private func emitChunks(from data: Data,
                             into continuation: AsyncThrowingStream<ChatChunk, Error>.Continuation) {
-        guard let data = jsonStr.data(using: .utf8),
-              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
 
         if let candidates = obj["candidates"] as? [[String: Any]] {
             for cand in candidates {

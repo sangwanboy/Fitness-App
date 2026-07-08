@@ -7,6 +7,13 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		4E227A3FD5BB8B293A5BE92A /* GatewayConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 223CB8AD50DB447B8699C377 /* GatewayConfig.swift */; };
+		716C2F5D96FF284D86846FD1 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35E9D7360230BB1B702DF4B2 /* KeychainStore.swift */; };
+		FE030A7C92D927B5C841BCAF /* GatewayError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 205763DFA65AA4E6DA6A668A /* GatewayError.swift */; };
+		F8A9B82BFCD9A45938FFCE5E /* GatewayAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95C5743FF9742EBE8D8AB3EC /* GatewayAuth.swift */; };
+		61F5F54C7380F82B80722554 /* GatewayTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F98C2CD13427F48DA33A4CF /* GatewayTransport.swift */; };
+		A95EF62205991ECA32E7574E /* GatewayChatPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41CB6371ED359C5411AFE32F /* GatewayChatPayload.swift */; };
+		01FC6E1E6535780D4993053C /* FeedbackService.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBEBE8C0184DA2CDF29CADAD /* FeedbackService.swift */; };
 		5F5F211080F1E2213A50C929 /* BarcodeProductService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3694B86BDFD5D6F886FBCEB /* BarcodeProductService.swift */; };
 		748D70BDC4208F158B6260BD /* BarcodeProduct.swift in Sources */ = {isa = PBXBuildFile; fileRef = 505C6156E8E4407885A990AB /* BarcodeProduct.swift */; };
 		27DAF6A37BEE4CC58CEF3E6B /* FoodCameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5789D9B726C54541BAC17502 /* FoodCameraView.swift */; };
@@ -23,7 +30,6 @@
 		199156AF56ACDB780D8ED163 /* SnoreDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23B87896293CA2BF852C5431 /* SnoreDetector.swift */; };
 		208FA99AD878CD2CEE68E3FE /* WidgetsCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69C6558093625FAAB1EAF5BA /* WidgetsCard.swift */; };
 		28BADF5BBDDD442FAEFD28B4 /* SleepSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1505616C41F3C440E1D43136 /* SleepSession.swift */; };
-		2F18EF56AADCE439B92F54E5 /* vertex-service-account.json in Resources */ = {isa = PBXBuildFile; fileRef = 515FB25A593314C402336F1D /* vertex-service-account.json */; };
 		331CFD3386E7374F74EF939D /* EventKitManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E91ABDB6B97375D97C0A0737 /* EventKitManager.swift */; };
 		36F0D1F6EAD330778049BF94 /* Prediction.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23C03F731FAAB890648C5903 /* Prediction.swift */; };
 		3CDD65378A8B7FA85C915593 /* SleepTrackingCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0F0A1C7ED9E0B6394D28D1C /* SleepTrackingCard.swift */; };
@@ -46,12 +52,11 @@
 		950DA2CBDD02BE2DD2F04169 /* ChatPrefillBus.swift in Sources */ = {isa = PBXBuildFile; fileRef = D745D8F799D4850DB3CAE7C5 /* ChatPrefillBus.swift */; };
 		9718D1889F9D77EE9BA2E5ED /* GlassLoaderOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 137344F9E4AB5492F9013B18 /* GlassLoaderOverlay.swift */; };
 		98AE9B3051CAC1BA437785F1 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37B9F2A6FBAA854B66665F99 /* LoginView.swift */; };
-		9C0FFCA4BEF236A4815F56E8 /* VertexAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = D87B88D9E6FD98D4E6CDE4B1 /* VertexAuth.swift */; };
 		9C10C47A2EE50589BDB75D80 /* CameraImagePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11DACF9D1AC1F925BFE2C2E /* CameraImagePicker.swift */; };
 		9C35DDF35B34A2F6CAEE90D8 /* HealthKitManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3429B54E60CE226E2F0C189 /* HealthKitManager.swift */; };
 		A24D1D0DB3BA96B1D9C40A83 /* EventKitUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E81420B3951364446EDBB7E6 /* EventKitUI.framework */; };
 		A32F56B22D7438BA25781DBE /* ToolCall.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4799B511C8C827F1E5E4E4E4 /* ToolCall.swift */; };
-		A8D80F5EA98535D2EB1360FC /* VertexGeminiClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B19FC95A1A7EA7BE548AFA73 /* VertexGeminiClient.swift */; };
+		A8D80F5EA98535D2EB1360FC /* GatewayChatClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B19FC95A1A7EA7BE548AFA73 /* GatewayChatClient.swift */; };
 		AA2907935085B7290F6B4704 /* HealthTrendsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CBC0D6E65E96D0D286864CB /* HealthTrendsView.swift */; };
 		ABDDB0099129BFD6E63A0D75 /* HealthKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 84597105D70BC3BF2A15021C /* HealthKit.framework */; };
 		AC4DEEB43103050F890FDB0F /* StructuredMarkdownText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3EB33CCB0B7D84FBFD9F9CE5 /* StructuredMarkdownText.swift */; };
@@ -64,7 +69,6 @@
 		C5F33BB9B466DDB2B38AAF69 /* ChatViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19BC8564A5467E5553980EEB /* ChatViewModel.swift */; };
 		C67E9A37BCF2A54D3F15B98F /* PredictionAIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 558F193F1364DC5C9969A9BB /* PredictionAIService.swift */; };
 		C74790B0B116896A339C6481 /* FitnessApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7192790992313FDD5201B37 /* FitnessApp.swift */; };
-		C7885604A09935E056400D34 /* VertexConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2617EEE6EAAC41A0B3A3CB9 /* VertexConfig.swift */; };
 		CD00642959A96136A32D4BC6 /* SleepSessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFBB15DA98B80962FCD2B709 /* SleepSessionManager.swift */; };
 		D409C5292E21816408F5A05E /* AstraWidgetStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AEE45FE10590AEB3752ABEE /* AstraWidgetStore.swift */; };
 		A0A222CF15649378701236D6 /* ChatHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0DB543A5A7EAA7F0316CF86 /* ChatHistoryStore.swift */; };
@@ -95,6 +99,13 @@
 		/* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		223CB8AD50DB447B8699C377 /* GatewayConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GatewayConfig.swift; sourceTree = "<group>"; };
+		35E9D7360230BB1B702DF4B2 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
+		205763DFA65AA4E6DA6A668A /* GatewayError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GatewayError.swift; sourceTree = "<group>"; };
+		95C5743FF9742EBE8D8AB3EC /* GatewayAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GatewayAuth.swift; sourceTree = "<group>"; };
+		2F98C2CD13427F48DA33A4CF /* GatewayTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GatewayTransport.swift; sourceTree = "<group>"; };
+		41CB6371ED359C5411AFE32F /* GatewayChatPayload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GatewayChatPayload.swift; sourceTree = "<group>"; };
+		DBEBE8C0184DA2CDF29CADAD /* FeedbackService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackService.swift; sourceTree = "<group>"; };
 		A3694B86BDFD5D6F886FBCEB /* BarcodeProductService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarcodeProductService.swift; sourceTree = "<group>"; };
 		505C6156E8E4407885A990AB /* BarcodeProduct.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarcodeProduct.swift; sourceTree = "<group>"; };
 		5789D9B726C54541BAC17502 /* FoodCameraView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoodCameraView.swift; sourceTree = "<group>"; };
@@ -131,7 +142,6 @@
 		4799B511C8C827F1E5E4E4E4 /* ToolCall.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolCall.swift; sourceTree = "<group>"; };
 		48E26CE3BC0A02FCF8F0937F /* ChatMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessage.swift; sourceTree = "<group>"; };
 		4C270D683DF4981F05B54550 /* AstraWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AstraWidget.swift; sourceTree = "<group>"; };
-		515FB25A593314C402336F1D /* vertex-service-account.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "vertex-service-account.json"; sourceTree = "<group>"; };
 		558F193F1364DC5C9969A9BB /* PredictionAIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PredictionAIService.swift; sourceTree = "<group>"; };
 		666169689CA9A0019CAE8D33 /* SleepModeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepModeView.swift; sourceTree = "<group>"; };
 		6898FC4E5DC58AADAE0A1695 /* CalendarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarView.swift; sourceTree = "<group>"; };
@@ -145,17 +155,15 @@
 		A7192790992313FDD5201B37 /* FitnessApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FitnessApp.swift; sourceTree = "<group>"; };
 		A99ECC01887A8C57DE1EDE10 /* OnboardingScreens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingScreens.swift; sourceTree = "<group>"; };
 		B0F0A1C7ED9E0B6394D28D1C /* SleepTrackingCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepTrackingCard.swift; sourceTree = "<group>"; };
-		B19FC95A1A7EA7BE548AFA73 /* VertexGeminiClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VertexGeminiClient.swift; sourceTree = "<group>"; };
+		B19FC95A1A7EA7BE548AFA73 /* GatewayChatClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GatewayChatClient.swift; sourceTree = "<group>"; };
 		B3429B54E60CE226E2F0C189 /* HealthKitManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitManager.swift; sourceTree = "<group>"; };
 		BD86BABB2BDF63D8BE40A78C /* RemindersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemindersView.swift; sourceTree = "<group>"; };
 		C11DACF9D1AC1F925BFE2C2E /* CameraImagePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraImagePicker.swift; sourceTree = "<group>"; };
-		C2617EEE6EAAC41A0B3A3CB9 /* VertexConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VertexConfig.swift; sourceTree = "<group>"; };
 		C2E0798186938E6A78F8840C /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		C6F9E87D490739ABA95026E6 /* MetricCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricCards.swift; sourceTree = "<group>"; };
 		CC69512B936CD5BF1517FD2F /* AppLoadingScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLoadingScreen.swift; sourceTree = "<group>"; };
 		D5FEE996D58F1544E857CBCC /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		D745D8F799D4850DB3CAE7C5 /* ChatPrefillBus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatPrefillBus.swift; sourceTree = "<group>"; };
-		D87B88D9E6FD98D4E6CDE4B1 /* VertexAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VertexAuth.swift; sourceTree = "<group>"; };
 		DB83BF408BFC9A75EE16A3DD /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		DF2EBA586C0847235F75EA7A /* PredictionsCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PredictionsCard.swift; sourceTree = "<group>"; };
 		E441A18FBA7EBD5380217B53 /* WorkoutTrackerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutTrackerView.swift; sourceTree = "<group>"; };
@@ -267,7 +275,6 @@
 				F49E7AA24285552E1C91AABC /* ContentView.swift */,
 				A7192790992313FDD5201B37 /* FitnessApp.swift */,
 				B3429B54E60CE226E2F0C189 /* HealthKitManager.swift */,
-				515FB25A593314C402336F1D /* vertex-service-account.json */,
 				B3C6C47C211B441287027A4E /* Models */,
 				8FFC23862DFFC84371A26B18 /* Services */,
 				47D967E1761653141702A76F /* ViewModels */,
@@ -298,6 +305,7 @@
 		8FFC23862DFFC84371A26B18 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				88F2B11F2717B911D21C1096 /* Gateway */,
 				A3694B86BDFD5D6F886FBCEB /* BarcodeProductService.swift */,
 				12B32B22C5E34D62B51EB9A9 /* FoodVisionService.swift */,
 				D3CB93F8918C421FA0CE4A02 /* TokenMeter.swift */,
@@ -317,9 +325,7 @@
 				3F9F1B9C8F4709E79BB0ED1F /* SleepPatternAnalyzer.swift */,
 				EFBB15DA98B80962FCD2B709 /* SleepSessionManager.swift */,
 				23B87896293CA2BF852C5431 /* SnoreDetector.swift */,
-				D87B88D9E6FD98D4E6CDE4B1 /* VertexAuth.swift */,
-				C2617EEE6EAAC41A0B3A3CB9 /* VertexConfig.swift */,
-				B19FC95A1A7EA7BE548AFA73 /* VertexGeminiClient.swift */,
+				B19FC95A1A7EA7BE548AFA73 /* GatewayChatClient.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -369,6 +375,20 @@
 				5C7B11EAE4F3466CB62502A2 /* FoodScanView.swift */,
 			);
 			path = FoodScan;
+			sourceTree = "<group>";
+		};
+		88F2B11F2717B911D21C1096 /* Gateway */ = {
+			isa = PBXGroup;
+			children = (
+				223CB8AD50DB447B8699C377 /* GatewayConfig.swift */,
+				35E9D7360230BB1B702DF4B2 /* KeychainStore.swift */,
+				205763DFA65AA4E6DA6A668A /* GatewayError.swift */,
+				95C5743FF9742EBE8D8AB3EC /* GatewayAuth.swift */,
+				2F98C2CD13427F48DA33A4CF /* GatewayTransport.swift */,
+				41CB6371ED359C5411AFE32F /* GatewayChatPayload.swift */,
+				DBEBE8C0184DA2CDF29CADAD /* FeedbackService.swift */,
+			);
+			path = Gateway;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -433,7 +453,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				D68FCD8F3B6A23E4F509613A /* Assets.xcassets in Resources */,
-				2F18EF56AADCE439B92F54E5 /* vertex-service-account.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -444,6 +463,13 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				4E227A3FD5BB8B293A5BE92A /* GatewayConfig.swift in Sources */,
+				716C2F5D96FF284D86846FD1 /* KeychainStore.swift in Sources */,
+				FE030A7C92D927B5C841BCAF /* GatewayError.swift in Sources */,
+				F8A9B82BFCD9A45938FFCE5E /* GatewayAuth.swift in Sources */,
+				61F5F54C7380F82B80722554 /* GatewayTransport.swift in Sources */,
+				A95EF62205991ECA32E7574E /* GatewayChatPayload.swift in Sources */,
+				01FC6E1E6535780D4993053C /* FeedbackService.swift in Sources */,
 				5F5F211080F1E2213A50C929 /* BarcodeProductService.swift in Sources */,
 				748D70BDC4208F158B6260BD /* BarcodeProduct.swift in Sources */,
 				27DAF6A37BEE4CC58CEF3E6B /* FoodCameraView.swift in Sources */,
@@ -518,9 +544,7 @@
 				8E22A01ACC9AFCB8643EF1EA /* ThemeHelper.swift in Sources */,
 				A32F56B22D7438BA25781DBE /* ToolCall.swift in Sources */,
 				5C582A08D2FCB78046D286F6 /* ToolCards.swift in Sources */,
-				9C0FFCA4BEF236A4815F56E8 /* VertexAuth.swift in Sources */,
-				C7885604A09935E056400D34 /* VertexConfig.swift in Sources */,
-				A8D80F5EA98535D2EB1360FC /* VertexGeminiClient.swift in Sources */,
+				A8D80F5EA98535D2EB1360FC /* GatewayChatClient.swift in Sources */,
 				208FA99AD878CD2CEE68E3FE /* WidgetsCard.swift in Sources */,
 				41AFF5110C3DACF67FC24CB6 /* WorkoutTrackerView.swift in Sources */,
 			);

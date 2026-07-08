@@ -4,7 +4,7 @@ import SwiftUI
 /// Where a batch of Gemini tokens was spent. Drives the per-feature breakdown
 /// in Settings → AI token usage.
 public enum TokenSource: String, Codable, CaseIterable, Sendable {
-    case coach        // Astra chat + tool follow-ups (VertexGeminiClient)
+    case coach        // Astra chat + tool follow-ups (GatewayChatClient)
     case insights     // predictions: daily insight, action chips, anomalies, "Why?" sheet
     case foodVision   // photo → food recognition
     case other

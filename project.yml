@@ -5,7 +5,12 @@ targets:
     platform: iOS
     deploymentTarget: "26.0"
     sources:
-      - FitnessApp.swiftpm/FitnessApp
+      # The Google service-account key stays on disk (the local gateway
+      # server reads it) but must NEVER be bundled into the app again —
+      # credentials now live server-side behind the Atlas AI Gateway.
+      - path: FitnessApp.swiftpm/FitnessApp
+        excludes:
+          - "vertex-service-account.json"
     dependencies:
       - sdk: HealthKit.framework
       - sdk: EventKit.framework
@@ -37,5 +42,9 @@ targets:
         NSUserNotificationsUsageDescription: "Fitness Guru sends you a nudge when it detects prolonged inactivity, so you can move before sedentary time affects your health score."
         NSMicrophoneUsageDescription: "Fitness Guru listens to the room while you sleep to detect snoring and quantify sleep quality. Audio is analyzed on-device with Apple's Sound Analysis framework and never recorded or uploaded."
         NSFocusStatusUsageDescription: "Fitness Guru reads your Focus state to know when Sleep Focus is on — that lets the app surface sleep tracking at the right moment and align stats to your iOS bedtime schedule."
+        # Phone → Mac LAN gateway during development (http://<mac-ip>:8787).
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        NSLocalNetworkUsageDescription: "Fitness Guru connects to your development AI server on the local network. Not used in normal operation."
         UIBackgroundModes:
           - audio

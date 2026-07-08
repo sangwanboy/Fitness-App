@@ -1,12 +1,12 @@
 // ============================================================
 // FoodVisionService — photo-based food recognition via Gemini Vision.
-// File: FitnessApp/Services/FoodVisionService.swift  (created by Agent 1)
+// File: FitnessApp/Services/FoodVisionService.swift
 //
-// One-shot, non-streaming generateContent call against gemini-3.5-flash on
-// the GLOBAL endpoint (regional endpoints 404 for 3.x). Reuses the existing
-// VertexAuth.shared + VertexConfig.current() credential path and
-// VertexGeminiClient.thinkingBudgetTokens(). Returns the frozen contract type
-// FoodRecognitionResult, or throws a typed FoodVisionError. No mock data.
+// One-shot, non-streaming call through the Atlas AI Gateway's /v1/chat
+// proxy (logical model "chat"; the server maps it to a concrete Gemini
+// model and holds the GCP credentials). Reuses
+// GatewayChatClient.thinkingBudgetTokens(). Returns the frozen contract
+// type FoodRecognitionResult, or throws a typed FoodVisionError. No mock data.
 // ============================================================
 
 import Foundation
@@ -16,14 +16,11 @@ public actor FoodVisionService {
     public static let shared = FoodVisionService()
     private init() {}
 
-    // gemini-3.5-flash only, GLOBAL routing endpoint only. Regional 404s.
-    private let model = "gemini-3.5-flash"
-    private let location = "global"
     private let timeout: TimeInterval = 20
 
     /// Resize to ≤1024px (Gemini tiles at 768px; larger adds tokens, not
-    /// accuracy), JPEG q=0.7, then POST to the non-streaming generateContent
-    /// endpoint with responseMimeType: application/json and responseSchema.
+    /// accuracy), JPEG q=0.7, then POST to the gateway's non-streaming
+    /// /v1/chat proxy with responseMimeType: application/json and responseSchema.
     ///
     /// Throws on network error, HTTP non-2xx, JSON parse failure, or
     /// food_detected=false (callers catch and show a "No food detected" state).
@@ -36,47 +33,33 @@ public actor FoodVisionService {
         guard let jpeg = resized.jpegData(compressionQuality: 0.7) else {
             throw FoodVisionError.invalidImage
         }
-        let base64 = jpeg.base64EncodedString()
 
-        // 2. Auth + project
-        let (sa, _) = try VertexConfig.current()
-        let token = try await VertexAuth.shared.getAccessToken()
-        let urlStr = "https://aiplatform.googleapis.com/v1/projects/\(sa.projectId)/locations/\(location)/publishers/google/models/\(model):generateContent"
-        guard let url = URL(string: urlStr) else { throw FoodVisionError.badURL }
-
-        // 3. Build request body
-        let thinkingBudget = VertexGeminiClient.thinkingBudgetTokens()
-        let body: [String: Any] = [
-            "systemInstruction": [
-                "parts": [["text": Self.systemInstruction]]
-            ],
-            "contents": [[
-                "role": "user",
-                "parts": [
-                    ["inlineData": ["mimeType": "image/jpeg", "data": base64]],
-                    ["text": Self.userPrompt]
-                ]
-            ]],
-            "generationConfig": [
+        // 2. Build the gateway body (structured JSON output via responseSchema)
+        let thinkingBudget = GatewayChatClient.thinkingBudgetTokens()
+        let body = GatewayChatPayload.body(
+            stream: false,
+            system: Self.systemInstruction,
+            messages: [GatewayChatPayload.message(role: "user", parts: [
+                GatewayChatPayload.imagePart(data: jpeg, mimeType: "image/jpeg"),
+                GatewayChatPayload.textPart(Self.userPrompt)
+            ])],
+            generationConfig: [
                 "responseMimeType": "application/json",
                 "responseSchema": Self.responseSchema,
                 "temperature": 0.2,
                 "maxOutputTokens": 1024 + thinkingBudget,
                 "thinkingConfig": ["thinkingBudget": thinkingBudget]
             ]
-        ]
+        )
 
-        var req = URLRequest(url: url, timeoutInterval: timeout)
-        req.httpMethod = "POST"
-        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try JSONSerialization.data(withJSONObject: body)
-
-        // 4. Execute
-        let (data, response) = try await URLSession.shared.data(for: req)
-        guard let http = response as? HTTPURLResponse else { throw FoodVisionError.badResponse }
-        guard (200..<300).contains(http.statusCode) else {
-            throw FoodVisionError.httpError(http.statusCode)
+        // 3. Execute through the shared gateway transport (bearer + 401 retry)
+        let data: Data
+        do {
+            data = try await GatewayTransport.postJSON(path: "v1/chat", body: body, timeout: timeout)
+        } catch let gateway as GatewayError {
+            throw FoodVisionError.gateway(gateway.userMessage)
+        } catch {
+            throw FoodVisionError.gateway(error.localizedDescription)
         }
 
         // Count this scan's tokens against the food-vision bucket using Gemini's
@@ -123,12 +106,6 @@ public actor FoodVisionService {
         guard let ui = UIImage(data: imageData) else { throw FoodVisionError.invalidImage }
         let resized = ui.resizedForVision(maxDimension: 1024)
         guard let jpeg = resized.jpegData(compressionQuality: 0.7) else { throw FoodVisionError.invalidImage }
-        let base64 = jpeg.base64EncodedString()
-
-        let (sa, _) = try VertexConfig.current()
-        let token = try await VertexAuth.shared.getAccessToken()
-        let urlStr = "https://aiplatform.googleapis.com/v1/projects/\(sa.projectId)/locations/\(location)/publishers/google/models/\(model):generateContent"
-        guard let url = URL(string: urlStr) else { throw FoodVisionError.badURL }
 
         let refinePrompt = """
         You previously identified these food items from the attached photo:
@@ -148,34 +125,31 @@ public actor FoodVisionService {
         you changed. Return JSON conforming exactly to the schema. No other output.
         """
 
-        let thinkingBudget = VertexGeminiClient.thinkingBudgetTokens()
-        let body: [String: Any] = [
-            "systemInstruction": ["parts": [["text": Self.systemInstruction]]],
-            "contents": [[
-                "role": "user",
-                "parts": [
-                    ["inlineData": ["mimeType": "image/jpeg", "data": base64]],
-                    ["text": refinePrompt]
-                ]
-            ]],
-            "generationConfig": [
+        let thinkingBudget = GatewayChatClient.thinkingBudgetTokens()
+        let body = GatewayChatPayload.body(
+            stream: false,
+            system: Self.systemInstruction,
+            messages: [GatewayChatPayload.message(role: "user", parts: [
+                GatewayChatPayload.imagePart(data: jpeg, mimeType: "image/jpeg"),
+                GatewayChatPayload.textPart(refinePrompt)
+            ])],
+            generationConfig: [
                 "responseMimeType": "application/json",
                 "responseSchema": Self.responseSchema,
                 "temperature": 0.2,
                 "maxOutputTokens": 1024 + thinkingBudget,
                 "thinkingConfig": ["thinkingBudget": thinkingBudget]
             ]
-        ]
+        )
 
-        var req = URLRequest(url: url, timeoutInterval: timeout)
-        req.httpMethod = "POST"
-        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try JSONSerialization.data(withJSONObject: body)
-
-        let (data, response) = try await URLSession.shared.data(for: req)
-        guard let http = response as? HTTPURLResponse else { throw FoodVisionError.badResponse }
-        guard (200..<300).contains(http.statusCode) else { throw FoodVisionError.httpError(http.statusCode) }
+        let data: Data
+        do {
+            data = try await GatewayTransport.postJSON(path: "v1/chat", body: body, timeout: timeout)
+        } catch let gateway as GatewayError {
+            throw FoodVisionError.gateway(gateway.userMessage)
+        } catch {
+            throw FoodVisionError.gateway(error.localizedDescription)
+        }
 
         if let meta = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["usageMetadata"] as? [String: Any],
            let usage = TokenUsage(usageMetadata: meta) {
@@ -320,22 +294,19 @@ private extension UIImage {
 
 public enum FoodVisionError: LocalizedError {
     case invalidImage
-    case badURL
-    case badResponse
-    case httpError(Int)
     case parseError
     case noFoodDetected
-    case noConfig
+    /// Transport / auth / rate-limit failure from the gateway — carries the
+    /// GatewayError's honest user-facing message (e.g. "Astra is catching
+    /// its breath — try again in ~5s.").
+    case gateway(String)
 
     public var errorDescription: String? {
         switch self {
-        case .invalidImage:    return "Could not process image."
-        case .badURL:          return "Invalid API endpoint."
-        case .badResponse:     return "No response from server."
-        case .httpError(let code): return "Server error \(code)."
-        case .parseError:      return "Could not read AI response."
-        case .noFoodDetected:  return "No food detected in this photo."
-        case .noConfig:        return "Vertex credentials not configured."
+        case .invalidImage:        return "Could not process image."
+        case .parseError:          return "Could not read AI response."
+        case .noFoodDetected:      return "No food detected in this photo."
+        case .gateway(let message): return message
         }
     }
 }

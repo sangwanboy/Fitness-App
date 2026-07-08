@@ -1,8 +1,9 @@
 import Foundation
 
-/// AI-side companion to `PredictionEngine`. Wraps Vertex / Gemini calls
-/// dedicated to *enriching* deterministic predictions with personalized
-/// language, cross-metric insight, action chips, and anomaly interpretation.
+/// AI-side companion to `PredictionEngine`. Wraps Gemini calls (via the
+/// Atlas AI Gateway proxy) dedicated to *enriching* deterministic
+/// predictions with personalized language, cross-metric insight, action
+/// chips, and anomaly interpretation.
 ///
 /// The deterministic engine remains canonical — this service is purely
 /// additive. On timeout / network failure / parse error, the card renders
@@ -10,12 +11,6 @@ import Foundation
 public actor PredictionAIService {
     public static let shared = PredictionAIService()
 
-    // gemini-3.5-flash — same model used in the Coach chat. Single source of
-    // truth for which model the app ships against.
-    private let model = "gemini-3.5-flash"
-    // 3.5-flash is only published on the `global` routing host — regional
-    // endpoints return 404 for any 3.x model. Confirmed by direct API ping.
-    private let location = "global"
     private let timeout: TimeInterval = 12
 
     /// In-flight task dedupe: if a second `enrichPredictions` lands while the
@@ -61,19 +56,19 @@ public actor PredictionAIService {
     }
 
     public enum AIError: Error, LocalizedError {
-        case noServiceAccount
-        case noAuthToken
         case httpStatus(Int)
         case parseError
         case timeout
+        /// Gateway-level failure (auth, rate limit, quota, server) — carries
+        /// the GatewayError's honest user-facing message.
+        case gateway(String)
 
         public var errorDescription: String? {
             switch self {
-            case .noServiceAccount: return "Vertex service account not configured."
-            case .noAuthToken: return "Could not get a Vertex access token."
-            case .httpStatus(let code): return "Vertex returned HTTP \(code)."
-            case .parseError: return "Could not parse Vertex response."
-            case .timeout: return "Vertex request timed out."
+            case .httpStatus(let code): return "AI backend returned HTTP \(code)."
+            case .parseError: return "Could not parse the AI response."
+            case .timeout: return "AI request timed out."
+            case .gateway(let message): return message
             }
         }
     }
@@ -125,9 +120,9 @@ public actor PredictionAIService {
     }
 
     /// Streaming "Why?" deep-dive for a single prediction kind. Emits text
-    /// chunks as Gemini generates them via the streamGenerateContent SSE
-    /// endpoint — so the user sees progressive output instead of a 3-second
-    /// wait then a wall of text. Caller cancels by closing the sheet.
+    /// chunks as Gemini generates them via the gateway's /v1/chat SSE stream
+    /// — so the user sees progressive output instead of a 3-second wait then
+    /// a wall of text. Caller cancels by closing the sheet.
     public nonisolated func explainPrediction(_ kind: PredictionKind,
                                               predictions: Predictions,
                                               userContext: String) -> AsyncThrowingStream<WhyStreamEvent, Error> {
@@ -135,10 +130,12 @@ public actor PredictionAIService {
             let task = Task {
                 do {
                     let prompt = Self.whyPrompt(kind: kind, predictions: predictions, userContext: userContext)
-                    try await self.streamGeminiSSE(prompt: prompt,
-                                                   maxTokens: 2000,
-                                                   continuation: continuation)
+                    try await self.streamWhyExplanation(prompt: prompt,
+                                                        maxTokens: 2000,
+                                                        continuation: continuation)
                     continuation.finish()
+                } catch let gateway as GatewayError {
+                    continuation.finish(throwing: AIError.gateway(gateway.userMessage))
                 } catch {
                     continuation.finish(throwing: error)
                 }
@@ -147,85 +144,43 @@ public actor PredictionAIService {
         }
     }
 
-    /// Real streamGenerateContent transport. Yields text chunks as each
-    /// candidate JSON object arrives, plus a trailing `.usage` event when
-    /// `usageMetadata` lands. Mirrors VertexGeminiClient's brace-depth scanner.
-    private func streamGeminiSSE(prompt: String,
-                                 maxTokens: Int,
-                                 continuation: AsyncThrowingStream<WhyStreamEvent, Error>.Continuation) async throws {
-        let (sa, _) = try VertexConfig.current()
-        let token = try await VertexAuth.shared.getAccessToken()
-
-        let urlStr = "https://aiplatform.googleapis.com/v1/projects/\(sa.projectId)/locations/\(location)/publishers/google/models/\(model):streamGenerateContent"
-        guard let url = URL(string: urlStr) else { throw AIError.noServiceAccount }
-
-        var req = URLRequest(url: url)
-        req.httpMethod = "POST"
-        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        // Streaming: idle timeout of 30s mid-stream is plenty for the 2-3
-        // sentence outputs we expect.
-        req.timeoutInterval = 30
-
-        // 3.5-flash spends tokens on internal reasoning before emitting text.
-        // Read the shared thinking_level preference and add headroom on top
-        // of the caller's `maxTokens` so visible output is never starved.
-        let thinkingBudget = VertexGeminiClient.thinkingBudgetTokens()
-        let body: [String: Any] = [
-            "contents": [["role": "user", "parts": [["text": prompt]]]],
-            "generationConfig": [
+    /// Streaming transport via GatewayTransport.streamChat. Each yielded
+    /// element is one Vertex-shaped JSON chunk (SSE framing handled by the
+    /// transport); forwards non-empty text runs plus a trailing `.usage`
+    /// event when `usageMetadata` lands.
+    private func streamWhyExplanation(prompt: String,
+                                      maxTokens: Int,
+                                      continuation: AsyncThrowingStream<WhyStreamEvent, Error>.Continuation) async throws {
+        // The chat model spends tokens on internal reasoning before emitting
+        // text. Read the shared thinking_level preference and add headroom on
+        // top of the caller's `maxTokens` so visible output is never starved.
+        let thinkingBudget = GatewayChatClient.thinkingBudgetTokens()
+        let body = GatewayChatPayload.body(
+            stream: true,
+            system: "",
+            messages: [GatewayChatPayload.message(role: "user",
+                                                  parts: [GatewayChatPayload.textPart(prompt)])],
+            generationConfig: [
                 "maxOutputTokens": maxTokens + thinkingBudget,
                 "temperature": 0.7,
                 "thinkingConfig": ["thinkingBudget": thinkingBudget]
             ]
-        ]
-        req.httpBody = try JSONSerialization.data(withJSONObject: body)
+        )
 
-        let (bytes, response) = try await URLSession.shared.bytes(for: req)
-        guard let http = response as? HTTPURLResponse else { throw AIError.parseError }
-        guard (200..<300).contains(http.statusCode) else {
-            throw AIError.httpStatus(http.statusCode)
-        }
-
-        // Brace-depth scanner extracting complete top-level JSON objects.
-        var braceDepth = 0
-        var buffer = ""
-        var inString = false
-        var escaped = false
-
-        for try await byte in bytes {
+        // Idle timeout of 30s mid-stream is plenty for the outputs we expect.
+        let events = try await GatewayTransport.streamChat(body: body, idleTimeout: 30)
+        for try await chunk in events {
             if Task.isCancelled { return }
-            let char = Character(UnicodeScalar(byte))
-            if braceDepth > 0 { buffer.append(char) }
-            if inString {
-                if escaped { escaped = false }
-                else if char == "\\" { escaped = true }
-                else if char == "\"" { inString = false }
-            } else {
-                switch char {
-                case "\"": inString = true
-                case "{":
-                    braceDepth += 1
-                    if braceDepth == 1 { buffer = "{" }
-                case "}":
-                    braceDepth -= 1
-                    if braceDepth == 0 {
-                        emitTextChunk(from: buffer, into: continuation)
-                        buffer = ""
-                    }
-                default: break
-                }
-            }
+            emitTextChunk(from: chunk, into: continuation)
         }
     }
 
     /// Extract `candidates[].content.parts[].text` from a single chunked JSON
     /// object and forward each non-empty text run + any usageMetadata as
     /// dedicated stream events.
-    private func emitTextChunk(from jsonStr: String,
+    private func emitTextChunk(from data: Data,
                                into continuation: AsyncThrowingStream<WhyStreamEvent, Error>.Continuation) {
-        guard let data = jsonStr.data(using: .utf8),
-              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
         if let candidates = obj["candidates"] as? [[String: Any]] {
             for cand in candidates {
                 guard let content = cand["content"] as? [String: Any],
@@ -340,30 +295,14 @@ public actor PredictionAIService {
         return out
     }
 
-    // MARK: - Gemini transport
+    // MARK: - Gateway transport
 
-    /// One-shot generateContent call. Optionally constrains response to JSON.
+    /// One-shot /v1/chat call through the gateway. Optionally constrains the
+    /// response to JSON.
     private func callGeminiJSON(prompt: String, maxTokens: Int, responseJSON: Bool) async throws -> String {
-        let (sa, _) = try VertexConfig.current()
-        let token: String
-        do {
-            token = try await VertexAuth.shared.getAccessToken()
-        } catch {
-            throw AIError.noAuthToken
-        }
-
-        let urlStr = "https://aiplatform.googleapis.com/v1/projects/\(sa.projectId)/locations/\(location)/publishers/google/models/\(model):generateContent"
-        guard let url = URL(string: urlStr) else { throw AIError.noServiceAccount }
-
-        var req = URLRequest(url: url)
-        req.httpMethod = "POST"
-        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.timeoutInterval = timeout
-
-        // Add headroom on top of the caller's maxTokens so 3.5-flash's
+        // Add headroom on top of the caller's maxTokens so the model's
         // internal thoughts can't starve the visible JSON payload.
-        let thinkingBudget = VertexGeminiClient.thinkingBudgetTokens()
+        let thinkingBudget = GatewayChatClient.thinkingBudgetTokens()
         var generationConfig: [String: Any] = [
             "maxOutputTokens": maxTokens + thinkingBudget,
             "temperature": 0.7,
@@ -372,22 +311,24 @@ public actor PredictionAIService {
         if responseJSON {
             generationConfig["responseMimeType"] = "application/json"
         }
-        let body: [String: Any] = [
-            "contents": [["role": "user", "parts": [["text": prompt]]]],
-            "generationConfig": generationConfig
-        ]
-        req.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let body = GatewayChatPayload.body(
+            stream: false,
+            system: "",
+            messages: [GatewayChatPayload.message(role: "user",
+                                                  parts: [GatewayChatPayload.textPart(prompt)])],
+            generationConfig: generationConfig
+        )
 
-        let (data, response): (Data, URLResponse)
+        let data: Data
         do {
-            (data, response) = try await URLSession.shared.data(for: req)
-        } catch {
-            throw AIError.timeout
-        }
-
-        guard let http = response as? HTTPURLResponse else { throw AIError.parseError }
-        guard (200..<300).contains(http.statusCode) else {
-            throw AIError.httpStatus(http.statusCode)
+            data = try await GatewayTransport.postJSON(path: "v1/chat", body: body, timeout: timeout)
+        } catch GatewayError.network(let underlying) {
+            // Preserve the old timeout semantics for plain transport drops so
+            // enrichPredictions' partial-failure tolerance behaves the same.
+            if (underlying as? URLError)?.code == .timedOut { throw AIError.timeout }
+            throw AIError.gateway(GatewayError.network(underlying: underlying).userMessage)
+        } catch let gateway as GatewayError {
+            throw AIError.gateway(gateway.userMessage)
         }
 
         guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],

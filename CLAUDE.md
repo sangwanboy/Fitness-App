@@ -5,8 +5,9 @@ Guidance for Claude Code when working in this repository.
 ## Project
 **Fitness Guru** — a SwiftUI iOS 26 app (`FitnessApp.swiftpm`) for Tushar's iPhone 17 Pro
 (UDID `6EBFD630-1768-512E-95E3-EC7D76AA8CDD`). AI fitness coach ("Astra") built on HealthKit +
-EventKit + Vertex AI Gemini (`gemini-3.5-flash`), with on-device prediction & sleep engines.
-Native iOS 26 Liquid Glass UI only.
+EventKit + the **Atlas AI Gateway** (server-side Gemini `gemini-3.5-flash` behind logical model
+`chat`; gateway repo `github.com/sangwanboy/atlas-ai-gateway`, local `~/Multi App Ai Backend`),
+with on-device prediction & sleep engines. Native iOS 26 Liquid Glass UI only.
 
 - Full change history & per-session handoffs: **`agents_log.md`** — read it before large changes.
 - GitHub: https://github.com/sangwanboy/Fitness-App (branch `main`).
@@ -60,5 +61,13 @@ Do this for each codebase change (in order):
 - **No mock data anywhere** — honest empty states ("—", "No data yet").
 - Every clickable element must do something — no `Button(action: {})`.
 - AI replies stay brief & structured. Logged food carries `is_estimate` + a confidence.
-- Gemini is `gemini-3.5-flash` via the **global** endpoint only (regional endpoints 404 for 3.x);
-  thought-signatures must round-trip for tool calls; `thinkingConfig` only inside `generationConfig`.
+- All AI traffic goes through the Atlas AI Gateway (`Services/Gateway/`) — never call Vertex/Google
+  directly and never put a raw Gemini model name in a request: the logical model is `"chat"`.
+  Gateway part shapes are strict: images are `{"image":{"mimeType","data"}}` (not `inlineData`),
+  `thoughtSignature` rides ONLY as a part-level sibling of `functionCall` and must round-trip for
+  tool calls; `thinkingConfig` only inside `generationConfig`; system prompt is a plain string.
+- Local dev gateway (needed for AI on device/simulator until the Azure deploy exists):
+  `cd ~/Multi\ App\ Ai\ Backend && export PATH="$HOME/.local/node22/bin:$PATH" && STORE=memory SEED_DEMO=true ADMIN_SECRET=dev JWT_SECRET=dev ALLOW_FAKE_APPLE=true GCP_PROJECT=vertexi-ai-493516 GCP_SA_JSON_FILE="$HOME/projects/Fitness App/FitnessApp.swiftpm/FitnessApp/vertex-service-account.json" node dist/index.js`
+  — binds all interfaces; the phone reaches it at the Mac's LAN IP on port 8787 (Settings →
+  Astra AI backend → gateway URL). The service-account file now feeds ONLY this local gateway;
+  it is never bundled into the app.

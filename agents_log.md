@@ -3050,3 +3050,99 @@ Pending re-check.
 
 Latest deployed sequence: **3496**.
 
+
+---
+
+## 2026-07-07 — HANDOFF from Atlas AI Gateway (external agent) — Migrate Fitness Guru/Astra to the shared backend
+
+> Written by the Atlas AI Gateway orchestrator (Claude, Fable 5). Migration brief for the next agent on this app. Gateway repo: `github.com/sangwanboy/atlas-ai-gateway` (local: `~/Multi App Ai Backend`). Read `docs/API.md` + `docs/SETUP.md` first; migration sketch in `docs/ARCHITECTURE.md` §11. Migrate AFTER Cookery (its migration is the simpler pilot).
+
+**Why:** This solves ship-blocker #2 from Session 52 (Vertex credential architecture — embedded/pasted service-account key + on-device JWT signing). The gateway holds credentials server-side (Azure Key Vault), proxies Gemini, meters usage, absorbs rate limits. Fitness Guru is registered as app `fitness-guru` (capability `chat` → gemini-3.5-flash, 30 rpm + 750k tokens/day per user). ⚠️ Its bundle ID in the gateway registry is a PLACEHOLDER (`com.atlas.fitnessguru.PLACEHOLDER`) — replace with the real bundle ID from the Xcode project in the gateway's `src/store/seed.ts` + infra config before testing auth.
+
+**What to build:**
+1. Gateway client replacing the direct Vertex client. `POST /v1/chat` is Gemini-shaped and **fully supports Astra's ~24 function-calling tools as passthrough**: send `tools` (functionDeclarations) as today → receive `functionCall` parts (streaming or not) → execute ON-DEVICE with the existing confirmation-gating → send `functionResponse` parts back in the next request. The loop shape is unchanged; only the base URL + auth change. Streaming is SSE verbatim (same `streamGenerateContent?alt=sse` dialect — existing parser works). Vision food-logging photos = image parts in messages, same endpoint. Logical model name is `chat` (NOT `gemini-3.5-flash` — the admin dashboard can now switch Astra's model globally with zero app updates).
+2. Sign in with Apple → gateway tokens (`/v1/auth/apple`, `/v1/auth/refresh`, Keychain, rotate on 401). Dev: `ALLOW_FAKE_APPLE=true` on a local gateway. Real SIWA needs the paid Apple Developer Program (was mid-enrollment as of Session 52).
+3. DELETE: `vertex-service-account.json` handling (bundled AND the paste-in-Settings path), on-device RSA JWT signing, OAuth token exchange. This also kills the "security risk" App Store blocker + simplifies Settings UI.
+4. Errors: envelope `{error:{code,message,retryAfterMs?}}`; handle `rate_limited`/`quota_exceeded`/`upstream_not_configured`.
+5. NEW: `POST /v1/feedback` (rating/thumb + text + tag e.g. chat/widgets/sleep + appVersion) → admin dashboard inbox. `GET /v1/usage` gives the user's real token/cost aggregates if you want an in-app usage screen.
+
+**Privacy win for App Store prep:** the gateway NEVER stores or logs message content — Astra's per-turn Apple Health context transits memory only; metering is metadata-only (tokens/latency/status). Cite this in the privacy policy + App Privacy labels work (ship-blocker #3). "Not medical advice" disclaimers remain app-side work.
+
+**Local gateway for testing:** `cd ~/Multi\ App\ Ai\ Backend && export PATH="$HOME/.local/node22/bin:$PATH" && npm install && npm run build && STORE=memory SEED_DEMO=true ADMIN_SECRET=dev JWT_SECRET=dev node dist/index.js` (AI endpoints need `GCP_PROJECT` + `GCP_SA_JSON_FILE` to hit real Gemini; admin dashboard at `http://localhost:8787/admin`).
+
+---
+
+## Session 53 — 2026-07-08 (Atlas AI Gateway migration — executed)
+
+Executed the 2026-07-07 handoff above. Orchestrated session: recon (2 agents) → design → parallel
+implementation (gateway repo + app) → adversarial review → device deploy. **Resolves App Store
+ship-blocker #2 (Vertex credential architecture) from Session 52.**
+
+### Gateway repo (`~/Multi App Ai Backend`, commit `71d53b9`, pushed)
+- Registered real bundle ID `com.tushar.fitnessapp` for app `fitness-guru` (seed.ts + docs).
+- **Critical bug found & fixed:** part schemas were zod `.strict()`, so a `thoughtSignature`
+  sibling on a `functionCall` part 400-rejected the whole request — every Gemini 3.x tool
+  follow-up would have failed. Schema now accepts it on functionCall/functionResponse parts
+  (text/image stay strict); 6 new tests; 38/38 pass. Proven live: streaming tool call →
+  functionCall + signature → functionResponse round-trip → 200 with correct answer.
+- Server binds all interfaces — phone reaches it at the Mac's LAN IP (`http://<mac-ip>:8787`).
+
+### App changes
+- **NEW `Services/Gateway/`** (7 files): `GatewayConfig` (logical model `"chat"`; base URL from
+  UserDefaults `gateway_base_url` → DEBUG default `http://10.130.154.45:8787` → nil in release
+  until the Azure deploy), `KeychainStore` (first Keychain use in the app), `GatewayError`
+  (envelope `{error:{code,message,retryAfterMs}}` → distinct honest user messages incl.
+  rate-limit/quota/sign-in), `GatewayAuth` (actor; rotating refresh tokens persisted atomically;
+  single-flight refresh; 401-on-refresh wipes session; DEBUG `signInDev()` fake-auth;
+  `signIn(appleIdentityToken:)` ready for SIWA), `GatewayTransport` (shared POST + true SSE
+  parser; bearer inject; refresh-and-retry-once on 401), `GatewayChatPayload` (strict part
+  shapes: `{"image":{…}}` not `inlineData`; `thoughtSignature` only as functionCall-part
+  sibling; system as plain string), `FeedbackService` (`POST /v1/feedback`, omits absent fields).
+- **`VertexGeminiClient.swift` → `GatewayChatClient.swift`**: same public API/ChatChunk stream,
+  toolsManifest, 120s watchdog, thinking budget, TokenMeter; transport now the gateway.
+  **Review caught a critical bug:** the first SSE parser used `bytes.lines`, which swallows the
+  empty lines that delimit SSE events — every multi-chunk stream would have arrived as one
+  unparseable blob (empty replies). Rewritten as a byte-level scanner (CRLF, multi-line data,
+  keep-alive comments, final-event flush).
+- **FoodVisionService / PredictionAIService** rewired to the shared transport (both duplicate
+  brace-matching scanners deleted); partial-failure tolerance, caching, TokenMeter intact.
+- **DELETED:** `VertexAuth.swift` (RS256 JWT + PKCS8→PKCS1 ASN.1 + Google OAuth, ~236 lines),
+  `VertexConfig.swift` (service-account paste/bundle). `vertex-service-account.json` is excluded
+  from the app bundle (project.yml `excludes`) — stays on disk, gitignored, feeds only the local
+  gateway.
+- **SettingsView:** Vertex key section → "Astra AI backend" (real session row, working sign
+  in/out, gateway URL field + `/healthz` test) + new "Send feedback" glass sheet
+  (thumb/tag/text → `/v1/feedback`). Fake "Signed in with Apple" badge removed.
+- **LoginView:** "Continue with Apple" is real (DEBUG → gateway fake-auth; release → full
+  ASAuthorizationController flow, entitlement deliberately NOT added while the team is free);
+  fake Google / Face ID / "Get started" buttons deleted; honest "Continue without AI coach" path.
+- **project.yml / AppInfo.plist:** `NSAppTransportSecurity.NSAllowsLocalNetworking` +
+  `NSLocalNetworkUsageDescription` (phone → Mac LAN gateway in dev). xcodegen absent on this
+  Mac; pbxproj updated via scratchpad script — `project.yml` remains source of truth.
+
+### Verification
+- Gateway smoke-tested end-to-end against real Gemini (auth, refresh rotation, chat,
+  streaming+tools, thoughtSignature round-trip, feedback 201, usage token-exact).
+- Simulator **BUILD SUCCEEDED** (incl. post-review fix). Adversarial review of the full diff:
+  1 critical fixed (SSE), auth/payload/tool-loop/pbxproj/secrets clean.
+
+### Deploy
+- Device build initially blocked: **Xcode had no signed-in account** (signed out during the
+  Session-52 enrollment check; free-team profiles from June 19 expired). Diagnosed via screen
+  inspection: the user's sign-in attempt had a typo'd email (missing `@`) — fixed, signed in,
+  automatic signing minted fresh HealthKit profiles.
+- Also: disk was 100% full (418MB free) — cleaned ~7.8GB of regenerable junk (old iPad beta
+  DeviceSupport, other projects' DerivedData, stale simulators, updater/npm caches) → 8.2GB free.
+- Deployed to device and launched: **databaseSequenceNumber: 5544**.
+
+### Outstanding
+- GCP key rotation `4d33d3bc…` (project `vertexi-ai-493516`) — STILL OPEN, now lower blast
+  radius (key never ships in the app).
+- No production gateway URL yet (`azd up` pending in the gateway repo) — release builds
+  intentionally report "AI backend not configured".
+- Real SIWA needs the paid-team entitlement once enrollment lands (then add
+  `com.apple.developer.applesignin` to FitnessApp.entitlements and flip LoginView off dev-auth).
+- Deferred review nit: `GatewayAuth.store()` ignores Keychain write failures (stale refresh
+  token → forced re-sign-in on a cold launch after a failed write; low likelihood).
+
+Latest deployed sequence: **5544**.

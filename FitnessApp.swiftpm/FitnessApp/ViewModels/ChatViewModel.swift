@@ -106,13 +106,12 @@ public final class ChatViewModel: ObservableObject {
         let prompt = trimmed.isEmpty ? "What is this? Give me full details." : trimmed
 
         do {
-            let stream = await VertexGeminiClient.shared.streamGenerateContent(
+            let stream = await GatewayChatClient.shared.streamGenerateContent(
                 prompt: prompt,
                 history: history,
                 systemInstruction: systemInstruction,
                 imageData: imageData,
-                imageMimeType: "image/jpeg",
-                model: "gemini-3.5-flash"
+                imageMimeType: "image/jpeg"
             )
 
             // Placeholder for the model's reply that we mutate as chunks arrive
@@ -163,10 +162,23 @@ public final class ChatViewModel: ObservableObject {
             }
             messages.append(ChatMessage(
                 role: .model,
-                text: "Sorry, I ran into an issue connecting to my processors. Please check your network connection and try again.",
+                text: Self.errorBubbleText(
+                    error,
+                    fallback: "Sorry, I ran into an issue connecting to my processors. Please check your network connection and try again."
+                ),
                 isError: true
             ))
         }
+    }
+
+    /// Honest error copy for the chat bubble: gateway states (rate-limited,
+    /// quota, signed-out, backend-not-configured) surface their specific
+    /// user message; anything else keeps the generic connection fallback.
+    private static func errorBubbleText(_ error: Error, fallback: String) -> String {
+        if let gateway = error as? GatewayError {
+            return gateway.userMessage
+        }
+        return fallback
     }
 
     /// Runs a read-only tool (list_reminders, list_calendar_events) immediately,
@@ -960,7 +972,7 @@ public final class ChatViewModel: ObservableObject {
     }
 
     /// Re-invokes Gemini with an empty prompt after a tool reaches a terminal state.
-    /// The history serializer in VertexGeminiClient injects the matching
+    /// The history serializer in GatewayChatClient injects the matching
     /// `functionResponse` part, so the model streams a short acknowledgment as a
     /// fresh model message. No-op for tools that don't need confirmation.
     private func sendFollowup() async {
@@ -976,13 +988,12 @@ public final class ChatViewModel: ObservableObject {
         let history = messages
 
         do {
-            let stream = await VertexGeminiClient.shared.streamGenerateContent(
+            let stream = await GatewayChatClient.shared.streamGenerateContent(
                 prompt: "",
                 history: history,
                 systemInstruction: systemInstruction,
                 imageData: nil,
-                imageMimeType: "image/jpeg",
-                model: "gemini-3.5-flash"
+                imageMimeType: "image/jpeg"
             )
 
             let modelId = UUID()
@@ -1041,7 +1052,10 @@ public final class ChatViewModel: ObservableObject {
             }
             messages.append(ChatMessage(
                 role: .model,
-                text: "Couldn't reach the coach to finish that step. Tap Retry to try again.",
+                text: Self.errorBubbleText(
+                    error,
+                    fallback: "Couldn't reach the coach to finish that step. Tap Retry to try again."
+                ),
                 isError: true
             ))
         }
@@ -1172,13 +1186,12 @@ public final class ChatViewModel: ObservableObject {
         let prompt = user.text.isEmpty ? "What is this? Give me full details." : user.text
 
         do {
-            let stream = await VertexGeminiClient.shared.streamGenerateContent(
+            let stream = await GatewayChatClient.shared.streamGenerateContent(
                 prompt: prompt,
                 history: history,
                 systemInstruction: systemInstruction,
                 imageData: user.imageData,
-                imageMimeType: "image/jpeg",
-                model: "gemini-3.5-flash"
+                imageMimeType: "image/jpeg"
             )
 
             let modelId = UUID()
@@ -1224,7 +1237,10 @@ public final class ChatViewModel: ObservableObject {
             }
             messages.append(ChatMessage(
                 role: .model,
-                text: "Still couldn't reach the coach. Check your network and try again.",
+                text: Self.errorBubbleText(
+                    error,
+                    fallback: "Still couldn't reach the coach. Check your network and try again."
+                ),
                 isError: true
             ))
         }
