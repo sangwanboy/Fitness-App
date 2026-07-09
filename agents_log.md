@@ -3180,4 +3180,15 @@ Latest deployed sequence: **5544**.
 ### Deploy
 - Simulator + device builds green. Deployed + launched: **databaseSequenceNumber: 5600**.
 
-Latest deployed sequence: **5600**.
+### "No gateway URL configured" — root cause was a PROJECT config hole, fixed
+- The pbxproj (hand-maintained; xcodegen not installed on this Mac) defined
+  `SWIFT_ACTIVE_COMPILATION_CONDITIONS` NOWHERE — so `#if DEBUG` has never been true in ANY build
+  of this app. Session 53's first-ever `#if DEBUG` usage exposed it: device builds compiled the
+  RELEASE branches (nil gateway URL, no "Sign in (dev)" button) → `.notConfigured` error.
+- Fix: `SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG` added to the target's Debug config in
+  project.pbxproj + project.yml (`settings.configs.debug`). Deliberately did NOT add
+  `SWIFT_OPTIMIZATION_LEVEL -Onone`: this project's Debug builds have always run at the default
+  `-O`, and de-optimizing now would make the app feel slower — revisit only if debugging needs it.
+- Redeployed: **databaseSequenceNumber: 5608**.
+
+Latest deployed sequence: **5608**.
