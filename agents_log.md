@@ -3147,3 +3147,37 @@ ship-blocker #2 (Vertex credential architecture) from Session 52.**
   token → forced re-sign-in on a cold launch after a failed write; low likelihood).
 
 Latest deployed sequence: **5544**.
+
+---
+
+## Session 54 — 2026-07-09 (UI-lag fixes + AI-unreachable triage)
+
+### UI lag — diagnosed by agent, 3 fixes shipped
+1. **Keychain out of render paths** (migration regression): SettingsView's `@State gatewaySessionUserId`
+   initializer did a synchronous `SecItemCopyMatching` on EVERY view init (ContentView re-inits all
+   tabs per body eval; 1–5 ms vs 8.3 ms frame budget @120 Hz). Now `nil`-seeded + `.task` refresh;
+   GatewayAuth has NO nonisolated Keychain-touching members anymore (unused `isSignedIn` deleted,
+   `currentUserId` actor-isolated in-memory).
+2. **Unreachable-gateway enrichment churn**: fresh snapshots reset AI status to `.pending`
+   (in `contentSignature`), so every 60 s poll re-fired 3 parallel 12 s-timeout /v1/chat calls +
+   2 whole-tree publishes forever when the Mac was unreachable. Now: same-day AI carry-forward in
+   `recomputePredictions` + 10-min failure backoff in `kickoffAIEnrichmentIfNeeded`
+   (`retryAIEnrichment` chip bypasses/resets it).
+3. **Chat fast-fail**: `GatewayTransport.ensureReachable()` — 2 s `/healthz` probe before opening a
+   stream (skipped when traffic succeeded <60 s ago), so a dead gateway shows the honest error
+   bubble in ~2 s instead of 15–27 s of typing dots.
+- Cleared as NOT regressions: SSE chunk granularity (same as old scanner), TokenMeter, all
+  Session-50 perf-fix sites intact.
+
+### "Can't use AI features" — root-cause triage (in progress at commit time)
+- Gateway log since deploy shows **zero requests from the Fitness app ever** (only `cookery`
+  sign-ins at 00:13/01:46 UTC — the other app). Gateway alive, Mac LAN IP unchanged
+  (10.130.154.45). ⇒ requests never leave the phone: likely iOS **Local Network permission**
+  denied/never granted for FitnessApp, or user never tapped Sign in (dev). Being verified live
+  via iPhone Mirroring. Phone Wi-Fi is `Glide_Resident` (managed/residential) — if phone↔Mac
+  client isolation is enforced, LAN dev needs Personal Hotspot or the Azure deploy instead.
+
+### Deploy
+- Simulator + device builds green. Deployed + launched: **databaseSequenceNumber: 5600**.
+
+Latest deployed sequence: **5600**.

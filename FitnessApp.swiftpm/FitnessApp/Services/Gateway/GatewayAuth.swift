@@ -57,16 +57,11 @@ public actor GatewayAuth {
 
     // MARK: - Public state
 
-    /// True when a persisted session exists. Nonisolated (reads the Keychain
-    /// directly) so SwiftUI views can check it synchronously.
-    public nonisolated var isSignedIn: Bool {
-        KeychainStore.string(for: Key.refresh) != nil
-    }
-
-    /// The gateway user id of the stored session, if any. Nonisolated for
-    /// synchronous display in Settings.
-    public nonisolated var currentUserId: String? {
-        KeychainStore.string(for: Key.userId)
+    /// The gateway user id of the current session, if any. Actor-isolated and
+    /// served from the in-memory session — never touches the Keychain, so
+    /// view code can `await` it without blocking the main thread.
+    public var currentUserId: String? {
+        session?.userId
     }
 
     // MARK: - Token access

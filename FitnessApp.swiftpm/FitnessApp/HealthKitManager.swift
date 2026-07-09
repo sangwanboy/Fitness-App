@@ -1616,6 +1616,11 @@ public final class HealthKitManager: ObservableObject {
     /// should not write it back.
     private var lastEnrichmentTargetTimestamp: Date?
 
+    /// When the last enrichment attempt failed. Auto-retries hold off for
+    /// `enrichmentFailureBackoff`; the manual "Retry insights" chip clears it.
+    private var lastEnrichmentFailureAt: Date?
+    private static let enrichmentFailureBackoff: TimeInterval = 600
+
     /// Kicks off the AI enrichment for the latest `predictions` snapshot.
     /// Fire-and-forget — completes async and updates `predictions` again
     /// when it lands. Reads cache first; only calls the network on cache miss.
@@ -1639,7 +1644,19 @@ public final class HealthKitManager: ObservableObject {
             return
         }
 
-        // 2) Cache miss → call Vertex.
+        // 2) Failure backoff — after a failed attempt, don't hammer an
+        //    unreachable gateway. Mark the snapshot failed (retry chip, no
+        //    endless "thinking" pulse) and try again after the window.
+        if let failedAt = lastEnrichmentFailureAt,
+           Date().timeIntervalSince(failedAt) < Self.enrichmentFailureBackoff {
+            predictions = p.merging(insight: nil,
+                                    actions: [],
+                                    anomalyInterpretations: [:],
+                                    status: .failed)
+            return
+        }
+
+        // 3) Cache miss → call Vertex.
         let userContext = buildAIUserContext()
         Task { [weak self] in
             guard let self else { return }
@@ -1655,10 +1672,12 @@ public final class HealthKitManager: ObservableObject {
                                                  anomalyInterpretations: bundle.anomalyInterpretations,
                                                  status: .complete)
                     self.predictions = merged
+                    self.lastEnrichmentFailureAt = nil
                     self.saveCachedEnrichment(bundle, for: Date())
                 }
             } catch {
                 await MainActor.run {
+                    self.lastEnrichmentFailureAt = Date()
                     guard self.lastEnrichmentTargetTimestamp == target,
                           let current = self.predictions,
                           current.generatedAt == target else { return }
@@ -1676,6 +1695,7 @@ public final class HealthKitManager: ObservableObject {
     /// data — used by the card's "Retry insights" chip after a failure.
     public func retryAIEnrichment() {
         guard let p = predictions else { return }
+        lastEnrichmentFailureAt = nil
         // Reset to .pending so kickoffAIEnrichmentIfNeeded re-attempts.
         predictions = p.merging(insight: p.dailyInsight,
                                 actions: p.actions,
@@ -1854,7 +1874,40 @@ public final class HealthKitManager: ObservableObject {
             userGoals: userGoals
         )
 
-        let newPredictions = PredictionEngine.computeAll(snapshot: snapshot)
+        var newPredictions = PredictionEngine.computeAll(snapshot: snapshot)
+
+        // The engine always emits a bare `.pending` snapshot, but the AI layer
+        // is day-scoped: on a same-day recompute, carry the previous
+        // enrichment (or an in-backoff failure) forward so a routine poll
+        // never resets it and re-triggers a kickoff.
+        if let prev = predictions, cal.isDate(prev.generatedAt, inSameDayAs: now),
+           newPredictions.aiEnrichmentStatus == .pending {
+            switch prev.aiEnrichmentStatus {
+            case .complete, .cached:
+                var interpretations: [UUID: String] = [:]
+                for anomaly in newPredictions.anomalies {
+                    if let text = prev.anomalies.first(where: {
+                        $0.metric == anomaly.metric && $0.direction == anomaly.direction
+                    })?.interpretation {
+                        interpretations[anomaly.id] = text
+                    }
+                }
+                newPredictions = newPredictions.merging(insight: prev.dailyInsight,
+                                                        actions: prev.actions,
+                                                        anomalyInterpretations: interpretations,
+                                                        status: prev.aiEnrichmentStatus)
+            case .failed:
+                if let failedAt = lastEnrichmentFailureAt,
+                   Date().timeIntervalSince(failedAt) < Self.enrichmentFailureBackoff {
+                    newPredictions = newPredictions.merging(insight: nil,
+                                                            actions: [],
+                                                            anomalyInterpretations: [:],
+                                                            status: .failed)
+                }
+            default:
+                break
+            }
+        }
 
         // Diff-aware: the engine stamps a fresh `generatedAt` on every run, so a
         // plain `==` always differs. Compare the content signature (everything

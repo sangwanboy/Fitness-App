@@ -28,8 +28,8 @@ public struct SettingsView: View {
     // Astra AI backend (gateway) state
     @AppStorage(GatewayConfig.baseURLDefaultsKey) private var gatewayBaseURLOverride: String = ""
     /// Gateway user id of the stored session; nil = signed out. Refreshed
-    /// onAppear and after every sign-in/out so the UI shows the real state.
-    @State private var gatewaySessionUserId: String? = GatewayAuth.shared.currentUserId
+    /// on appear and after every sign-in/out so the UI shows the real state.
+    @State private var gatewaySessionUserId: String?
     @State private var isGatewayAuthWorking = false
     @State private var gatewayAuthError: String?
     @State private var gatewayTest: GatewayTestState = .idle
@@ -130,7 +130,9 @@ public struct SettingsView: View {
         }
         .onAppear {
             glassTintColorHex = "#FFFFFF"
-            gatewaySessionUserId = GatewayAuth.shared.currentUserId
+        }
+        .task {
+            gatewaySessionUserId = await GatewayAuth.shared.currentUserId
         }
     }
 
@@ -385,7 +387,7 @@ public struct SettingsView: View {
                             Task {
                                 isGatewayAuthWorking = true
                                 await GatewayAuth.shared.signOut()
-                                gatewaySessionUserId = GatewayAuth.shared.currentUserId
+                                gatewaySessionUserId = await GatewayAuth.shared.currentUserId
                                 gatewayAuthError = nil
                                 isGatewayAuthWorking = false
                             }
@@ -404,7 +406,7 @@ public struct SettingsView: View {
                                     gatewayAuthError = (error as? GatewayError)?.userMessage
                                         ?? error.localizedDescription
                                 }
-                                gatewaySessionUserId = GatewayAuth.shared.currentUserId
+                                gatewaySessionUserId = await GatewayAuth.shared.currentUserId
                                 isGatewayAuthWorking = false
                             }
                         }

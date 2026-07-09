@@ -5,6 +5,39 @@ import Foundation
 /// parser for streaming chat.
 enum GatewayTransport {
 
+    // MARK: - Reachability
+
+    /// Last time any gateway request (or probe) succeeded. While recent, the
+    /// pre-stream health probe is skipped.
+    private static var lastSuccessfulRequestAt: Date?
+    private static let recentTrafficWindow: TimeInterval = 60
+
+    /// Cheap GET /healthz with a 2s timeout so a dead gateway fails a chat in
+    /// ~2s instead of sitting through the full auth + request timeouts.
+    /// Skipped when any request succeeded within `recentTrafficWindow`.
+    private static func ensureReachable() async throws {
+        if let last = lastSuccessfulRequestAt,
+           Date().timeIntervalSince(last) < recentTrafficWindow {
+            return
+        }
+        guard let url = GatewayConfig.url(for: "healthz") else {
+            throw GatewayError.notConfigured
+        }
+        let request = URLRequest(url: url, timeoutInterval: 2)
+        let response: URLResponse
+        do {
+            (_, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            throw GatewayError.network(underlying: error)
+        }
+        guard let http = response as? HTTPURLResponse,
+              (200..<300).contains(http.statusCode) else {
+            throw GatewayError.http((response as? HTTPURLResponse)?.statusCode ?? 0,
+                                    "Gateway health check failed.")
+        }
+        lastSuccessfulRequestAt = Date()
+    }
+
     // MARK: - One-shot JSON POST
 
     /// POST a JSON body to an authenticated gateway path (e.g. "v1/chat",
@@ -41,6 +74,7 @@ enum GatewayTransport {
         guard (200..<300).contains(http.statusCode) else {
             throw GatewayError(status: http.statusCode, data: data)
         }
+        lastSuccessfulRequestAt = Date()
         return data
     }
 
@@ -55,6 +89,7 @@ enum GatewayTransport {
     /// handed back, so a thrown error here means the stream never started.
     static func streamChat(body: [String: Any],
                            idleTimeout: TimeInterval = 60) async throws -> AsyncThrowingStream<Data, Error> {
+        try await ensureReachable()
         let payload = try JSONSerialization.data(withJSONObject: body)
         let bytes = try await openStream(payload: payload, timeout: idleTimeout, allowAuthRetry: true)
 
@@ -148,6 +183,7 @@ enum GatewayTransport {
             } catch {}
             throw GatewayError(status: http.statusCode, data: body)
         }
+        lastSuccessfulRequestAt = Date()
         return bytes
     }
 
