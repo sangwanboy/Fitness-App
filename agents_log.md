@@ -3192,3 +3192,59 @@ Latest deployed sequence: **5544**.
 - Redeployed: **databaseSequenceNumber: 5608**.
 
 Latest deployed sequence: **5608**.
+
+---
+
+## Session 55 — 2026-07-17 (App Store readiness wave — HANDOFF-APPSTORE-READINESS.md executed)
+
+Orchestrated (per user /loop directive): Fable recon/design/integration, 3 parallel Sonnet
+implementation agents, Opus adversarial review, orchestrator ship steps.
+
+### Gate cleared
+**Paid Apple Developer Program is ACTIVE** (team RM42FV53FU, `isFreeProvisioningTeam = 0`,
+type Individual) — the Session-52 enrollment finally landed. SIWA entitlement is therefore in.
+
+### Changes
+- **Auth (WP1):** `com.apple.developer.applesignin` added to entitlements; automatic signing
+  minted a SIWA-capable profile (device build green). `is_logged_in` default `true` → `false`
+  (fresh installs actually see LoginView; fixes "every AI call throws .notSignedIn") with a
+  one-time migration in `FitnessApp.init()` so existing installs stay signed in. LoginView:
+  5.1.1(i) sign-up copy + Privacy Policy / Terms sheets (`LegalDocumentSheet.swift`, new).
+  Account deletion (5.1.1(v)): `GatewayAuth.deleteAccount()` → `DELETE /v1/account` (bearer,
+  401-refresh-retry-once, 404/405 → honest "not available" error) + destructive Settings row
+  w/ confirmation. NOTE: the backend endpoint EXISTS (handoff was stale — verified live:
+  unauthed DELETE → 401, route in gateway `src/routes/account.ts`).
+- **Privacy (WP2):** `PrivacyInfo.xcprivacy` (new; UserID + OtherUsageData collected/linked/
+  no-tracking; UserDefaults CA92.1; health/chat content deliberately NOT declared — stateless
+  pass-through, reasoning + fallback in `docs/DATA_AND_PRIVACY.md` §12). `LegalTexts.swift`
+  (new) + `docs/PRIVACY_POLICY.md` / `docs/TERMS_OF_SERVICE.md` (need public hosting before
+  ASC submission). DATA_AND_PRIVACY §8/§10 de-staled (pre-gateway text), §11–13 added.
+- **Compliance (WP3):** Sleep-audio lifecycle audited — COMPLIANT (sole AVAudioSession
+  activation is SnoreDetector.start() via user-initiated sleep session; full teardown on stop;
+  evidence in new `docs/APP_STORE_REVIEW_NOTES.md`). Version 1.0 (1) → **1.0.1 (2)**
+  (pbxproj target configs + AppInfo.plist/`project.yml` now use `$(MARKETING_VERSION)`/
+  `$(CURRENT_PROJECT_VERSION)`). TokenUsageView footer no longer names a concrete Gemini model.
+- **Mechanical:** App icon re-encoded JPEG→real PNG (1024², no alpha). GCP key MOVED OUT of
+  the repo tree → `~/.gcp/vertex-service-account.json` (backend `.claude/launch.json` updated —
+  the one allowed backend edit; CLAUDE.md paths updated). Key NOT rotated (user approval still
+  required).
+- **Opus review:** 7 findings, all addressed — delete-dialog no longer claims Apple-side SIWA
+  revocation (backend can't do it yet); Settings version footer now Bundle-derived (was
+  hardcoded "1.0 · build 248"); project.yml carries the version vars (xcodegen-regen-safe);
+  delete-failure dead-session path now routes to LoginView; drifted doc citations fixed;
+  "Google Cloud billing" copy neutralized. INFO: Health&Fitness omitted from manifest is a
+  documented judgment call — revisit if App Review pushes back.
+
+### Verification / deploy
+Simulator Debug + **Release** builds green; bundle carries PrivacyInfo.xcprivacy and stamps
+1.0.1 (2). Device build (SIWA profile) + install + launch OK: **databaseSequenceNumber: 6612**.
+
+### Still blocked (external — not this repo)
+1. **Azure gateway deploy** (ADR-007) → production URL; Release builds stay "AI backend not
+   configured" until then. 2. **Apple-side SIWA token revocation on delete** (gateway work).
+3. **GCP key rotation** — awaiting user approval. 4. **Host PRIVACY_POLICY/TERMS at public
+   URLs + App Store Connect setup** (labels per DATA_AND_PRIVACY §12, review notes, screenshots,
+   archive/upload) — needs ASC access. 5. On-device live test of SIWA + Astra chat vs the local
+   gateway — needs the user's hands (Session-54 open thread: Local Network permission).
+
+Latest deployed sequence: **6612**.

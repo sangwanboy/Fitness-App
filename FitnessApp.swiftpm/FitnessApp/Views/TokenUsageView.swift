@@ -50,7 +50,7 @@ public struct TokenUsageView: View {
                 Button("Cancel", role: .cancel) {}
                 Button("Reset", role: .destructive) { withAnimation { meter.reset() } }
             } message: {
-                Text("Clears the on-device lifetime token totals. This does not affect your Google Cloud billing.")
+                Text("Clears the on-device lifetime token totals. This does not affect your AI provider billing.")
             }
         }
     }
@@ -235,7 +235,7 @@ public struct TokenUsageView: View {
     // MARK: - Footer
 
     private var footerNote: some View {
-        Text("Counts every Gemini API call the app makes — coach chat, predictions, “Why?” explanations, and food photo scans — summed from each response's built-in usage report. Cost is ESTIMATED on-device from gemini-3.5-flash list pricing ($1.50 / 1M input, $9.00 / 1M output; thinking billed as output) — the API returns token counts only, so actual Google Cloud billing may differ. Stored on-device.")
+        Text("Counts every Astra AI call the app makes — coach chat, predictions, “Why?” explanations, and food photo scans — summed from each response's built-in usage report. Cost is ESTIMATED on-device from the gateway's current chat-model list pricing ($1.50 / 1M input, $9.00 / 1M output; thinking billed as output) — the underlying model is chosen server-side and can change, and the API returns token counts only, so actual billing may differ. Stored on-device.")
             .font(.system(size: 12))
             .foregroundColor(secondary)
             .multilineTextAlignment(.center)

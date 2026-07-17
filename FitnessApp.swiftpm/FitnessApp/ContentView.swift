@@ -5,7 +5,11 @@ public struct ContentView: View {
     @ObservedObject private var prefillBus = ChatPrefillBus.shared
 
     @AppStorage("is_onboarded") private var isOnboarded = false
-    @AppStorage("is_logged_in") private var isLoggedIn = true
+    // Default is false so fresh installs actually land on LoginView and create
+    // a gateway session before Astra is used. Existing installs are migrated
+    // forward in FitnessApp.init() (migrateLoginGate) so nobody gets logged
+    // out by this change.
+    @AppStorage("is_logged_in") private var isLoggedIn = false
     @AppStorage("theme_mode") private var themeMode = "dark"
 
     @State private var selectedTab: String = "home"

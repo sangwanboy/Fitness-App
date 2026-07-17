@@ -6,6 +6,7 @@ struct FitnessApp: App {
 
     init() {
         Self.migrateHomeCardsList()
+        Self.migrateLoginGate()
         Task { await NotificationManager.shared.requestPermissionIfNeeded() }
     }
 
@@ -91,6 +92,25 @@ struct FitnessApp: App {
         let updated = parts.joined(separator: ",")
         if updated != existing {
             UserDefaults.standard.set(updated, forKey: key)
+        }
+    }
+
+    /// One-time migration for the `is_logged_in` default flip (true → false).
+    /// Before this change, fresh installs skipped LoginView entirely because
+    /// the AppStorage default was `true`, so no gateway session was ever
+    /// created and every AI call threw `.notSignedIn`. Now the default is
+    /// `false` so new installs actually go through LoginView. That means any
+    /// *existing* install that finished onboarding pre-fix never wrote a value
+    /// for `is_logged_in` (it only ever read the default) — without this
+    /// migration those users would suddenly be dropped at LoginView on next
+    /// launch. Detect that exact case (no stored key + already onboarded) and
+    /// stamp `true` once so upgraders keep their session state; every other
+    /// path (fresh install, or an install that already wrote the key) is
+    /// left alone.
+    private static func migrateLoginGate() {
+        let defaults = UserDefaults.standard
+        if defaults.object(forKey: "is_logged_in") == nil && defaults.bool(forKey: "is_onboarded") {
+            defaults.set(true, forKey: "is_logged_in")
         }
     }
 }

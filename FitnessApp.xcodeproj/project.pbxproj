@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		801AD550EBB147539E5ED51B /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 319B83E436D2428CA2BDA1D8 /* PrivacyInfo.xcprivacy */; };
+		023AE2C57DD7406681CA90AE /* LegalTexts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E9A0ACE88E44CFE8D6381AD /* LegalTexts.swift */; };
+		3EEDF8DEE54245ECBD29790E /* LegalDocumentSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E7E4F03E437415AB0BFCF94 /* LegalDocumentSheet.swift */; };
 		4E227A3FD5BB8B293A5BE92A /* GatewayConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 223CB8AD50DB447B8699C377 /* GatewayConfig.swift */; };
 		716C2F5D96FF284D86846FD1 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35E9D7360230BB1B702DF4B2 /* KeychainStore.swift */; };
 		FE030A7C92D927B5C841BCAF /* GatewayError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 205763DFA65AA4E6DA6A668A /* GatewayError.swift */; };
@@ -99,6 +102,9 @@
 		/* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		319B83E436D2428CA2BDA1D8 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		6E9A0ACE88E44CFE8D6381AD /* LegalTexts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegalTexts.swift; sourceTree = "<group>"; };
+		3E7E4F03E437415AB0BFCF94 /* LegalDocumentSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegalDocumentSheet.swift; sourceTree = "<group>"; };
 		223CB8AD50DB447B8699C377 /* GatewayConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GatewayConfig.swift; sourceTree = "<group>"; };
 		35E9D7360230BB1B702DF4B2 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
 		205763DFA65AA4E6DA6A668A /* GatewayError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GatewayError.swift; sourceTree = "<group>"; };
@@ -206,6 +212,14 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		AA1DED72C1464435AE7BA4E1 /* Legal */ = {
+			isa = PBXGroup;
+			children = (
+				6E9A0ACE88E44CFE8D6381AD /* LegalTexts.swift */,
+			);
+			path = Legal;
+			sourceTree = "<group>";
+		};
 		47D967E1761653141702A76F /* ViewModels */ = {
 			isa = PBXGroup;
 			children = (
@@ -240,6 +254,7 @@
 				E441A18FBA7EBD5380217B53 /* WorkoutTrackerView.swift */,
 				63276806301D09016BEA0BED /* Components */,
 				8A99EEA92948AE3D64A88C06 /* Onboarding */,
+				3E7E4F03E437415AB0BFCF94 /* LegalDocumentSheet.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -279,6 +294,7 @@
 				8FFC23862DFFC84371A26B18 /* Services */,
 				47D967E1761653141702A76F /* ViewModels */,
 				490024E70D95093AB1951E48 /* Views */,
+				319B83E436D2428CA2BDA1D8 /* PrivacyInfo.xcprivacy */,
 			);
 			name = FitnessApp;
 			path = FitnessApp.swiftpm/FitnessApp;
@@ -326,6 +342,7 @@
 				EFBB15DA98B80962FCD2B709 /* SleepSessionManager.swift */,
 				23B87896293CA2BF852C5431 /* SnoreDetector.swift */,
 				B19FC95A1A7EA7BE548AFA73 /* GatewayChatClient.swift */,
+				AA1DED72C1464435AE7BA4E1 /* Legal */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -452,6 +469,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				801AD550EBB147539E5ED51B /* PrivacyInfo.xcprivacy in Resources */,
 				D68FCD8F3B6A23E4F509613A /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -463,6 +481,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				023AE2C57DD7406681CA90AE /* LegalTexts.swift in Sources */,
+				3EEDF8DEE54245ECBD29790E /* LegalDocumentSheet.swift in Sources */,
 				4E227A3FD5BB8B293A5BE92A /* GatewayConfig.swift in Sources */,
 				716C2F5D96FF284D86846FD1 /* KeychainStore.swift in Sources */,
 				FE030A7C92D927B5C841BCAF /* GatewayError.swift in Sources */,
@@ -556,6 +576,8 @@
 		030B9FFD446B7C9E5FEC2AB7 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CURRENT_PROJECT_VERSION = 2;
+				MARKETING_VERSION = 1.0.1;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = FitnessApp.swiftpm/FitnessApp.entitlements;
 				CODE_SIGN_STYLE = Automatic;
@@ -572,6 +594,8 @@
 		19FB2C7224F1E15AD1AD50A5 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CURRENT_PROJECT_VERSION = 2;
+				MARKETING_VERSION = 1.0.1;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = FitnessApp.swiftpm/FitnessApp.entitlements;
 				CODE_SIGN_STYLE = Automatic;

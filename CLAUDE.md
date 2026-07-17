@@ -25,16 +25,17 @@ Do this for each codebase change (in order):
 
 1. **Key safety first — NEVER commit secrets.** Before staging, confirm the Google Cloud
    credential and any key material stay out of git:
-   - `git check-ignore vertex-service-account.json` must report it ignored. The patterns
-     `*service-account*.json`, `*.pem`, `*.p12`, `.env`, `.env.*` are in `.gitignore` — keep them there.
+   - The GCP credential lives OUTSIDE this repo at `~/.gcp/vertex-service-account.json`
+     (moved out of the tree 2026-07-17; the local gateway reads it via `GCP_SA_JSON_FILE`).
+     Never copy it back into the tree. The patterns `*service-account*.json`, `*.pem`, `*.p12`,
+     `.env`, `.env.*` stay in `.gitignore` as defense-in-depth — keep them there.
    - Prefer staging explicit paths. Never force-add an ignored file (`git add -f`).
    - Scan the staged diff and abort if you see any of: `BEGIN ... PRIVATE KEY`, `"private_key"`,
      `AIza...`, or a long `MII...` base64 blob.
      `git diff --cached -- '*.swift' '*.json' '*.plist' | grep -iE "PRIVATE KEY|private_key|AIza|MII[A-Za-z0-9+/]{40}"` should be empty.
-   - The real `vertex-service-account.json` lives on disk only (gitignored) and now feeds only
-     the local gateway. GCP key rotation (`4d33d3bc…`, project `vertexi-ai-493516`): **deferred
-     by the user on 2026-07-08** — keep using the existing key for now; do NOT rotate it without
-     asking. Revisit before any public/App Store release.
+   - GCP key rotation (`4d33d3bc…`, project `vertexi-ai-493516`): **deferred by the user on
+     2026-07-08** — keep using the existing key for now; do NOT rotate it without asking.
+     Revisit before any public/App Store release.
 2. Update `agents_log.md` (the change + the new `databaseSequenceNumber` when a build was
    deployed) and stage it alongside the code, so the log rides in the same commit.
 3. Commit with a clear Conventional-Commit message (`feat:`/`fix:`/`perf:`/`docs:`) describing the
@@ -69,7 +70,7 @@ Do this for each codebase change (in order):
   `thoughtSignature` rides ONLY as a part-level sibling of `functionCall` and must round-trip for
   tool calls; `thinkingConfig` only inside `generationConfig`; system prompt is a plain string.
 - Local dev gateway (needed for AI on device/simulator until the Azure deploy exists):
-  `cd ~/Multi\ App\ Ai\ Backend && export PATH="$HOME/.local/node22/bin:$PATH" && STORE=memory SEED_DEMO=true ADMIN_SECRET=dev JWT_SECRET=dev ALLOW_FAKE_APPLE=true GCP_PROJECT=vertexi-ai-493516 GCP_SA_JSON_FILE="$HOME/projects/Fitness App/FitnessApp.swiftpm/FitnessApp/vertex-service-account.json" node dist/index.js`
+  `cd ~/Multi\ App\ Ai\ Backend && export PATH="$HOME/.local/node22/bin:$PATH" && STORE=memory SEED_DEMO=true ADMIN_SECRET=dev JWT_SECRET=dev ALLOW_FAKE_APPLE=true GCP_PROJECT=vertexi-ai-493516 GCP_SA_JSON_FILE="$HOME/.gcp/vertex-service-account.json" node dist/index.js`
   — binds all interfaces; the phone reaches it at the Mac's LAN IP on port 8787 (Settings →
   Astra AI backend → gateway URL). The service-account file now feeds ONLY this local gateway;
   it is never bundled into the app.

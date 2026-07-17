@@ -19,6 +19,8 @@ targets:
     settings:
       base:
         PRODUCT_NAME: FitnessApp
+        MARKETING_VERSION: "1.0.1"
+        CURRENT_PROJECT_VERSION: "2"
       configs:
         debug:
           SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
@@ -33,6 +35,10 @@ targets:
       path: FitnessApp.swiftpm/AppInfo.plist
       properties:
         UILaunchScreen: {}
+        # Version comes from build settings (single source of truth) — keep
+        # these as variables so a future xcodegen regen can't reset them.
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         NSHealthShareUsageDescription: "Fitness Guru reads your full Apple Health profile — body, vitals, nutrition, sleep, workouts, mobility, mindfulness, and Medical ID — so the AI coach can personalize plans."
         NSHealthUpdateUsageDescription: "Fitness Guru writes workouts, hydration, mindfulness sessions, and body measurements you log in the app back to Apple Health."
         NSHealthClinicalHealthRecordsShareUsageDescription: "Fitness Guru can read your clinical records (allergies, conditions, lab results) to give the AI coach a complete picture of your health context."

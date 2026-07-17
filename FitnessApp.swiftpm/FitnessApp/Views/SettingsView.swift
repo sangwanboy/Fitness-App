@@ -3,7 +3,10 @@ import SwiftUI
 public struct SettingsView: View {
     @ObservedObject private var healthKitManager = HealthKitManager.shared
 
-    @AppStorage("is_logged_in") private var isLoggedIn = true
+    // Matches the corrected default in ContentView/LoginView; SettingsView
+    // only ever renders once isLoggedIn is already true, so this default is
+    // never actually read, but it should say the same thing everywhere.
+    @AppStorage("is_logged_in") private var isLoggedIn = false
     @AppStorage("theme_mode") private var themeMode = "dark"
     @AppStorage("accent_color") private var accentColorHex = "#30D158"
     @AppStorage("athlete_name") private var athleteName = "Alex Rivera"
@@ -11,6 +14,9 @@ public struct SettingsView: View {
     @AppStorage("glass_tint_strength") private var glassTintStrength = 0.0
 
     @State private var showSignOutConfirm = false
+    @State private var showDeleteAccountConfirm = false
+    @State private var isDeletingAccount = false
+    @State private var deleteAccountError: String?
     @State private var isRequestingClinical = false
     @State private var showTokenUsage = false
     @ObservedObject private var tokenMeter = TokenMeter.shared
@@ -127,6 +133,22 @@ public struct SettingsView: View {
             }
         } message: {
             Text("You'll need to sign back in to access your data.")
+        }
+        .confirmationDialog("Delete your account?", isPresented: $showDeleteAccountConfirm, titleVisibility: .visible) {
+            Button("Delete Account", role: .destructive) {
+                Task { await deleteAccount() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This permanently deletes your Astra AI account, sessions, and usage records from our servers. Health data in Apple Health is untouched. This cannot be undone.")
+        }
+        .alert("Couldn't delete account", isPresented: Binding(
+            get: { deleteAccountError != nil },
+            set: { if !$0 { deleteAccountError = nil } }
+        )) {
+            Button("OK") { deleteAccountError = nil }
+        } message: {
+            Text(deleteAccountError ?? "")
         }
         .onAppear {
             glassTintColorHex = "#FFFFFF"
@@ -318,7 +340,58 @@ public struct SettingsView: View {
                 .padding(.vertical, 14)
             }
             .buttonStyle(PlainButtonStyle())
+
+            // Guideline 5.1.1(v) — only offered while an Astra session exists,
+            // since deletion targets the gateway account.
+            if gatewaySessionUserId != nil {
+                ProfileListDivider()
+                Button(action: {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    showDeleteAccountConfirm = true
+                }) {
+                    HStack {
+                        Text(isDeletingAccount ? "Deleting account…" : "Delete account")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(.red)
+                        Spacer()
+                        if isDeletingAccount {
+                            ProgressView().controlSize(.small)
+                        }
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 14)
+                }
+                .buttonStyle(PlainButtonStyle())
+                .disabled(isDeletingAccount)
+            }
         }
+    }
+
+    /// Deletes the gateway account (`GatewayAuth.deleteAccount()`), then
+    /// clears local account state and flips the login gate so the user lands
+    /// back on LoginView. On failure (e.g. the endpoint isn't deployed yet)
+    /// shows the honest `GatewayError.userMessage` and leaves the session
+    /// alone — deletion is all-or-nothing.
+    private func deleteAccount() async {
+        isDeletingAccount = true
+        deleteAccountError = nil
+        do {
+            try await GatewayAuth.shared.deleteAccount()
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            accountCreatedDate = 0
+            withAnimation { isLoggedIn = false }
+        } catch {
+            deleteAccountError = (error as? GatewayError)?.userMessage ?? error.localizedDescription
+        }
+        gatewaySessionUserId = await GatewayAuth.shared.currentUserId
+        if gatewaySessionUserId == nil, isLoggedIn {
+            // The session died during the attempt (e.g. dead refresh token
+            // wiped it) — route back to LoginView rather than stranding a
+            // logged-in-but-sessionless UI.
+            accountCreatedDate = 0
+            withAnimation { isLoggedIn = false }
+        }
+        isDeletingAccount = false
     }
 
     // MARK: - Health Records (clinical) opt-in
@@ -526,7 +599,10 @@ public struct SettingsView: View {
     }
 
     private var versionFooter: some View {
-        Text("Fitness Guru · 1.0 · build 248")
+        // Derived from the bundle so this can never drift from the real build.
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—"
+        return Text("Fitness Guru · \(version) · build \(build)")
             .font(.system(size: 12, weight: .medium))
             .foregroundColor(isDark ? .white.opacity(0.3) : .black.opacity(0.3))
             .padding(.top, 12)

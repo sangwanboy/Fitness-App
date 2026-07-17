@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	Fitness Guru — App Privacy Manifest.
+
+	Scope note: this manifest describes THIS APP TARGET only. It does not
+	cover the Atlas AI Gateway backend, which is a separate server the app
+	talks to over HTTPS (see docs/DATA_AND_PRIVACY.md for the full data flow
+	and the App Store Connect privacy-label reasoning).
+
+	NSPrivacyTracking is false and NSPrivacyTrackingDomains is empty: this
+	app does not use data for tracking (as Apple defines "tracking" — linking
+	user/device data with third-party data for ads/measurement, or sharing
+	with data brokers). There are no third-party SDKs, no ad network, and no
+	analytics/attribution framework anywhere in the app.
+	-->
+	<key>NSPrivacyTracking</key>
+	<false/>
+
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+
+	<!--
+	NSPrivacyCollectedDataTypes — data "collected" per Apple's definition:
+	transmitted off the device AND retained (server-side) longer than needed
+	to service the immediate request.
+
+	Health & Fitness data (HealthKit, incl. clinical records) and the chat
+	content built from it ARE sent off-device (to the Atlas AI Gateway, over
+	HTTPS, once per chat turn / food-photo request) but are NOT retained —
+	the gateway is a stateless pass-through that never logs or stores
+	message/health content; only per-turn metadata (user id, token counts,
+	latency, status) is kept for metering. Per Apple's collection definition
+	this does NOT count as "collected" and is deliberately left out of the
+	array below. See docs/DATA_AND_PRIVACY.md for the full reasoning and the
+	fallback plan if App Review disagrees.
+	-->
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array>
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeUserID</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeOtherUsageData</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+	</array>
+
+	<!--
+	NSPrivacyAccessedAPITypes — required-reason APIs actually used by this
+	app target, verified by source scan on 2026-07-17 (see
+	docs/DATA_AND_PRIVACY.md for file:line evidence). Only UserDefaults is
+	used; the codebase has no file-timestamp (creationDate/modificationDate),
+	systemUptime/mach_absolute_time, or disk-space (volumeAvailableCapacity
+	etc.) API usage, so those categories are intentionally omitted.
+	-->
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>CA92.1</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

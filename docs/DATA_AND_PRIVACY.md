@@ -1,7 +1,16 @@
 # Data Model, Storage, and Privacy
 
-Reference document for engineers maintaining Fitness Guru (build seq 3004, iOS 26).
+Reference document for engineers maintaining Fitness Guru (iOS 26).
 All claims verified against source in `FitnessApp.swiftpm/FitnessApp/`.
+
+> **2026-07-17 update:** Sections 8 and 10 are rewritten for the Atlas AI
+> Gateway migration (commit `06ff4dc`) — the app no longer holds Google/Vertex
+> credentials or calls Vertex directly; all AI traffic now goes through the
+> gateway. Sections 11–13 are new, written for App Store readiness Work
+> Package 2 (privacy manifest + legal documents): `PrivacyInfo.xcprivacy`
+> now ships at `FitnessApp.swiftpm/FitnessApp/PrivacyInfo.xcprivacy`, and
+> `Services/Legal/LegalTexts.swift` / `docs/PRIVACY_POLICY.md` /
+> `docs/TERMS_OF_SERVICE.md` hold the privacy policy and terms text.
 
 ---
 
@@ -16,7 +25,10 @@ All claims verified against source in `FitnessApp.swiftpm/FitnessApp/`.
 7. [UserDefaults / @AppStorage Key Inventory](#7-userdefaults--appstorage-key-inventory)
 8. [What Leaves the Device](#8-what-leaves-the-device)
 9. [Permission Purpose Strings (Info.plist)](#9-permission-purpose-strings-infoplist)
-10. [GCP Credential Handling](#10-gcp-credential-handling)
+10. [GCP Credential Handling (Local Dev Gateway Only)](#10-gcp-credential-handling-local-dev-gateway-only)
+11. [Atlas AI Gateway — Privacy Architecture](#11-atlas-ai-gateway--privacy-architecture)
+12. [App Store Privacy Labels — Guidance](#12-app-store-privacy-labels--guidance)
+13. [Privacy Manifest — Required-Reason APIs](#13-privacy-manifest--required-reason-apis)
 
 ---
 
@@ -442,22 +454,42 @@ All keys use the standard app container (no app groups, no suite name). Sources 
 
 ## 8. What Leaves the Device
 
-### What is sent to Vertex AI (Gemini)
+> **Superseded by the Atlas AI Gateway migration (commit `06ff4dc`).** The app
+> no longer calls `aiplatform.googleapis.com` or holds Google credentials.
+> This section now describes the current (gateway) request path. See
+> §11 for the privacy-relevant architecture summary (stateless pass-through,
+> metadata-only metering).
 
-Each Astra chat turn and each food-vision request sends an HTTPS POST to:
+### What is sent to the Atlas AI Gateway
 
-```
-https://aiplatform.googleapis.com/v1/projects/<projectId>/locations/global/publishers/google/models/gemini-3.5-flash:streamGenerateContent
-```
+Each Astra chat turn and each food-vision request sends an HTTPS POST to the
+gateway's `/v1/chat` endpoint (`GatewayChatClient.swift`,
+`GatewayConfig.baseURL` — DEBUG points at the local dev gateway on the Mac's
+LAN IP; Release has no URL configured yet, see `HANDOFF-APPSTORE-READINESS.md`
+item 3). Every `/v1/*` call is authenticated with `Authorization: Bearer
+<gateway access token>` (`GatewayAuth.swift`) — no Google credential of any
+kind travels with the request, because the app doesn't hold one.
 
 The request body includes:
 
 - **System prompt** — a structured text block built in `ChatViewModel.buildSystemInstruction()`. Contains the full athlete profile, today's metric values, 7-day histories, prediction snapshot, today's food log, training goals, coach personality, clinical record strings (when opted in), and the contents of `astra_notes`.
 - **Conversation history** — prior `ChatMessage` turns in the session.
 - **User message text** — the user's typed input.
-- **Image data (optional)** — JPEG-encoded image bytes (base64) for food photo or fitness-gear photo uploads, resized to ≤1200 px (chat uploads) or ≤1024 px (FoodVisionService).
+- **Image data (optional)** — JPEG-encoded image bytes (base64) for food photo or fitness-gear photo uploads, resized to ≤1200 px (chat uploads) or ≤1024 px (FoodVisionService), sent as `{"image":{"mimeType","data"}}` per the gateway's strict part shapes (never `inlineData`).
 
-OAuth 2.0 Bearer tokens for authentication are obtained via a JWT assertion signed with the GCP service-account private key. Token exchange goes to `oauth2.googleapis.com`. No token or private key leaves except as part of that exchange.
+The model is always requested as the logical name `"chat"` (`GatewayConfig.chatModel`) — the gateway maps that to a concrete Gemini model server-side; the app never names a Gemini model in a request.
+
+### What the gateway does with it
+
+Per the gateway's own architecture (backend `docs/SPEC.md`; confirmed by the
+Atlas AI Gateway migration handoff and CLAUDE.md rule 1): the gateway is a
+**stateless pass-through**. Health context, chat text, and image bytes are
+held in server memory only for the duration of generating that one reply,
+then discarded — never written to a database, a log file, or used to train
+or fine-tune any model. What the gateway retains afterward is metering
+metadata only: the account's user ID, prompt/output/thinking token counts,
+timestamp, latency, and request status (used to enforce fair-use limits and
+for the in-app Token Meter / `TokenUsageView`). See §11 for detail.
 
 ### What is NOT sent to any server
 
@@ -467,7 +499,8 @@ OAuth 2.0 Bearer tokens for authentication are obtained via a JWT assertion sign
 | Raw HealthKit samples | Remain in HealthKit; only processed summaries (numbers + dates) enter the system prompt string. |
 | Sleep session raw motion samples | Stored in `sleep_sessions_v1` UserDefaults only; never sent anywhere. |
 | Chat history | Stored in `astra_chat_history_v1` UserDefaults only. |
-| GCP private key | In-memory only during JWT signing; loaded from `vertex-service-account.json` (not in git) or from `vertex_service_account_json` UserDefaults (user-pasted). Never logged. |
+| Gateway access/refresh tokens | Stored in the iOS Keychain (`KeychainStore.swift`, gateway-prefixed keys), never UserDefaults, never logged. |
+| Google/Vertex credentials | None exist on-device anymore. The bundled `vertex-service-account.json` and the `vertex_service_account_json` UserDefaults paste-in path from §10 (pre-migration) are both gone from the shipped app; the key now lives only on the developer's Mac, feeding the local dev gateway (see §10). |
 
 ### Barcode Lookups
 
@@ -504,25 +537,181 @@ Background mode `audio` is declared in `UIBackgroundModes` so the sleep-tracking
 
 ---
 
-## 10. GCP Credential Handling
+## 10. GCP Credential Handling (Local Dev Gateway Only)
 
-Source: `Services/VertexConfig.swift`, `Services/VertexAuth.swift`.
+> **Superseded by the Atlas AI Gateway migration (commit `06ff4dc`).**
+> `Services/VertexConfig.swift`, `Services/VertexAuth.swift`, and the
+> Settings → AI Coach "paste JSON" UI described in the previous version of
+> this section **no longer exist in the app** — confirmed by source grep
+> (`grep -rln "VertexConfig\|VertexAuth" FitnessApp.swiftpm/FitnessApp` finds
+> nothing) and by CLAUDE.md's rule that no raw Gemini/Vertex call may be made
+> from the client. The app holds zero Google credentials, on-device or in
+> UserDefaults. Settings → "Astra AI backend" now exposes only the gateway
+> base-URL override (`GatewayConfig.baseURLDefaultsKey` = `gateway_base_url`),
+> not a credential field.
 
-### Credential Sources (priority order)
+### Where the GCP key still lives
 
-1. **User-pasted JSON** — stored as a raw string in UserDefaults key `vertex_service_account_json`. Loaded by `VertexConfig.current()` first.
-2. **Bundled file** — `vertex-service-account.json` in the app bundle. Fallback when no pasted JSON is present.
+`vertex-service-account.json` (GCP project `vertexi-ai-493516`, key
+`4d33d3bc…`) remains on disk in this repo's working tree — gitignored, never
+bundled into the app (`project.yml` excludes it from `sources`) — and now
+feeds **only the local dev gateway process** (`~/Multi App Ai Backend`,
+started with `GCP_SA_JSON_FILE=".../vertex-service-account.json"` per
+CLAUDE.md's local-dev command). The key never travels to the phone or the
+simulator; the client only ever talks to the gateway's HTTPS API, which is
+the one process that reads the key from disk and holds the resulting OAuth
+token in its own memory. In production, the equivalent credential will live
+on the deployed gateway host, not in this repository at all.
 
 ### Git Safety Rules (from CLAUDE.md — enforced by policy, not code)
 
 - `vertex-service-account.json` is covered by `.gitignore` patterns `*service-account*.json`, `*.pem`, `*.p12`. Running `git check-ignore vertex-service-account.json` must report it ignored before any commit.
 - A staged-diff scan for `PRIVATE KEY`, `private_key`, `AIza`, or long `MII...` base64 blobs must be clean.
-- The real service account in use (GCP project `vertexi-ai-493516`, key `4d33d3bc…`) is flagged for rotation in `agents_log.md`.
+- The real service account in use (GCP project `vertexi-ai-493516`, key `4d33d3bc…`) is flagged for rotation in `agents_log.md`; rotation was explicitly deferred by the user on 2026-07-08 and must be revisited before any public/App Store release (`HANDOFF-APPSTORE-READINESS.md` item 4).
 
-### OAuth Token Lifecycle
+---
 
-`VertexAuth.shared.getAccessToken()` issues a RS256-signed JWT (1-hour expiry) to `oauth2.googleapis.com/token` and caches the returned OAuth 2.0 Bearer token in memory. The cache is invalidated on expiry (with a 60-second safety margin) or when the user pastes a new service account key. The private key is held in memory only during the `SecKeyCreateWithData` / `SecKeyCreateSignature` call and is not persisted to Keychain.
+## 11. Atlas AI Gateway — Privacy Architecture
 
-### Pasted JSON Flow
+This section is the canonical privacy-relevant description of how the app
+talks to its AI backend, written for App Store readiness (Work Package 2).
+It underpins both `PrivacyInfo.xcprivacy`'s `NSPrivacyCollectedDataTypes`
+declaration and the App Store Connect privacy label answers in §12.
 
-Settings → AI Coach → paste JSON → `VertexConfig.setPastedJSON(_:)` writes to `vertex_service_account_json` → `VertexAuth.shared.invalidateCache()` is called → next API call uses the new credential. Clearing the field removes the key and reverts to the bundled fallback.
+### The three things that matter
+
+1. **Stateless pass-through.** The gateway (`github.com/sangwanboy/atlas-ai-gateway`,
+   local dev copy at `~/Multi App Ai Backend`) proxies each `/v1/chat` request
+   to Gemini and streams the reply back. Message content — the system prompt
+   (athlete profile, HealthKit summaries, clinical record strings, chat
+   history, image bytes) — passes through server memory for the lifetime of
+   that one request/response cycle and is never written to disk, a log
+   stream, a cache, or an analytics/training pipeline. There is no
+   conversation datastore on the gateway.
+2. **Metadata-only metering.** The only durable record the gateway keeps per
+   request is: gateway user ID, prompt/output/thinking token counts,
+   timestamp, latency, and status (success/error code). This powers rate
+   limiting, the fair-use quota, and the in-app Token Meter
+   (`Services/TokenMeter.swift`, `Views/TokenUsageView.swift`). It contains
+   no message text, no health values, and no image data.
+3. **No credential ever ships on-device.** The app authenticates to the
+   gateway with a short-lived bearer token obtained via Sign in with Apple
+   (`GatewayAuth.swift`); the gateway authenticates to Google with the GCP
+   service-account key, which lives only on the gateway host (§10). The app
+   binary and its UserDefaults/Keychain contain no Google/Vertex credential
+   of any kind.
+
+### Account data the gateway stores (server-side, outside this app's control)
+
+Per the Sign in with Apple exchange (`POST /v1/auth/apple`) and confirmed by
+`GatewayAuth.swift`'s wire types (`AuthResponse`: `userId`, `appId`, token
+pair) and `AppleSignInCoordinator.requestIdentityToken()` requesting
+`request.requestedScopes = []` (no name/email scope — `Views/LoginView.swift`):
+
+| Field | Notes |
+|---|---|
+| Apple `sub` (stable anonymous identifier) | The only identity signal; this app requests no name/email scope, so in practice no email is collected for Fitness Guru accounts even though the gateway's account schema has room for an optional email (apps that *do* request the scope would populate it). |
+| Account/session timestamps | Created-at, last-active. |
+| Usage counters | Token counts, request counts, for fair-use metering — same data described in point 2 above. |
+
+No HealthKit data, chat text, or image bytes are part of the account record.
+
+### Why this matters for the privacy manifest and labels
+
+Apple's data-collection definition (used throughout `PrivacyInfo.xcprivacy`
+and App Store Connect's privacy questionnaire) is: data is "collected" only
+if it is **transmitted off the device and retained** longer than needed to
+service the request. Health/chat content is transmitted (point 1) but not
+retained (also point 1) — so, by that definition, it is not "collected" and
+must not be listed as a collected data type. User ID and usage/metering data
+*are* retained (point 2) and so *are* declared as collected. See §12 for the
+exact label mapping and the fallback position if App Review disagrees with
+this reading.
+
+---
+
+## 12. App Store Privacy Labels — Guidance
+
+Source of truth for what to enter in App Store Connect → App Privacy. Keep
+this in sync with `PrivacyInfo.xcprivacy`'s `NSPrivacyCollectedDataTypes` —
+the two must not contradict each other.
+
+### Labels to declare
+
+| Data type | Collected? | Linked to user? | Used for tracking? | Purpose |
+|---|---|---|---|---|
+| User ID | Yes | Yes | No | App Functionality |
+| Other Usage Data (token/request metering) | Yes | Yes | No | App Functionality |
+| Health & Fitness | **No** (see reasoning below) | — | — | — |
+| Everything else (contacts, location, financial, browsing history, search history, identifiers beyond User ID, diagnostics, etc.) | No | — | — | — |
+
+**"Data Used to Track You": None.** There is no ad SDK, no analytics/attribution
+framework, no data broker sharing, and no cross-app/cross-site linkage
+anywhere in this codebase (verified by dependency list in `project.yml`,
+which declares only Apple system frameworks — HealthKit, EventKit,
+EventKitUI, UserNotifications — no third-party packages at all).
+
+### Why Health & Fitness is NOT declared as "collected"
+
+This is the highest-scrutiny call in the whole privacy label set, given the
+app requests `health-records` (clinical data) entitlement. The reasoning,
+spelled out for reviewers and for whoever fills in App Store Connect:
+
+- Health/clinical/cycle/symptom data is read from HealthKit on-device and
+  assembled into the Astra system prompt (`ChatViewModel.buildSystemInstruction()`).
+- It is transmitted off-device exactly once per chat turn, to the Atlas AI
+  Gateway, solely to generate that turn's reply (§11, point 1).
+- The gateway does not persist it — no database row, no log line, no cache
+  entry, no training corpus inclusion. It is present in server memory only
+  for the duration of generating the response, which is the definition of
+  "not retained."
+- Per Apple's own collection definition (App Privacy Details on the App
+  Store, "Data Not Collected" guidance: data transmitted but not stored, and
+  used only to service that one request, does not count as collected), this
+  means Health & Fitness data should NOT appear in the collected-data list.
+
+**Fallback if App Review pushes back:** if a reviewer disagrees with this
+reading during review, the safe fallback is to add a **Health & Fitness →
+Collected, Linked to user, App Functionality only (not used for tracking)**
+label — that is a strictly more conservative declaration and would still be
+accurate (it would just be over-declaring, not under-declaring). Do NOT
+under-declare to get past review; if in doubt, add the label rather than
+omit it. Whoever handles the App Store Connect submission should hold this
+fallback in reserve rather than pre-emptively applying it, since the current
+architecture genuinely does not retain the data.
+
+### Other App Store Connect surfaces that must match
+
+- **Privacy Policy URL** — must point at the hosted `docs/PRIVACY_POLICY.md`
+  content (mirrors `LegalTexts.privacyPolicy`).
+- **App description / review notes** — should mention that Health Records
+  (clinical data) access is opt-in via Settings, off by default, and that
+  health data is processed per-request and never stored server-side; see
+  `HANDOFF-APPSTORE-READINESS.md` item 2 for the reviewer-facing framing.
+
+---
+
+## 13. Privacy Manifest — Required-Reason APIs
+
+`PrivacyInfo.xcprivacy` (`FitnessApp.swiftpm/FitnessApp/PrivacyInfo.xcprivacy`)
+declares `NSPrivacyAccessedAPITypes` based on an exhaustive source scan run
+2026-07-17. Only one required-reason API category is actually used:
+
+| Category | Reason code | Evidence |
+|---|---|---|
+| `NSPrivacyAccessedAPICategoryUserDefaults` | `CA92.1` (access info from the app's own container, not used to send it off-device or fingerprint) | Pervasive: 61 direct `UserDefaults.standard...` call sites and 177 `@AppStorage` property declarations across the 79-file target — see §7's key inventory for the full list. Representative sites: `ViewModels/ChatViewModel.swift:1370` (`let ud = UserDefaults.standard`), `ContentView.swift:7-13` (`@AppStorage("is_onboarded")`, `@AppStorage("is_logged_in")`, `@AppStorage("theme_mode")`), `HealthKitManager.swift:239` (`UserDefaults.standard.set(true, forKey: "clinical_records_requested")`). |
+
+The following required-reason categories were checked and found **not
+applicable** — omitted from the manifest rather than declared speculatively:
+
+| Category | Checked for | Result |
+|---|---|---|
+| File timestamp APIs (`NSPrivacyAccessedAPICategoryFileTimestamp`) | `creationDate`, `modificationDate`, `contentModificationDate`, `fileModificationDate`, `attributesOfItem`, `resourceValues`, `FileAttributeKey`, raw `stat`/`getattrlist` | No matches anywhere in `FitnessApp.swiftpm/FitnessApp` |
+| System boot time (`NSPrivacyAccessedAPICategorySystemBootTime`) | `systemUptime`, `mach_absolute_time`, `CACurrentMediaTime`, `ProcessInfo` uptime usage | No matches |
+| Disk space (`NSPrivacyAccessedAPICategoryDiskSpace`) | `volumeAvailableCapacity`, `volumeTotalCapacity`, `systemFreeSize`, `NSFileSystemFreeSize` | No matches |
+
+If any of these are introduced later (e.g. a "storage used" debug screen, or
+switching `sleep_sessions_v1` / `astra_chat_history_v1` to file-based storage
+with timestamp inspection), the manifest must be updated in the same PR —
+this is a common App Store rejection reason (missing or stale required-reason
+declarations) and easy to silently drift out of sync with the code.

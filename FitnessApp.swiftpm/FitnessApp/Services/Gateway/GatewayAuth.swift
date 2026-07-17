@@ -138,7 +138,59 @@ public actor GatewayAuth {
         wipeSession()
     }
 
+    /// Permanently delete the gateway account: `DELETE /v1/account`,
+    /// bearer-authenticated, no body. Per backend docs (`docs/API.md` §3.8)
+    /// this deletes the user + all sessions + feedback and unlinks usage
+    /// (health data was never stored server-side to begin with) and returns
+    /// 204. On success the local session is wiped so the caller can flip the
+    /// login gate. On 404/405 the endpoint isn't deployed on the target
+    /// gateway yet — surfaced as an honest `.accountDeletionUnavailable`
+    /// rather than a raw HTTP error. 401 follows the same refresh-and-retry-
+    /// once pattern as `GatewayTransport`; if the retry itself 401s, or there
+    /// was no session to refresh, that's `.unauthorized` / `.notSignedIn`.
+    public func deleteAccount() async throws {
+        try await performDeleteAccount(allowAuthRetry: true)
+        wipeSession()
+    }
+
     // MARK: - Internals
+
+    /// DELETE /v1/account. Not routed through `GatewayTransport.postJSON`
+    /// because that helper is POST/JSON-body specific; this mirrors its
+    /// auth-retry shape for a bodyless DELETE instead.
+    private func performDeleteAccount(allowAuthRetry: Bool) async throws {
+        guard let url = GatewayConfig.url(for: "v1/account") else {
+            throw GatewayError.notConfigured
+        }
+        let token = try await validAccessToken()
+        var request = URLRequest(url: url, timeoutInterval: 15)
+        request.httpMethod = "DELETE"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            throw GatewayError.network(underlying: error)
+        }
+        guard let http = response as? HTTPURLResponse else {
+            throw GatewayError.http(0, "No HTTP response from gateway.")
+        }
+
+        if http.statusCode == 401 {
+            guard allowAuthRetry else { throw GatewayError.notSignedIn }
+            _ = try await refresh()
+            return try await performDeleteAccount(allowAuthRetry: false)
+        }
+        if http.statusCode == 200 || http.statusCode == 204 {
+            return
+        }
+        if http.statusCode == 404 || http.statusCode == 405 {
+            throw GatewayError.accountDeletionUnavailable
+        }
+        throw GatewayError(status: http.statusCode, data: data)
+    }
 
     /// Persist a fresh token pair ATOMICALLY relative to callers: memory and
     /// Keychain are both updated before this returns, so a rotated refresh

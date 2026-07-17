@@ -24,6 +24,9 @@ public enum GatewayError: LocalizedError {
     case upstreamError(String)
     /// The gateway rejected the request shape (400).
     case badRequest(String)
+    /// DELETE /v1/account returned 404/405 — the server doesn't support
+    /// account deletion yet (external dependency, not a client bug).
+    case accountDeletionUnavailable
     /// Any other non-2xx.
     case http(Int, String)
     /// Transport-level failure (no HTTP response at all).
@@ -78,6 +81,8 @@ public enum GatewayError: LocalizedError {
             return "The AI service hit an upstream error. Try again."
         case .badRequest:
             return "The AI server rejected the request. Try again — if it persists, update the app."
+        case .accountDeletionUnavailable:
+            return "Account deletion isn't available yet — the server doesn't support it. Contact team@atlasjob.tech."
         case .http(let code, _):
             return "AI server error (\(code)). Try again."
         case .network:

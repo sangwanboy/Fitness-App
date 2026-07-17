@@ -14,6 +14,10 @@ public struct LoginView: View {
     /// Retained for the duration of the SIWA flow (release builds).
     @State private var appleSignIn = AppleSignInCoordinator()
 
+    // Legal document sheets (guideline 5.1.1(i) — visible Privacy Policy / Terms links).
+    @State private var showPrivacyPolicy = false
+    @State private var showTerms = false
+
     public init() {}
 
     private var isDark: Bool { themeMode == "dark" }
@@ -111,8 +115,8 @@ public struct LoginView: View {
                 VStack(spacing: 12) {
                     // Continue with Apple → gateway session.
                     // DEBUG: dev fake-auth against the local gateway.
-                    // Release: real Sign in with Apple (compiles now; succeeds
-                    // once the paid-team SIWA entitlement is added).
+                    // Release: real Sign in with Apple, backed by the
+                    // com.apple.developer.applesignin entitlement.
                     Button(action: signInTapped) {
                         HStack(spacing: 8) {
                             if isSigningIn {
@@ -134,6 +138,16 @@ public struct LoginView: View {
                     }
                     .disabled(isSigningIn)
                     .padding(.horizontal, 24)
+
+                    // Sign-up copy (guideline 5.1.1(i)) — explains what the
+                    // account is for and the never-stored-server-side promise.
+                    Text("Signing in creates your AI coach account through Apple — no email required. Your chat messages and health context are sent to our AI gateway only to generate that reply, and are never stored on our servers.")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(isDark ? .white.opacity(0.45) : .black.opacity(0.45))
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 32)
+                        .padding(.top, 2)
 
                     if let signInError {
                         Text(signInError)
@@ -166,6 +180,24 @@ public struct LoginView: View {
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 36)
                         .padding(.top, 8)
+
+                    // Visible, tappable policy links (App Store Connect requires
+                    // both URLs; guideline 5.1.1(i) requires them in-app too).
+                    HStack(spacing: 14) {
+                        Button("Privacy Policy") {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            showPrivacyPolicy = true
+                        }
+                        Text("·")
+                            .foregroundColor(isDark ? .white.opacity(0.3) : .black.opacity(0.3))
+                        Button("Terms of Service") {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            showTerms = true
+                        }
+                    }
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(accentColor)
+                    .padding(.top, 4)
                 }
                 .padding(.bottom, 36)
             }
@@ -179,6 +211,12 @@ public struct LoginView: View {
             withAnimation(.spring(response: 1.1, dampingFraction: 0.7).delay(0.35)) {
                 ringProgress = 1
             }
+        }
+        .sheet(isPresented: $showPrivacyPolicy) {
+            LegalDocumentSheet(title: "Privacy Policy", text: LegalTexts.privacyPolicy)
+        }
+        .sheet(isPresented: $showTerms) {
+            LegalDocumentSheet(title: "Terms of Service", text: LegalTexts.terms)
         }
     }
 
@@ -213,9 +251,11 @@ public struct LoginView: View {
 
 /// Wraps ASAuthorizationController in an async call that returns the raw
 /// Apple identity token (JWT) for the gateway's /v1/auth/apple exchange.
-/// NOTE: succeeding at runtime requires the Sign in with Apple entitlement
-/// (paid team) — deliberately NOT added yet; until then the request fails
-/// and LoginView surfaces the error honestly.
+/// NOTE: requires the Sign in with Apple entitlement
+/// (`com.apple.developer.applesignin`, paid team RM42FV53FU) — that
+/// entitlement is now present in FitnessApp.entitlements. If provisioning
+/// ever drops the capability the request fails and LoginView surfaces the
+/// error honestly.
 @MainActor
 final class AppleSignInCoordinator: NSObject, ASAuthorizationControllerDelegate,
                                     ASAuthorizationControllerPresentationContextProviding {
