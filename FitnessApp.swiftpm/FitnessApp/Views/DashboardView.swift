@@ -260,6 +260,15 @@ public struct DashboardView: View {
                                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                                 }
                             }
+                            // Session-17 regression guard: the main packed grid's row
+                            // HStack (above) carries this same modifier; this "Show
+                            // more" row was added later and had drifted from that
+                            // pattern. Matches the proven fix exactly and doesn't
+                            // change current layout (every child here already fills
+                            // via .frame(maxWidth: .infinity) individually) — it just
+                            // makes sure a future over-wide tile can't reopen
+                            // horizontal drag on Home the same way it did before.
+                            .frame(maxWidth: .infinity)
                             .transition(.opacity.combined(with: .move(edge: .top)))
                         }
                     }

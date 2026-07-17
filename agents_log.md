@@ -3248,3 +3248,30 @@ Simulator Debug + **Release** builds green; bundle carries PrivacyInfo.xcprivacy
    gateway — needs the user's hands (Session-54 open thread: Local Network permission).
 
 Latest deployed sequence: **6612**.
+
+---
+
+## Session 56 — 2026-07-17 (Horizontal scroll jiggle — chat code blocks; regression guard)
+
+User: app "again jiggling left-right while scrolling". Sonnet diagnosis agent + Fable review.
+
+### Root cause (NOT the Session-17 dashboard bug returning — same class, new file)
+`StructuredMarkdownText.swift` `.codeBlock` was the one block type rendering raw fenced text
+with a bare `Text` — no wrap opportunity in long runs (JSON keys, IDs, URLs) → ideal width
+wider than proposed → nothing in the chat bubble/ChatView path capped it → whole chat surface
+wider than viewport → horizontal drag. Confirmed neither prior overflow sweep (Sessions 34/37)
+ever covered this file.
+
+### Fixes
+1. Code blocks now wrap their `Text` in `ScrollView(.horizontal, showsIndicators: false)`
+   (block stays full-width; unwrappable lines scroll within the block — idiomatic).
+2. Defensive: DashboardView "Show more" grid row `HStack` was missing the Session-17
+   `.frame(maxWidth: .infinity)` the main grid rows carry — added (no-op today, blocks a
+   future over-wide tile from reopening the bug on Home).
+All other scroll surfaces audited clean (Dashboard main grid, MetricCards, Predictions,
+Widgets, Settings, Login, TokenUsage, ProgressHub, Nutrition, ToolCards).
+
+### Deploy
+Simulator + device green. **databaseSequenceNumber: 6620**.
+
+Latest deployed sequence: **6620**.

@@ -232,12 +232,25 @@ struct StructuredMarkdownText: View {
                 .fixedSize(horizontal: false, vertical: true)
 
         case .codeBlock(let s):
-            Text(s)
-                .font(.system(size: 13, design: .monospaced))
-                .foregroundColor(fg)
-                .padding(8)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.white.opacity(isDark ? 0.06 : 0.04), in: RoundedRectangle(cornerRadius: 8))
+            // Root cause of the "again" horizontal-scroll wobble: code the
+            // model fences (JSON, long IDs, table rows) frequently contains
+            // runs with no whitespace to wrap at. A bare Text() can't shrink
+            // below that run's width, so it reports an ideal width wider than
+            // the bubble — which (unlike DashboardView's cards) had no cap,
+            // so the oversized report propagated up into the vertical
+            // ScrollView's content and re-enabled horizontal drag. A
+            // horizontal ScrollView is the native fix: it always reports its
+            // *proposed* size upward regardless of content width, so any
+            // unwrappable line scrolls within the code block instead of
+            // dragging the whole screen.
+            ScrollView(.horizontal, showsIndicators: false) {
+                Text(s)
+                    .font(.system(size: 13, design: .monospaced))
+                    .foregroundColor(fg)
+                    .padding(8)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.white.opacity(isDark ? 0.06 : 0.04), in: RoundedRectangle(cornerRadius: 8))
 
         case .divider:
             Rectangle()
