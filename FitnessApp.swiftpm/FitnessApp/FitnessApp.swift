@@ -8,6 +8,9 @@ struct FitnessApp: App {
         Self.migrateHomeCardsList()
         Self.migrateLoginGate()
         Task { await NotificationManager.shared.requestPermissionIfNeeded() }
+        #if DEBUG
+        DispatchQueue.main.async { DebugScrollAudit.start() }
+        #endif
     }
 
     var body: some Scene {

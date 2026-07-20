@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		00F9CC937FFD43AB9E57781D /* DebugScrollAudit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DADA946EAB94499BF042C9E /* DebugScrollAudit.swift */; };
 		801AD550EBB147539E5ED51B /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 319B83E436D2428CA2BDA1D8 /* PrivacyInfo.xcprivacy */; };
 		023AE2C57DD7406681CA90AE /* LegalTexts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E9A0ACE88E44CFE8D6381AD /* LegalTexts.swift */; };
 		3EEDF8DEE54245ECBD29790E /* LegalDocumentSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E7E4F03E437415AB0BFCF94 /* LegalDocumentSheet.swift */; };
@@ -102,6 +103,7 @@
 		/* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		2DADA946EAB94499BF042C9E /* DebugScrollAudit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugScrollAudit.swift; sourceTree = "<group>"; };
 		319B83E436D2428CA2BDA1D8 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		6E9A0ACE88E44CFE8D6381AD /* LegalTexts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegalTexts.swift; sourceTree = "<group>"; };
 		3E7E4F03E437415AB0BFCF94 /* LegalDocumentSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegalDocumentSheet.swift; sourceTree = "<group>"; };
@@ -343,6 +345,7 @@
 				23B87896293CA2BF852C5431 /* SnoreDetector.swift */,
 				B19FC95A1A7EA7BE548AFA73 /* GatewayChatClient.swift */,
 				AA1DED72C1464435AE7BA4E1 /* Legal */,
+				2DADA946EAB94499BF042C9E /* DebugScrollAudit.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -481,6 +484,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				00F9CC937FFD43AB9E57781D /* DebugScrollAudit.swift in Sources */,
 				023AE2C57DD7406681CA90AE /* LegalTexts.swift in Sources */,
 				3EEDF8DEE54245ECBD29790E /* LegalDocumentSheet.swift in Sources */,
 				4E227A3FD5BB8B293A5BE92A /* GatewayConfig.swift in Sources */,

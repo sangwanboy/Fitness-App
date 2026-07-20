@@ -3275,3 +3275,20 @@ Widgets, Settings, Login, TokenUsage, ProgressHub, Nutrition, ToolCards).
 Simulator + device green. **databaseSequenceNumber: 6620**.
 
 Latest deployed sequence: **6620**.
+
+---
+
+## Session 57 — 2026-07-20 (Wiggle report withdrawn; DEBUG scroll-overflow tripwire kept)
+
+User re-reported the left-right scroll wiggle after Session 56; instrumented instead of
+guessing: new `Services/DebugScrollAudit.swift` (DEBUG-only, 3 s timer) walks the UIWindow
+hierarchy and prints any UIScrollView whose contentSize.width exceeds its bounds (the exact
+mechanism that enables horizontal drag). Simulator run reported **clean — no over-wide scroll
+views**; user then confirmed the wiggle was already fixed ("my bad"). Session-56 fix stands.
+
+Kept the auditor as a permanent DEBUG regression guard (this bug class hit Sessions 17 and 56);
+silent unless an offender exists, compiled out of Release. Hooked from `FitnessApp.init()`.
+
+Deployed: **databaseSequenceNumber: 6844**.
+
+Latest deployed sequence: **6844**.
