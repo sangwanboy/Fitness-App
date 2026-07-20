@@ -230,7 +230,15 @@ public struct LoginView: View {
         Task {
             do {
                 #if DEBUG
-                try await GatewayAuth.shared.signInDev()
+                // Real Sign in with Apple against the production gateway;
+                // the fake dev-auth only works on a local gateway started
+                // with ALLOW_FAKE_APPLE (prod rejects it by design).
+                if GatewayConfig.isLocalGateway {
+                    try await GatewayAuth.shared.signInDev()
+                } else {
+                    let identityToken = try await appleSignIn.requestIdentityToken()
+                    try await GatewayAuth.shared.signIn(appleIdentityToken: identityToken)
+                }
                 #else
                 let identityToken = try await appleSignIn.requestIdentityToken()
                 try await GatewayAuth.shared.signIn(appleIdentityToken: identityToken)

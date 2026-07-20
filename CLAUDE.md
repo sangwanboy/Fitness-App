@@ -69,8 +69,12 @@ Do this for each codebase change (in order):
   Gateway part shapes are strict: images are `{"image":{"mimeType","data"}}` (not `inlineData`),
   `thoughtSignature` rides ONLY as a part-level sibling of `functionCall` and must round-trip for
   tool calls; `thinkingConfig` only inside `generationConfig`; system prompt is a plain string.
-- Local dev gateway (needed for AI on device/simulator until the Azure deploy exists):
+- **Default gateway is PRODUCTION on Azure** (since 2026-07-21, all build configs):
+  `https://atlas-gw-tushar.denmarkeast.cloudapp.azure.com` — deployed from the gateway repo via
+  CI/CD (push to its `main` auto-deploys in ≤15 min). Auth against prod is real Sign in with
+  Apple only (`GatewayConfig.isLocalGateway` routes auth; fake dev-auth is hidden/refused there).
+- Optional local dev gateway (Settings → Astra AI backend → set `http://<mac-ip>:8787`, or
+  `http://localhost:8787` from the simulator; "Sign in (dev)" appears only then):
   `cd ~/Multi\ App\ Ai\ Backend && export PATH="$HOME/.local/node22/bin:$PATH" && STORE=memory SEED_DEMO=true ADMIN_SECRET=dev JWT_SECRET=dev ALLOW_FAKE_APPLE=true GCP_PROJECT=vertexi-ai-493516 GCP_SA_JSON_FILE="$HOME/.gcp/vertex-service-account.json" node dist/index.js`
-  — binds all interfaces; the phone reaches it at the Mac's LAN IP on port 8787 (Settings →
-  Astra AI backend → gateway URL). The service-account file now feeds ONLY this local gateway;
-  it is never bundled into the app.
+  — binds all interfaces. The service-account file feeds ONLY this local gateway; it is never
+  bundled into the app.

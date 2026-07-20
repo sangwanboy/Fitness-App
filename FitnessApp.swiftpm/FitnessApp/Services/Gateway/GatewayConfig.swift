@@ -15,12 +15,13 @@ public enum GatewayConfig {
     public static let baseURLDefaultsKey = "gateway_base_url"
 
     /// Effective gateway base URL. Resolution order:
-    /// 1. UserDefaults override, when it parses as a valid URL.
-    /// 2. DEBUG default — the Mac's LAN IP so the phone can reach the local
-    ///    dev gateway (editable in Settings → Astra AI backend). From the
-    ///    simulator, set the override to http://localhost:8787.
-    /// 3. Release: the production gateway on Azure (deployed 2026-07-20,
-    ///    TLS via Caddy/Let's Encrypt — https satisfies ATS).
+    /// 1. UserDefaults override, when it parses as a valid URL — set
+    ///    Settings → Astra AI backend to http://<mac-ip>:8787 for the local
+    ///    dev gateway (http://localhost:8787 from the simulator).
+    /// 2. The production gateway on Azure (deployed 2026-07-20, TLS via
+    ///    Caddy/Let's Encrypt — https satisfies ATS). Since 2026-07-21 this
+    ///    is the default for Debug builds too: the local dev server is no
+    ///    longer always-on, so out of the box every build talks to prod.
     public static var baseURL: URL? {
         if let raw = UserDefaults.standard.string(forKey: baseURLDefaultsKey)?
             .trimmingCharacters(in: .whitespacesAndNewlines),
@@ -29,12 +30,18 @@ public enum GatewayConfig {
            url.scheme != nil, url.host != nil {
             return url
         }
-        #if DEBUG
-        // Mac LAN IP for on-device dev testing against the local gateway.
-        return URL(string: "http://10.130.154.45:8787")
-        #else
         return URL(string: "https://atlas-gw-tushar.denmarkeast.cloudapp.azure.com")
-        #endif
+    }
+
+    /// True when the effective gateway is a local/LAN dev server (plain-http
+    /// or a private/loopback host). Auth flows use this to decide between the
+    /// gateway's fake dev-auth (local only) and real Sign in with Apple.
+    public static var isLocalGateway: Bool {
+        guard let url = baseURL, let host = url.host else { return false }
+        if url.scheme == "http" { return true }
+        if host == "localhost" || host.hasPrefix("127.") { return true }
+        return host.hasPrefix("10.") || host.hasPrefix("192.168.")
+            || host.range(of: #"^172\.(1[6-9]|2\d|3[01])\."#, options: .regularExpression) != nil
     }
 
     /// Build an absolute URL for a gateway path like "v1/chat".

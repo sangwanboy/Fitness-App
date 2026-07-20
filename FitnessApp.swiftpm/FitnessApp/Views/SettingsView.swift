@@ -471,6 +471,10 @@ public struct SettingsView: View {
                         .foregroundStyle(.red)
                     } else {
                         #if DEBUG
+                        // Fake dev-auth only exists on a local gateway started
+                        // with ALLOW_FAKE_APPLE — against prod it can only 401,
+                        // so hide it there (LoginView does real SIWA instead).
+                        if GatewayConfig.isLocalGateway {
                         Button("Sign in (dev)") {
                             Task {
                                 isGatewayAuthWorking = true
@@ -487,6 +491,7 @@ public struct SettingsView: View {
                         }
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(accentColor)
+                        }
                         #endif
                     }
                 }
