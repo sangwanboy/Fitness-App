@@ -615,7 +615,14 @@ public actor GatewayChatClient {
         if let usage = obj["usageMetadata"] as? [String: Any],
            let parsed = TokenUsage(usageMetadata: usage) {
             continuation.yield(.usage(parsed))
-            Task { @MainActor in TokenMeter.shared.record(parsed, source: .coach) }
+            // cachedContentTokenCount is the slice of promptTokenCount Gemini's
+            // implicit prompt caching served from cache — a SUBSET of
+            // `parsed.prompt`, not an additional charge. `TokenUsage` doesn't
+            // carry this field (its Codable shape lives in Models/ChatMessage.swift,
+            // out of scope for this change), so read it straight off the raw
+            // dict and thread it through as TokenMeter's own counter.
+            let cachedTokens = (usage["cachedContentTokenCount"] as? Int) ?? 0
+            Task { @MainActor in TokenMeter.shared.record(parsed, source: .coach, cachedTokens: cachedTokens) }
         }
     }
 }

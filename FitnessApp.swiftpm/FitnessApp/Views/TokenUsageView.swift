@@ -114,6 +114,15 @@ public struct TokenUsageView: View {
                      title: "Input", subtitle: "Prompt tokens · $1.50 / 1M",
                      value: meter.prompt, cost: meter.inputCost)
             divider
+            // Cached input is a SUBSET of the Input row above (Gemini's
+            // implicit prompt caching re-serving part of the prompt from
+            // cache), not an extra charge — so, unlike the other rows, it
+            // carries no separate cost figure. Honest "0" whenever the
+            // STATIC-first system-instruction prefix hasn't produced a hit yet.
+            tokenOnlyRow(icon: "bolt.badge.clock.fill", color: .teal,
+                         title: "Cached input", subtitle: "Implicit cache hits · discounted, included in Input",
+                         value: meter.cachedInput)
+            divider
             meterRow(icon: "arrow.down.circle.fill", color: .green,
                      title: "Output", subtitle: "Visible replies · $9.00 / 1M",
                      value: meter.output, cost: meter.outputCost)
@@ -123,6 +132,38 @@ public struct TokenUsageView: View {
                      value: meter.thoughts, cost: meter.thinkingCost)
         }
         .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 20))
+    }
+
+    /// Same visual language as `meterRow` (icon chip + title/subtitle +
+    /// trailing value), but with no cost line — for rows that report a
+    /// token count without an independent price (e.g. cached input, which is
+    /// already inside the Input row's cost).
+    private func tokenOnlyRow(icon: String, color: Color, title: String, subtitle: String, value: Int) -> some View {
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(color.opacity(0.18))
+                    .frame(width: 30, height: 30)
+                Image(systemName: icon)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(color)
+            }
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundColor(isDark ? .white : .black)
+                Text(subtitle)
+                    .font(.system(size: 12))
+                    .foregroundColor(secondary)
+            }
+            Spacer()
+            Text(value.formatted())
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                .foregroundColor(isDark ? .white : .black)
+                .contentTransition(.numericText())
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
     }
 
     private func meterRow(icon: String, color: Color, title: String, subtitle: String, value: Int, cost: Double) -> some View {

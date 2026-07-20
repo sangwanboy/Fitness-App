@@ -3338,3 +3338,34 @@ Device build/install/launch: **databaseSequenceNumber: 6860**. New Swift files r
 pbxproj by orchestrator script (5 files).
 
 Latest deployed sequence: **6860**.
+
+---
+
+## Session 59 — 2026-07-21 (Azure prod cutover + Gemini implicit prompt caching)
+
+### Azure cutover (commit edf327d)
+Verified the gateway repo's Session-5 production deploy is live
+(`https://atlas-gw-tushar.denmarkeast.cloudapp.azure.com` — healthz ok, /v1/chat 401 unauthed).
+App now defaults to prod in ALL configs (was: Debug → dead Mac LAN server). Auth routes by
+`GatewayConfig.isLocalGateway`: real SIWA against prod (Debug included), fake dev-auth +
+"Sign in (dev)" only when Settings points at a local gateway. CLAUDE.md updated.
+
+### Prompt caching (Sonnet agent + orchestrator transport fix)
+Gemini implicit caching needs a byte-identical request prefix; Astra's system prompt interleaved
+live health data with static content, so nothing ever cached. Restructured
+`buildSystemInstruction()`: 20 static sections first (persona/rules/TOOLS/memory), all volatile
+data under a trailing "LIVE CONTEXT (refreshed each message)" header. Static prefix ≈10k tokens
+(tools manifest included) — ~10× the cache minimum. System instruction now built ONCE per user
+turn (`systemInstructionForTurn(refresh:)`) and reused byte-identical across the tool-call loop
+(bonus: refreshIfStale/clinical reads once per turn, not per follow-up). Determinism audit:
+memory render + tools manifest already stable; orchestrator added `.sortedKeys` to
+GatewayTransport's two JSON serializations (Dictionary order isn't stable across relaunches).
+Observability: `cachedContentTokenCount` → TokenMeter.cachedInput → "Cached input" row in
+TokenUsageView (subset of Input, no separate cost).
+
+Known cosmetic: tool-triggered writes (update_goal/remember_fact) don't refresh that turn's
+pinned system prompt — self-heals next user message; model sees its write in the transcript.
+
+### Deploy
+Simulator build green. Device deploy PENDING — iPhone showed `unavailable` (locked/asleep);
+seq recorded on deploy.

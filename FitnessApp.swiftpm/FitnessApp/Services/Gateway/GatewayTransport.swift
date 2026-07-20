@@ -46,7 +46,11 @@ enum GatewayTransport {
     static func postJSON(path: String,
                          body: [String: Any],
                          timeout: TimeInterval = 30) async throws -> Data {
-        let payload = try JSONSerialization.data(withJSONObject: body)
+        // .sortedKeys: deterministic key order keeps request bytes identical
+        // across app relaunches, so Gemini's implicit prompt cache can match
+        // the prefix (Dictionary iteration order alone isn't stable between
+        // process runs). Key order is semantically irrelevant to the server.
+        let payload = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
         return try await send(path: path, payload: payload, timeout: timeout, allowAuthRetry: true)
     }
 
@@ -90,7 +94,8 @@ enum GatewayTransport {
     static func streamChat(body: [String: Any],
                            idleTimeout: TimeInterval = 60) async throws -> AsyncThrowingStream<Data, Error> {
         try await ensureReachable()
-        let payload = try JSONSerialization.data(withJSONObject: body)
+        // .sortedKeys for cache-stable request bytes — see postJSON above.
+        let payload = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
         let bytes = try await openStream(payload: payload, timeout: idleTimeout, allowAuthRetry: true)
 
         return AsyncThrowingStream<Data, Error> { continuation in

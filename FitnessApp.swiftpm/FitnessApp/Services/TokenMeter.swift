@@ -74,6 +74,12 @@ public final class TokenMeter: ObservableObject {
     public static let shared = TokenMeter()
 
     @Published public private(set) var prompt: Int = 0
+    /// Subset of `prompt` that Gemini's implicit prompt caching served from
+    /// cache (usageMetadata.cachedContentTokenCount) — NOT additional tokens,
+    /// and NOT double-counted in `prompt`/`total`. 0 until the STATIC-first
+    /// system-instruction shape (see `ChatViewModel.buildSystemInstruction`)
+    /// produces a prefix Gemini actually reuses across requests.
+    @Published public private(set) var cachedInput: Int = 0
     @Published public private(set) var output: Int = 0
     @Published public private(set) var thoughts: Int = 0
     @Published public private(set) var total: Int = 0
@@ -93,9 +99,16 @@ public final class TokenMeter: ObservableObject {
 
     /// Add one API call's usage to the running totals. Call from any context via
     /// `Task { @MainActor in TokenMeter.shared.record(usage, source: …) }`.
-    public func record(_ usage: TokenUsage, source: TokenSource) {
+    /// `cachedTokens` is `usageMetadata.cachedContentTokenCount` when the
+    /// caller has it (currently only `GatewayChatClient`'s coach-chat path —
+    /// `TokenUsage` itself doesn't carry the field, so callers read it
+    /// straight off the raw response dict); defaults to 0 for call sites that
+    /// don't pass it, which is the honest value since those turns' cache-hit
+    /// status is simply untracked here, not "never cached".
+    public func record(_ usage: TokenUsage, source: TokenSource, cachedTokens: Int = 0) {
         guard usage.total > 0 else { return }   // skip empty/errored turns
         prompt   += usage.prompt
+        cachedInput += max(0, cachedTokens)
         output   += usage.output
         thoughts += usage.thoughts
         total    += usage.total
@@ -112,6 +125,7 @@ public final class TokenMeter: ObservableObject {
 
     public func reset() {
         prompt = 0; output = 0; thoughts = 0; total = 0; calls = 0
+        cachedInput = 0
         bySource = [:]; callsBySource = [:]
         promptBySource = [:]; outputBySource = [:]; thoughtsBySource = [:]
         since = Date()
@@ -147,6 +161,9 @@ public final class TokenMeter: ObservableObject {
         var outputBySource: [String: Int]?
         var thoughtsBySource: [String: Int]?
         var since: Date?
+        // Lifetime cached-input tokens (Gemini implicit prompt caching hits) —
+        // optional so blobs saved before this field existed still decode.
+        var cachedInput: Int?
     }
 
     private func load() {
@@ -158,13 +175,15 @@ public final class TokenMeter: ObservableObject {
         outputBySource = s.outputBySource ?? [:]
         thoughtsBySource = s.thoughtsBySource ?? [:]
         since = s.since
+        cachedInput = s.cachedInput ?? 0
     }
 
     private func save() {
         let s = Snapshot(prompt: prompt, output: output, thoughts: thoughts, total: total,
                          calls: calls, bySource: bySource, callsBySource: callsBySource,
                          promptBySource: promptBySource, outputBySource: outputBySource,
-                         thoughtsBySource: thoughtsBySource, since: since)
+                         thoughtsBySource: thoughtsBySource, since: since,
+                         cachedInput: cachedInput)
         if let data = try? JSONEncoder().encode(s) {
             UserDefaults.standard.set(data, forKey: key)
         }

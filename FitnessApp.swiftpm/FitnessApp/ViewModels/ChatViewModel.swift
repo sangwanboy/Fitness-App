@@ -98,7 +98,10 @@ public final class ChatViewModel: ObservableObject {
             persistLiveSnapshot()
         }
 
-        let systemInstruction = await buildSystemInstruction()
+        // New user-initiated turn — force a fresh build so LIVE CONTEXT
+        // reflects this moment, then pin it for the rest of this turn's tool
+        // loop (see `systemInstructionForTurn`).
+        let systemInstruction = await systemInstructionForTurn(refresh: true)
         // Use a copy of messages excluding the last user message as history
         let history = Array(messages.dropLast())
 
@@ -1064,7 +1067,10 @@ public final class ChatViewModel: ObservableObject {
             persistLiveSnapshot()
         }
 
-        let systemInstruction = await buildSystemInstruction()
+        // Tool-loop continuation of an existing turn — reuse the pinned
+        // snapshot from that turn's initial `sendMessage` so this request's
+        // systemInstruction is byte-identical to the prior one in the loop.
+        let systemInstruction = await systemInstructionForTurn(refresh: false)
         let history = messages
 
         do {
@@ -1267,7 +1273,12 @@ public final class ChatViewModel: ObservableObject {
             persistLiveSnapshot()
         }
 
-        let systemInstruction = await buildSystemInstruction()
+        // Retrying the SAME turn's original message — reuse the turn's
+        // pinned snapshot (falls back to a fresh build if none is cached,
+        // e.g. the app relaunched mid-error) rather than rebuilding, so the
+        // retried request's prefix still matches whatever the failed attempt
+        // sent moments earlier.
+        let systemInstruction = await systemInstructionForTurn(refresh: false)
         let prompt = user.text.isEmpty ? "What is this? Give me full details." : user.text
 
         do {
@@ -1467,6 +1478,46 @@ public final class ChatViewModel: ObservableObject {
         }.joined(separator: ", ")
     }
     
+    /// The system instruction built at the start of the current user-initiated
+    /// turn. Reused byte-for-byte by every follow-up request in that turn's
+    /// tool-call loop (`sendFollowup` / `autoExecuteReadTool` chains, and the
+    /// tool-followup branch of `retryLast`).
+    ///
+    /// Why this matters for Gemini's implicit prompt caching: a request's
+    /// cacheable prefix is `systemInstruction + tools + contents` and ANY
+    /// changed byte invalidates everything after it. `buildSystemInstruction`
+    /// now emits a STATIC-first / LIVE-CONTEXT-last shape so the prefix is
+    /// stable turn-to-turn, but a tool-call loop fires MULTIPLE requests for
+    /// the SAME user turn (initial send → tool call → functionResponse
+    /// follow-up → maybe another tool call → …). If each of those requests
+    /// rebuilt the system instruction from scratch, the LIVE CONTEXT tail
+    /// (Date()-derived lines, HealthKit snapshots that can shift mid-loop)
+    /// would differ request-to-request, breaking the cache INSIDE a single
+    /// turn — the one place caching should be a guaranteed win, since the
+    /// only thing actually growing between those requests is `contents`.
+    /// Caching the whole string once per turn also avoids re-running
+    /// `HealthKitManager.refreshIfStale` on every follow-up (the double-fetch
+    /// `predictionsPayload()` already warns about above).
+    private var currentTurnSystemInstruction: String?
+
+    /// Returns the cached instruction for the in-flight turn, or builds
+    /// (and caches) a fresh one. Pass `refresh: true` only at the start of a
+    /// NEW user-initiated turn (a fresh `sendMessage`) so the LIVE CONTEXT
+    /// tail picks up this turn's real data; every request that continues an
+    /// EXISTING turn's tool loop should pass `refresh: false` to reuse the
+    /// turn's pinned snapshot. Falls back to building fresh regardless of
+    /// `refresh` when nothing is cached yet (defensive — shouldn't normally
+    /// happen, since every entry point that can start a loop populates the
+    /// cache first).
+    private func systemInstructionForTurn(refresh: Bool) async -> String {
+        if !refresh, let cached = currentTurnSystemInstruction {
+            return cached
+        }
+        let built = await buildSystemInstruction()
+        currentTurnSystemInstruction = built
+        return built
+    }
+
     private func buildSystemInstruction() async -> String {
         let hk = HealthKitManager.shared
 
@@ -1575,36 +1626,55 @@ public final class ChatViewModel: ObservableObject {
         let hydrationMindful = Self.hydrationMindfulBlock()
         let recentWorkouts  = Self.recentWorkoutsBlock()
 
-        // -- Conditional blocks: training load / HR zones / cycle / symptoms --
-        // Each omits itself entirely when there's no data (token hygiene).
+        // -- LIVE conditional blocks: training load / HR zones / cycle / symptoms --
+        // Each omits itself entirely when there's no data (token hygiene). All
+        // four are derived from today's HealthKit state and/or Date(), so —
+        // unlike the memory blocks below — they belong in the LIVE CONTEXT
+        // tail, not the cacheable STATIC run: see the prefix-caching note on
+        // `buildSystemInstruction` for why the split matters.
         let ageYears: Int = dobDate.map {
             Calendar.current.dateComponents([.year], from: $0, to: Date()).year ?? 30
         } ?? 30
-        var conditionalBlocks: [String] = []
+        var liveConditionalBlocks: [String] = []
         let trainingLoad = Self.trainingLoadBlock()
         if !trainingLoad.isEmpty {
-            conditionalBlocks.append("TRAINING LOAD (28-day window — same math as the Workout Analytics card)\n\(trainingLoad)")
+            liveConditionalBlocks.append("TRAINING LOAD (28-day window — same math as the Workout Analytics card)\n\(trainingLoad)")
         }
         if hk.hasWatchClassData || rhr > 0 {
-            conditionalBlocks.append("HR ZONES (personalised)\n\(Self.hrZonesLine(userAge: ageYears))")
+            liveConditionalBlocks.append("HR ZONES (personalised)\n\(Self.hrZonesLine(userAge: ageYears))")
         }
         let cycle = Self.cycleBlock()
         if !cycle.isEmpty {
-            conditionalBlocks.append("CYCLE (from HealthKit menstrual-flow samples, last 60 days)\n\(cycle)")
+            liveConditionalBlocks.append("CYCLE (from HealthKit menstrual-flow samples, last 60 days)\n\(cycle)")
         }
         let symptoms = Self.symptomsBlock()
         if !symptoms.isEmpty {
-            conditionalBlocks.append(symptoms)
+            liveConditionalBlocks.append(symptoms)
         }
-        // Structured long-term memory (AstraMemoryStore) — only injected when
-        // the master toggle is on AND there's actually something to say, so a
-        // fresh install / opted-out user doesn't pay for an empty heading.
+        let liveConditionalSection = liveConditionalBlocks.isEmpty
+            ? ""
+            : "\n" + liveConditionalBlocks.joined(separator: "\n\n") + "\n"
+
+        // -- STATIC personalization: structured long-term memory + legacy notes --
+        // Unlike the four blocks above, these change only when the MODEL ITSELF
+        // calls remember_fact / update_profile / update_notes — rare relative to
+        // the once-per-turn cadence of live HealthKit data — so they're
+        // "static-enough" to live in the cacheable STATIC run instead of LIVE
+        // CONTEXT. `AstraMemoryStore.renderForSystemPrompt()`'s own ordering is
+        // deterministic (profile sections walked via `Section.allCases`, facts
+        // grouped into a dictionary but re-emitted by iterating
+        // `Category.allCases` rather than the dictionary itself — verified, no
+        // fix needed) so re-rendering it turn to turn won't itself churn bytes.
+        // Only injected when the master toggle is on AND there's actually
+        // something to say, so a fresh install / opted-out user doesn't pay for
+        // an empty heading.
         let memoryStore = AstraMemoryStore.shared
+        var staticMemoryBlocks: [String] = []
         var structuredMemoryShown = false
         if memoryStore.isEnabled {
             let rendered = memoryStore.renderForSystemPrompt()
             if !rendered.isEmpty {
-                conditionalBlocks.append("ASTRA'S MEMORY OF THIS USER (built by you via remember_fact / update_profile — treat as gospel, keep it current)\n\(rendered)")
+                staticMemoryBlocks.append("ASTRA'S MEMORY OF THIS USER (built by you via remember_fact / update_profile — treat as gospel, keep it current)\n\(rendered)")
                 structuredMemoryShown = true
             }
         }
@@ -1620,11 +1690,11 @@ public final class ChatViewModel: ObservableObject {
             let notesBlock = savedNotes.isEmpty
                 ? "No notes yet. Use update_notes silently when you learn something lasting."
                 : savedNotes
-            conditionalBlocks.append("YOUR MEMORY (cross-session notes written by you via update_notes — treat as gospel for personalisation)\n\(notesBlock)")
+            staticMemoryBlocks.append("YOUR MEMORY (cross-session notes written by you via update_notes — treat as gospel for personalisation)\n\(notesBlock)")
         }
-        let conditionalSections = conditionalBlocks.isEmpty
+        let staticMemorySection = staticMemoryBlocks.isEmpty
             ? ""
-            : "\n" + conditionalBlocks.joined(separator: "\n\n") + "\n"
+            : "\n" + staticMemoryBlocks.joined(separator: "\n\n") + "\n"
 
         // -- 7-day histories --------------------------------------------------
         let stepsHistory = historySummary(for: .steps)
@@ -1656,47 +1726,7 @@ public final class ChatViewModel: ObservableObject {
         LOCALE
         - Timezone: \(tz) — use this for ALL relative-time conversion ("tomorrow morning", "in 2 hours").
         - Units: \(unitsLabel) — never mix.
-
-        TODAY'S METRICS (live from HealthKit)
-        - Steps: \(Int(steps)) / \(Int(stepsGoal)) (\(pct(steps, stepsGoal))%)
-        - Active calories: \(Int(cals)) / \(Int(calsGoal)) kcal (\(pct(cals, calsGoal))%)
-        - Sleep: \(displayOr(sleepH, "%.1f")) h / \(Int(sleepGoal)) h (\(pct(sleepH, sleepGoal))%)
-        - Distance: \(dist > 0 ? String(format: "%.2f", LocaleUnits.distanceDisplay(fromMiles: dist).value) : "—") / \(String(format: "%.1f", LocaleUnits.distanceDisplay(fromMiles: distGoal).value)) \(LocaleUnits.distanceUnit)
-        - Latest HR: \(displayOr(hrLive, "%.0f")) bpm
-        - Resting HR: \(displayOr(rhr, "%.0f")) bpm
-        - HRV: \(displayOr(hrv, "%.0f")) ms
-        - VO₂ max: \(displayOr(vo2, "%.1f")) ml/kg·min
-        - SpO₂: \(displayOr(spo2, "%.0f"))%
-
-        PREDICTIONS (on-device snapshot — same data the user sees on the Home card. You have it INLINE so you do not need to call get_predictions unless you want the raw JSON.)
-        \(predictionsBlock)
-
-        SLEEP PATTERN (built on-device from the user's tracked sleep sessions — separate from HK sleep metrics. Pattern emerges after ≥3 nights. Use this as the user's personal baseline before any universal sleep rule. Call get_sleep_pattern when you need the per-night breakdown for the last 5 sessions.)
-        \(sleepPatternBlock)
-
-        \(nutritionBlock)
-
-        LAST 7 DAYS (for trend + baseline math)
-        - Steps: \(stepsHistory)
-        - Active calories: \(calsHistory)
-        - Sleep: \(sleepHistory)
-        - Distance: \(distHistory)
-        - Heart rate: \(hrHistory)
-        - Resting HR: \(rhrHistory)
-        - HRV: \(hrvHistory)
-
-        STREAK & CHALLENGE (celebrate milestones; coach continuity)
-        \(streakChallenge)
-
-        BODY & GAIT 7-DAY
-        \(bodyGait)
-
-        HYDRATION & MINDFUL 7-DAY
-        \(hydrationMindful)
-
-        RECENT WORKOUTS (last 3 of 28-day window — call get_metric_history for metric trends)
-        \(recentWorkouts)
-        \(conditionalSections)
+        \(staticMemorySection)
         DATA SEMANTICS
         - "—" or null = HealthKit returned no record. NEVER invent or imply a value.
         - 0 may be a genuine value depending on context: 0 steps at 6 AM is "early morning"; 0 sleep is almost certainly "not synced yet" — use judgement. When in doubt, state the ambiguity.
@@ -1704,7 +1734,7 @@ public final class ChatViewModel: ObservableObject {
         - If the user asks about a metric you don't have, say so plainly and explain how they'd enable it.
 
         PERSONAL BASELINES (use these BEFORE universal thresholds)
-        - Compute baselines from the 7-day history above. For RHR / HRV / sleep, deviation from the user's own mean matters more than any fixed cutoff.
+        - Compute baselines from the 7-day history in LIVE CONTEXT below. For RHR / HRV / sleep, deviation from the user's own mean matters more than any fixed cutoff.
         - A "fit athlete" RHR of 45 spiking to 75 is a large signal — flag it, even though 75 is "normal" by universal rules.
         - Flag when today's value is > 1.5× standard deviation from the 7-day mean in the concerning direction (RHR up, HRV down, sleep down).
 
@@ -1736,8 +1766,8 @@ public final class ChatViewModel: ObservableObject {
         - update_reminder / update_calendar_event / delete_reminder / delete_calendar_event : by id from the prior list_* call. Always pass `title` on deletes.
         - show_metric_chart / show_comparison_chart : visualize trends. Use comparison proactively when a 7-day pattern is interesting. After either chart renders, you receive the series stats (avg/min/max/latest/change %) via functionResponse and you MUST reply with a brief grounded analysis — 2-3 sentences MAX: the trend, one notable high or low, one actionable takeaway — quoting the user's actual numbers from the stats. Never re-list the chart's contents point by point.
         - render_card : structured visuals that don't fit other tools. SF Symbol icon, color ∈ {accent, red, green, blue, orange, purple, cyan, yellow}. After the card renders you get an ack via functionResponse — follow with a SINGLE-sentence takeaway; never re-list the card's contents.
-        - get_metric_history : daily history for ANY tracked metric over up to 90 days — returns {daily values, avg, min, max, latest, change %}. Call it for any metric question the inline blocks above don't answer (weight trend, SpO₂, VO₂ max, stand hours, exercise minutes, gait, headphone audio, longer windows). Auto-executes; ground your answer in the returned numbers.
-        - get_predictions : on-device PredictionEngine snapshot (recovery readiness, next-likely-workout, goal trajectory, sedentary alert). The full prediction data is already inline above in the PREDICTIONS block — use it directly for training and recovery questions. Call get_predictions ONLY when you need the raw JSON detail (e.g. full anomaly list, exact confidence scores) that isn't represented in the inline summary.
+        - get_metric_history : daily history for ANY tracked metric over up to 90 days — returns {daily values, avg, min, max, latest, change %}. Call it for any metric question the inline LIVE CONTEXT blocks below don't answer (weight trend, SpO₂, VO₂ max, stand hours, exercise minutes, gait, headphone audio, longer windows). Auto-executes; ground your answer in the returned numbers.
+        - get_predictions : on-device PredictionEngine snapshot (recovery readiness, next-likely-workout, goal trajectory, sedentary alert). The full prediction data is already inline in LIVE CONTEXT's PREDICTIONS block below — use it directly for training and recovery questions. Call get_predictions ONLY when you need the raw JSON detail (e.g. full anomaly list, exact confidence scores) that isn't represented in the inline summary.
         - list_food_log / update_food_log / delete_food_log : READ + WRITE for today's logged meals. Use list_food_log FIRST when the user asks to fix, correct, rename, change, or delete a logged meal — you cannot guess the id. If list returns exactly ONE match for the user's description, proceed straight to update_/delete_ without asking. Pass `name` on deletes so the confirm card shows what's about to go.
         - create_widget / list_widgets / update_widget / delete_widget : ASTRA STUDIO — your creative canvas on the user's Home screen. See the WIDGET STUDIO block below for when and how to use it.
         - update_goal : change a user-configurable daily goal (steps, activeEnergy, sleep, distance, hydration, exerciseMinutes, standHours, mindfulMinutes, flightsClimbed). Confirmation-gated — the user approves before the write. Use it when the user agrees to adjust a goal, or asks to. Deterministic "Goal suggestion" lines appear inline in the PREDICTIONS block when 28-day attainment warrants a change — propose them ONLY when the user engages with goals; never apply unprompted.
@@ -1811,6 +1841,49 @@ public final class ChatViewModel: ObservableObject {
         > - Refuel: **30 g** protein within 30 min after.
         >
         > Next: ride this evening, log it in the app.
+
+        LIVE CONTEXT (refreshed each message — everything below this line can change turn to turn; everything above it is stable for the length of this session and safe to cache)
+
+        TODAY'S METRICS (live from HealthKit)
+        - Steps: \(Int(steps)) / \(Int(stepsGoal)) (\(pct(steps, stepsGoal))%)
+        - Active calories: \(Int(cals)) / \(Int(calsGoal)) kcal (\(pct(cals, calsGoal))%)
+        - Sleep: \(displayOr(sleepH, "%.1f")) h / \(Int(sleepGoal)) h (\(pct(sleepH, sleepGoal))%)
+        - Distance: \(dist > 0 ? String(format: "%.2f", LocaleUnits.distanceDisplay(fromMiles: dist).value) : "—") / \(String(format: "%.1f", LocaleUnits.distanceDisplay(fromMiles: distGoal).value)) \(LocaleUnits.distanceUnit)
+        - Latest HR: \(displayOr(hrLive, "%.0f")) bpm
+        - Resting HR: \(displayOr(rhr, "%.0f")) bpm
+        - HRV: \(displayOr(hrv, "%.0f")) ms
+        - VO₂ max: \(displayOr(vo2, "%.1f")) ml/kg·min
+        - SpO₂: \(displayOr(spo2, "%.0f"))%
+
+        PREDICTIONS (on-device snapshot — same data the user sees on the Home card. You have it INLINE so you do not need to call get_predictions unless you want the raw JSON.)
+        \(predictionsBlock)
+
+        SLEEP PATTERN (built on-device from the user's tracked sleep sessions — separate from HK sleep metrics. Pattern emerges after ≥3 nights. Use this as the user's personal baseline before any universal sleep rule. Call get_sleep_pattern when you need the per-night breakdown for the last 5 sessions.)
+        \(sleepPatternBlock)
+
+        \(nutritionBlock)
+
+        LAST 7 DAYS (for trend + baseline math)
+        - Steps: \(stepsHistory)
+        - Active calories: \(calsHistory)
+        - Sleep: \(sleepHistory)
+        - Distance: \(distHistory)
+        - Heart rate: \(hrHistory)
+        - Resting HR: \(rhrHistory)
+        - HRV: \(hrvHistory)
+
+        STREAK & CHALLENGE (celebrate milestones; coach continuity)
+        \(streakChallenge)
+
+        BODY & GAIT 7-DAY
+        \(bodyGait)
+
+        HYDRATION & MINDFUL 7-DAY
+        \(hydrationMindful)
+
+        RECENT WORKOUTS (last 3 of 28-day window — call get_metric_history for metric trends)
+        \(recentWorkouts)
+        \(liveConditionalSection)
         """
         return instructions
     }

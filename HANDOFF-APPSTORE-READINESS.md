@@ -80,12 +80,13 @@ metadata-only (backend `docs/SPEC.md`, CLAUDE.md rule 1). Expect review to
 scrutinize the `health-records` entitlement — prepare the justification.
 
 ### 3. Production gateway URL
-`Services/Gateway/GatewayConfig.swift` — DEBUG hardcodes LAN IP
-`http://10.130.154.45:8787` (:35), **Release returns `nil`** (:37): an App
-Store build has no backend. The Azure VM deployment (ADR-007) hasn't happened
-yet — coordinate with the backend repo; wire the https prod URL when it exists
-and keep it out of DEBUG. ATS is already narrow (`NSAllowsLocalNetworking`
-only) — prod must be https so no new exceptions are needed.
+✅ **DONE (2026-07-20).** Production is live at
+`https://atlas-gw-tushar.denmarkeast.cloudapp.azure.com` (Azure VM, ADR-007 as
+amended — Denmark East; see backend `docs/DECISIONS.md` addendum) and
+`GatewayConfig.baseURL`'s Release branch now returns it. DEBUG keeps the LAN
+IP; the UserDefaults override still wins in both configs. ATS needs no new
+exceptions (prod is https). Still yours: verify a Release-config build reaches
+prod end-to-end once the SIWA entitlement (item 1) is in place.
 
 ### 4. Credential hygiene (before any public build)
 `FitnessApp.swiftpm/FitnessApp/vertex-service-account.json` is a **real GCP
