@@ -224,8 +224,10 @@ public struct ChatView: View {
 
                 Button(action: { withAnimation { viewModel.startNewChat() } }) {
                     Image(systemName: "square.and.pencil")
-                        .foregroundStyle(accentColor)
+                        .foregroundStyle(viewModel.isGenerating ? Color.secondary : accentColor)
                 }
+                .disabled(viewModel.isGenerating)
+                .opacity(viewModel.isGenerating ? 0.4 : 1)
                 .accessibilityLabel("New chat")
                 .accessibilityHint("Archive this conversation and start fresh")
             }
@@ -254,8 +256,14 @@ public struct ChatView: View {
             ChatHistorySheet(
                 accentColor: accentColor,
                 isDark: isDark,
+                isGenerating: viewModel.isGenerating,
                 onSelect: { session in
-                    withAnimation { viewModel.loadSession(session) }
+                    var opened = false
+                    withAnimation { opened = viewModel.openSession(session.id) }
+                    if opened { showHistorySheet = false }
+                },
+                onNewChat: {
+                    withAnimation { viewModel.startNewChat() }
                     showHistorySheet = false
                 }
             )
@@ -453,6 +461,7 @@ struct ChatMessageRow: View {
                             messageId: message.id,
                             call: call,
                             status: message.toolStatus ?? .pending,
+                            resultJSON: message.toolResultJSON,
                             accentColor: accentColor,
                             onConfirm: { onConfirmTool(message.id) },
                             onCancel:  { onCancelTool(message.id) }
@@ -610,7 +619,13 @@ struct ChatHistorySheet: View {
 
     let accentColor: Color
     let isDark: Bool
+    /// Blocks reopening a session (and starting a new one) while Astra is
+    /// mid-stream, so the selector never races a live reply against a full
+    /// message-array swap. Delete stays available — it only touches the
+    /// archive, never the live conversation.
+    let isGenerating: Bool
     var onSelect: (ChatSession) -> Void
+    var onNewChat: () -> Void
 
     private static let relativeFormatter: RelativeDateTimeFormatter = {
         let f = RelativeDateTimeFormatter()
@@ -624,38 +639,72 @@ struct ChatHistorySheet: View {
 
     var body: some View {
         NavigationStack {
-            Group {
-                if store.sessions.isEmpty {
-                    emptyState
-                } else {
-                    List {
-                        ForEach(store.sessions) { session in
-                            Button {
-                                onSelect(session)
-                            } label: {
-                                row(for: session)
+            VStack(spacing: 0) {
+                if isGenerating {
+                    streamingNotice
+                }
+                Group {
+                    if store.sessions.isEmpty {
+                        emptyState
+                    } else {
+                        List {
+                            ForEach(store.sessions) { session in
+                                Button {
+                                    guard !isGenerating else { return }
+                                    onSelect(session)
+                                } label: {
+                                    row(for: session)
+                                }
+                                .buttonStyle(.plain)
+                                .listRowBackground(Color.clear)
+                                .disabled(isGenerating)
+                                .opacity(isGenerating ? 0.5 : 1)
                             }
-                            .buttonStyle(.plain)
-                            .listRowBackground(Color.clear)
+                            .onDelete { offsets in
+                                withAnimation { store.delete(at: offsets) }
+                            }
                         }
-                        .onDelete { offsets in
-                            withAnimation { store.delete(at: offsets) }
-                        }
+                        .listStyle(.plain)
+                        .scrollContentBackground(.hidden)
                     }
-                    .listStyle(.plain)
-                    .scrollContentBackground(.hidden)
                 }
             }
             .background(AdaptiveBackground())
             .navigationTitle("Chat History")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button(action: onNewChat) {
+                        Label("New chat", systemImage: "square.and.pencil")
+                            .labelStyle(.iconOnly)
+                    }
+                    .disabled(isGenerating)
+                    .foregroundStyle(isGenerating ? Color.secondary : accentColor)
+                    .accessibilityLabel("New chat")
+                    .accessibilityHint("Archive this conversation and start fresh")
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
                         .foregroundStyle(accentColor)
                 }
             }
         }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+    }
+
+    private var streamingNotice: some View {
+        HStack(spacing: 8) {
+            ProgressView().controlSize(.small)
+            Text("Astra is replying — finish or wait before switching chats.")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(isDark ? Color.white.opacity(0.06) : Color.black.opacity(0.05))
     }
 
     private func row(for session: ChatSession) -> some View {

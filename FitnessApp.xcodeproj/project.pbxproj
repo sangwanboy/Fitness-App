@@ -7,6 +7,11 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		FF2546340B2741738396D2B4 /* AstraProfileSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = C792755A863D425F81524861 /* AstraProfileSection.swift */; };
+		5E968415B09B4E7DAE91FC45 /* AstraMemoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5BD00044E00420D9A3ED6B7 /* AstraMemoryStore.swift */; };
+		11973728339043618B6A391A /* WeeklyReviewCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A29B18ECDD09435FB754C2AC /* WeeklyReviewCard.swift */; };
+		FE84E843098F4A588CD53526 /* WeeklyReviewEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F8CDBFE1F6342CE8C783B67 /* WeeklyReviewEngine.swift */; };
+		BBC4CD48A31447DEA37BA20A /* NotificationSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAAE63C8043C4C8AAB608047 /* NotificationSettingsSection.swift */; };
 		00F9CC937FFD43AB9E57781D /* DebugScrollAudit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DADA946EAB94499BF042C9E /* DebugScrollAudit.swift */; };
 		801AD550EBB147539E5ED51B /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 319B83E436D2428CA2BDA1D8 /* PrivacyInfo.xcprivacy */; };
 		023AE2C57DD7406681CA90AE /* LegalTexts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E9A0ACE88E44CFE8D6381AD /* LegalTexts.swift */; };
@@ -103,6 +108,11 @@
 		/* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		C792755A863D425F81524861 /* AstraProfileSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AstraProfileSection.swift; sourceTree = "<group>"; };
+		D5BD00044E00420D9A3ED6B7 /* AstraMemoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AstraMemoryStore.swift; sourceTree = "<group>"; };
+		A29B18ECDD09435FB754C2AC /* WeeklyReviewCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeeklyReviewCard.swift; sourceTree = "<group>"; };
+		2F8CDBFE1F6342CE8C783B67 /* WeeklyReviewEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeeklyReviewEngine.swift; sourceTree = "<group>"; };
+		DAAE63C8043C4C8AAB608047 /* NotificationSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationSettingsSection.swift; sourceTree = "<group>"; };
 		2DADA946EAB94499BF042C9E /* DebugScrollAudit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugScrollAudit.swift; sourceTree = "<group>"; };
 		319B83E436D2428CA2BDA1D8 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		6E9A0ACE88E44CFE8D6381AD /* LegalTexts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegalTexts.swift; sourceTree = "<group>"; };
@@ -281,6 +291,9 @@
 				3EB33CCB0B7D84FBFD9F9CE5 /* StructuredMarkdownText.swift */,
 				2B1B9E033482FE3CAE477880 /* ToolCards.swift */,
 				69C6558093625FAAB1EAF5BA /* WidgetsCard.swift */,
+				DAAE63C8043C4C8AAB608047 /* NotificationSettingsSection.swift */,
+				A29B18ECDD09435FB754C2AC /* WeeklyReviewCard.swift */,
+				C792755A863D425F81524861 /* AstraProfileSection.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -346,6 +359,8 @@
 				B19FC95A1A7EA7BE548AFA73 /* GatewayChatClient.swift */,
 				AA1DED72C1464435AE7BA4E1 /* Legal */,
 				2DADA946EAB94499BF042C9E /* DebugScrollAudit.swift */,
+				2F8CDBFE1F6342CE8C783B67 /* WeeklyReviewEngine.swift */,
+				D5BD00044E00420D9A3ED6B7 /* AstraMemoryStore.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -484,6 +499,11 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				FF2546340B2741738396D2B4 /* AstraProfileSection.swift in Sources */,
+				5E968415B09B4E7DAE91FC45 /* AstraMemoryStore.swift in Sources */,
+				11973728339043618B6A391A /* WeeklyReviewCard.swift in Sources */,
+				FE84E843098F4A588CD53526 /* WeeklyReviewEngine.swift in Sources */,
+				BBC4CD48A31447DEA37BA20A /* NotificationSettingsSection.swift in Sources */,
 				00F9CC937FFD43AB9E57781D /* DebugScrollAudit.swift in Sources */,
 				023AE2C57DD7406681CA90AE /* LegalTexts.swift in Sources */,
 				3EEDF8DEE54245ECBD29790E /* LegalDocumentSheet.swift in Sources */,

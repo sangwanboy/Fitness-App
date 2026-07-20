@@ -19,9 +19,8 @@ public enum GatewayConfig {
     /// 2. DEBUG default — the Mac's LAN IP so the phone can reach the local
     ///    dev gateway (editable in Settings → Astra AI backend). From the
     ///    simulator, set the override to http://localhost:8787.
-    /// 3. Release: nil — no production URL exists yet (it lands after the
-    ///    gateway's azd deploy). Callers surface an honest
-    ///    "AI backend not configured" error instead of guessing.
+    /// 3. Release: the production gateway on Azure (deployed 2026-07-20,
+    ///    TLS via Caddy/Let's Encrypt — https satisfies ATS).
     public static var baseURL: URL? {
         if let raw = UserDefaults.standard.string(forKey: baseURLDefaultsKey)?
             .trimmingCharacters(in: .whitespacesAndNewlines),
@@ -34,7 +33,7 @@ public enum GatewayConfig {
         // Mac LAN IP for on-device dev testing against the local gateway.
         return URL(string: "http://10.130.154.45:8787")
         #else
-        return nil
+        return URL(string: "https://atlas-gw-tushar.denmarkeast.cloudapp.azure.com")
         #endif
     }
 

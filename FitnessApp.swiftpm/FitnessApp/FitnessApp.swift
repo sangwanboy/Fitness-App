@@ -1,13 +1,26 @@
 import SwiftUI
+import UserNotifications
+import BackgroundTasks
 
 @main
 struct FitnessApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
+    /// Must match Info.plist's `BGTaskSchedulerPermittedIdentifiers` entry.
+    private static let backgroundRefreshTaskID = "com.tushar.fitnessapp.refresh"
+
     init() {
         Self.migrateHomeCardsList()
         Self.migrateLoginGate()
+
+        // NotificationManager owns tap routing (queues a notification's
+        // chatPrompt into ChatPrefillBus) and foreground presentation, so it
+        // must be the delegate before any notification can be shown or tapped.
+        UNUserNotificationCenter.current().delegate = NotificationManager.shared
         Task { await NotificationManager.shared.requestPermissionIfNeeded() }
+
+        Self.registerBackgroundRefresh()
+
         #if DEBUG
         DispatchQueue.main.async { DebugScrollAudit.start() }
         #endif
@@ -114,6 +127,68 @@ struct FitnessApp: App {
         let defaults = UserDefaults.standard
         if defaults.object(forKey: "is_logged_in") == nil && defaults.bool(forKey: "is_onboarded") {
             defaults.set(true, forKey: "is_logged_in")
+        }
+    }
+
+    // MARK: - Background refresh (proactive notifications)
+
+    /// Registers the BGAppRefresh handler. Must happen before the app
+    /// finishes launching, so this runs synchronously from `init()` — the
+    /// handler re-evaluates event nudges, reschedules the morning brief, and
+    /// always resubmits the next request so the ~4h cadence continues.
+    private static func registerBackgroundRefresh() {
+        BGTaskScheduler.shared.register(forTaskWithIdentifier: backgroundRefreshTaskID, using: nil) { task in
+            guard let refreshTask = task as? BGAppRefreshTask else { task.setTaskCompleted(success: false); return }
+            handleBackgroundRefresh(refreshTask)
+        }
+        submitBackgroundRefreshRequest()
+    }
+
+    private static func submitBackgroundRefreshRequest() {
+        let request = BGAppRefreshTaskRequest(identifier: backgroundRefreshTaskID)
+        request.earliestBeginDate = Date(timeIntervalSinceNow: 4 * 3600) // ~4h cadence
+        try? BGTaskScheduler.shared.submit(request)
+    }
+
+    private static func handleBackgroundRefresh(_ task: BGAppRefreshTask) {
+        // Always resubmit first so a slow/expired refresh never breaks the cadence.
+        submitBackgroundRefreshRequest()
+
+        // HealthKit continuations don't observe Task cancellation, so the
+        // expiration handler can't just cancel `work` and trust the normal
+        // completion path to call setTaskCompleted before the grace window
+        // ends — that race is a watchdog kill. One-shot completion flag:
+        // whichever side (expiration or normal completion) gets there first
+        // wins; the other becomes a no-op.
+        let completionLock = NSLock()
+        var isCompleted = false
+        func completeOnce(_ success: Bool) {
+            completionLock.lock()
+            defer { completionLock.unlock() }
+            guard !isCompleted else { return }
+            isCompleted = true
+            task.setTaskCompleted(success: success)
+        }
+
+        // Assign the expiration handler BEFORE starting `work` so there's no
+        // window where expiration could fire against a not-yet-assigned handler.
+        var work: Task<Void, Never>?
+        task.expirationHandler = {
+            completeOnce(false)
+            work?.cancel()
+        }
+
+        work = Task {
+            await HealthKitManager.shared.refreshIfStale(maxAgeMinutes: 60)
+            await MainActor.run {
+                NotificationManager.shared.evaluateProactiveNudges()
+                NotificationManager.shared.rescheduleMorningBrief()
+            }
+        }
+
+        Task {
+            _ = await work?.result
+            completeOnce(!(work?.isCancelled ?? true))
         }
     }
 }

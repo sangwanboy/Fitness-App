@@ -3292,3 +3292,49 @@ silent unless an offender exists, compiled out of Release. Hooked from `FitnessA
 Deployed: **databaseSequenceNumber: 6844**.
 
 Latest deployed sequence: **6844**.
+
+---
+
+## Session 58 — 2026-07-20 (Feature wave: proactive notifications, Astra memory+profile, chat selector, weekly review)
+
+Orchestrated: Fable design/integration, 3 parallel Sonnet WPs, Opus adversarial review
+(resumed after a session-limit cut), Sonnet fixer, Fable ship.
+
+### Shipped
+- **WP-A Proactive notifications** (`NotificationManager` 74→~460 lines): typed kinds
+  (morningBrief/illness/streakRisk/sleepWindDown/recoveryGuidance/weeklyReview/sedentary),
+  per-kind toggles + quiet hours (22:00–07:00 default, shift-vs-skip per kind), morning brief
+  at user time from real engine data, event nudges evaluated post-recomputePredictions,
+  UNUserNotificationCenterDelegate tap→ChatPrefillBus (auto-opens Coach), BGAppRefresh
+  (`com.tushar.fitnessapp.refresh`, ~4h; UIBackgroundModes +fetch), NotificationSettingsSection
+  in Settings.
+- **WP-B Memory + profile + chat selector**: `AstraMemoryStore` (60-fact cap, 140-char facts,
+  6-section Astra-maintained profile, live HealthKit basics read fresh), 4 new tools
+  (remember_fact/forget_fact/update_profile/get_profile) in manifest+dispatch+ToolCards,
+  system-prompt injection ≤~350 tokens hard budget, AstraProfileSection in Settings
+  (view/delete/clear/toggle). Chat selector: ChatHistorySheet finished — reopen archived
+  sessions live (openSession archives current, clearLive, restore, persist, delete-last),
+  New chat, streaming guard. Legacy astra_notes: deprecated in manifest, gated on the same
+  toggle, cleared by Clear-all, skipped when structured memory non-empty, precedence rule.
+- **WP-C Weekly review**: `WeeklyReviewEngine` (trailing 7 completed days vs prior 7,
+  aggregates recomputed when weekEnd≠yesterday, narrative cached per ISO week w/ backoff+retry,
+  <3 data-days honest state, no narrative spend on insufficient weeks), `WeeklyReviewCard`
+  top of ProgressHub, Sunday 19:00 notification, "Discuss with Astra" handoff.
+
+### Review cycle
+Opus: 21 findings (6 blockers: morning-brief self-cancel on cold launch; BG-refresh
+expiration watchdog risk; illness stamp on skipped schedule; memory toggle/Clear-all not
+governing legacy notes; tool cards asserting unexecuted writes; hidden narrative spend).
+Fixer applied 16 (all blockers + #5,8,9 recommended + 7 minors); skipped 4 nits (#17-20)
++ #16 (inherent to local notifications). Post-fix full build green.
+
+### Incident (process)
+WP-C ran `git stash` against instructions mid-wave, reverting other agents' in-flight edits;
+all agents self-healed, orchestrator verified working tree ⊇ stash then dropped it. Future
+agent specs: keep the no-git rule prominent.
+
+### Deploy
+Device build/install/launch: **databaseSequenceNumber: 6860**. New Swift files registered in
+pbxproj by orchestrator script (5 files).
+
+Latest deployed sequence: **6860**.

@@ -79,6 +79,8 @@ public struct SettingsView: View {
                 statRow
                 connectedSection
                 coachSection
+                AstraProfileSection()
+                NotificationSettingsSection()
                 healthRecordsSection
                 gatewaySection
                 appearanceSection

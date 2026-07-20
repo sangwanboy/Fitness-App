@@ -217,8 +217,20 @@ public final class ChatViewModel: ObservableObject {
             let items = await HealthKitManager.shared.listAppFoodToday()
             return ["items": items, "count": items.count]
         case .updateNotes(let notes):
+            guard AstraMemoryStore.shared.isEnabled else {
+                return ["success": false, "enabled": false,
+                        "message": "Memory is turned off in Settings — nothing was saved."]
+            }
             UserDefaults.standard.set(notes, forKey: "astra_notes")
             return ["success": true, "saved_length": notes.count]
+        case .rememberFact(let category, let text):
+            return Self.rememberFactPayload(category: category, text: text)
+        case .forgetFact(let query):
+            return Self.forgetFactPayload(query: query)
+        case .updateProfile(let section, let content):
+            return Self.updateProfilePayload(section: section, content: content)
+        case .getProfile:
+            return Self.getProfilePayload()
         case .getSleepPattern:
             return Self.sleepPatternPayload()
         case .listWidgets:
@@ -308,6 +320,74 @@ public final class ChatViewModel: ObservableObject {
         default:
             return nil
         }
+    }
+
+    /// `remember_fact` dispatch — validates category + non-empty text, honors
+    /// the master memory toggle, and reports any eviction back to the model
+    /// so it can (silently) know its memory is capped.
+    private static func rememberFactPayload(category: String, text: String) -> [String: Any] {
+        guard AstraMemoryStore.shared.isEnabled else {
+            return ["success": false, "enabled": false,
+                    "message": "Memory is turned off in Settings — nothing was saved."]
+        }
+        guard let cat = MemoryFact.Category(rawValue: category.lowercased()) else {
+            return ["success": false,
+                    "message": "Unknown category '\(category)'. Use one of: goal, injury, preference, schedule, nutrition, context."]
+        }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return ["success": false, "message": "Empty fact text — nothing was saved."]
+        }
+        let (fact, evicted, truncated) = AstraMemoryStore.shared.remember(category: cat, text: trimmed)
+        var message = "Saved to memory (\(cat.displayName)): \"\(fact.text)\"."
+        if truncated {
+            message += " (truncated to \(AstraMemoryStore.maxFactTextLength) characters)"
+        }
+        if let evicted {
+            message += " Memory was full (\(AstraMemoryStore.maxFacts) facts) — dropped the oldest: \"\(evicted.text)\"."
+        }
+        return ["success": true, "message": message, "fact_id": fact.id.uuidString, "evicted": evicted != nil]
+    }
+
+    /// `forget_fact` dispatch — fuzzy substring match against stored fact text.
+    private static func forgetFactPayload(query: String) -> [String: Any] {
+        guard AstraMemoryStore.shared.isEnabled else {
+            return ["success": false, "enabled": false,
+                    "message": "Memory is turned off in Settings — nothing to forget."]
+        }
+        let removed = AstraMemoryStore.shared.forget(matching: query)
+        guard !removed.isEmpty else {
+            return ["success": false, "message": "No memory matched \"\(query)\" — nothing removed."]
+        }
+        let names = removed.map { $0.text }.joined(separator: "; ")
+        return ["success": true,
+                "message": "Removed \(removed.count) memor\(removed.count == 1 ? "y" : "ies"): \(names)",
+                "removed_count": removed.count]
+    }
+
+    /// `update_profile` dispatch — full-section overwrite, validated against
+    /// the known section names.
+    private static func updateProfilePayload(section: String, content: String) -> [String: Any] {
+        guard AstraMemoryStore.shared.isEnabled else {
+            return ["success": false, "enabled": false,
+                    "message": "Memory is turned off in Settings — profile not updated."]
+        }
+        guard let sec = AstraUserProfile.Section(rawValue: section) else {
+            return ["success": false,
+                    "message": "Unknown profile section '\(section)'. Use one of: summary, goals, trainingContext, injuriesLimitations, preferences, nutritionNotes."]
+        }
+        AstraMemoryStore.shared.updateProfileSection(sec, content: content)
+        return ["success": true, "message": "Updated profile section '\(sec.displayName)'."]
+    }
+
+    /// `get_profile` dispatch — full profile + facts + live basics so the
+    /// model can review before editing.
+    private static func getProfilePayload() -> [String: Any] {
+        guard AstraMemoryStore.shared.isEnabled else {
+            return ["success": true, "enabled": false,
+                    "message": "Memory is turned off in Settings.", "profile": [String: Any](), "facts": [Any]()]
+        }
+        return AstraMemoryStore.shared.fullPayload()
     }
 
     /// Per-night payload for `get_sleep_sessions` — the last N tracked
@@ -1133,7 +1213,12 @@ public final class ChatViewModel: ObservableObject {
         case .showMetricChart, .showComparisonChart, .renderCard,
              .listReminders, .listCalendarEvents, .getPredictions,
              .listFoodLog, .listWidgets, .updateNotes, .getSleepPattern,
-             .getMetricHistory, .getSleepSessions:
+             .getMetricHistory, .getSleepSessions,
+             .rememberFact, .forgetFact, .updateProfile, .getProfile:
+            // These never actually route through executeWriteTool — they're
+            // producesPayload/no-confirmation tools dispatched via
+            // executeReadTool / autoExecuteReadTool instead. Kept here only
+            // so this switch stays exhaustive.
             return true
         }
     }
@@ -1264,14 +1349,15 @@ public final class ChatViewModel: ObservableObject {
     /// i.e. it's worth archiving. A lone greeting (or an empty viewer of a
     /// past session) is not. Used to gate `archiveCurrent()` callers.
     public var hasArchivableConversation: Bool {
-        // A read-only replay of a past session is never re-archived (it would
-        // duplicate an existing entry); only live conversations are.
         guard !isViewingArchivedSession else { return false }
         return messages.contains { $0.role == .user }
     }
 
-    /// Set while the user is looking at a loaded past session, so we don't
-    /// archive a duplicate copy when they then start a new chat or leave.
+    /// Historically set while viewing a read-only replay of a past session,
+    /// so it wouldn't be re-archived as a duplicate. `openSession(_:)` now
+    /// always reopens sessions as fully live (never a replay), so this stays
+    /// `false` in current flows — kept as a guard for any future read-only
+    /// viewing mode rather than deleted outright.
     private var isViewingArchivedSession = false
 
     /// Push the current live conversation into the persistent history archive
@@ -1292,22 +1378,44 @@ public final class ChatViewModel: ObservableObject {
         currentStreamingText = ""
     }
 
-    /// Replace the current conversation with a past session for read-only
-    /// replay. Archives the live conversation first so it isn't lost. Past
-    /// tool cards render as plain text — only text + images are restored.
-    public func loadSession(_ session: ChatSession) {
+    /// Archive the current live conversation (if it has any real content),
+    /// then load `id` from the archive back into the LIVE chat — not a
+    /// read-only replay. The reopened conversation is immediately editable
+    /// and archivable again, and a relaunch resumes it exactly like any
+    /// other live session. It's also removed from the archive list at the
+    /// same time, so continuing it and later archiving again (new chat,
+    /// background, leave) inserts one clean entry instead of leaving a
+    /// stale duplicate of the same conversation behind.
+    ///
+    /// No-op — returns `false` — while a reply is streaming, so the chat
+    /// selector can't race a live stream against a full message swap. The
+    /// caller (ChatView) also disables the sheet's rows while
+    /// `isGenerating`, this is the defensive second gate.
+    @discardableResult
+    public func openSession(_ id: UUID) -> Bool {
+        guard !isGenerating else { return false }
+        guard let session = ChatHistoryStore.shared.session(id: id) else { return false }
         archiveCurrent()
-        // The live conversation is safely archived; empty the live slot so a
-        // relaunch mid-replay doesn't resume the replaced conversation. If the
-        // user reactivates this replay by sending a message, sendMessage flips
-        // isViewingArchivedSession and re-fills the slot.
+        // Clear the OLD live slot (JSON + any per-message image blobs) before
+        // swapping in a different session's messages. `saveLive` only ever
+        // ADDS image keys for the session it's given — it never prunes ones
+        // left over from a completely different previous live session, so
+        // skipping this leaks a chat_live_img_<uuid> blob per photo turn in
+        // whatever was live before this call.
         ChatHistoryStore.shared.clearLive()
         let restored = session.messages.map { $0.toChatMessage() }
         messages = restored.isEmpty
             ? [ChatMessage(role: .model, text: Self.greetingText)]
             : restored
-        isViewingArchivedSession = true
+        isViewingArchivedSession = false
         currentStreamingText = ""
+        persistLiveSnapshot()
+        // Only remove the reopened session from the archive AFTER it's safely
+        // persisted as the live session. If the app is killed in between, the
+        // worst case is a recoverable duplicate (still in the archive AND
+        // live) instead of the conversation being lost outright.
+        ChatHistoryStore.shared.delete(id: id)
+        return true
     }
     
     private func historySummary(for type: HealthMetricType) -> String {
@@ -1488,6 +1596,32 @@ public final class ChatViewModel: ObservableObject {
         if !symptoms.isEmpty {
             conditionalBlocks.append(symptoms)
         }
+        // Structured long-term memory (AstraMemoryStore) — only injected when
+        // the master toggle is on AND there's actually something to say, so a
+        // fresh install / opted-out user doesn't pay for an empty heading.
+        let memoryStore = AstraMemoryStore.shared
+        var structuredMemoryShown = false
+        if memoryStore.isEnabled {
+            let rendered = memoryStore.renderForSystemPrompt()
+            if !rendered.isEmpty {
+                conditionalBlocks.append("ASTRA'S MEMORY OF THIS USER (built by you via remember_fact / update_profile — treat as gospel, keep it current)\n\(rendered)")
+                structuredMemoryShown = true
+            }
+        }
+        // Legacy cross-session notes (astra_notes, written by update_notes) —
+        // gated on the SAME master toggle so turning memory off in Settings
+        // silences this path too, not just the structured one. Once
+        // structured memory has real content it fully supersedes this block
+        // (redundant otherwise — see the precedence line in TOOLS below), so
+        // this only ever falls back to legacy notes while the structured
+        // store is still empty.
+        if memoryStore.isEnabled, !structuredMemoryShown {
+            let savedNotes = UserDefaults.standard.string(forKey: "astra_notes") ?? ""
+            let notesBlock = savedNotes.isEmpty
+                ? "No notes yet. Use update_notes silently when you learn something lasting."
+                : savedNotes
+            conditionalBlocks.append("YOUR MEMORY (cross-session notes written by you via update_notes — treat as gospel for personalisation)\n\(notesBlock)")
+        }
         let conditionalSections = conditionalBlocks.isEmpty
             ? ""
             : "\n" + conditionalBlocks.joined(separator: "\n\n") + "\n"
@@ -1501,12 +1635,6 @@ public final class ChatViewModel: ObservableObject {
         let rhrHistory   = historySummary(for: .restingHeartRate)
         let hrvHistory   = historySummary(for: .hrv)
 
-        // -- Cross-session memory (stored by update_notes tool) ---------------
-        let savedNotes = UserDefaults.standard.string(forKey: "astra_notes") ?? ""
-        let notesBlock: String = savedNotes.isEmpty
-            ? "No notes yet. Use update_notes silently when you learn something lasting."
-            : savedNotes
-
         let instructions = """
         You are "Astra", an elite, personalized fitness and wellness companion grounded in the user's real Apple Health data. Stay confident, encouraging, concise.
 
@@ -1519,9 +1647,6 @@ public final class ChatViewModel: ObservableObject {
         - Blood type: \(bloodLabel)
         - Coach style: \(coachPer)
         - Training goals: \(goalsRaw.isEmpty ? "none set" : goalsRaw)
-
-        YOUR MEMORY (cross-session notes written by you via update_notes — treat as gospel for personalisation)
-        \(notesBlock)
 
         MEDICAL PROFILE (from HealthKit clinical records when the user has linked a provider; otherwise empty. "None known" means we don't have a record — never confuse with "the user has none.")
         - Allergies: \(allergiesStr)
@@ -1600,7 +1725,9 @@ public final class ChatViewModel: ObservableObject {
         - When allergies are empty: if the food contains common allergens (peanuts, tree nuts, shellfish, dairy, gluten, soy, eggs), note them in `cautions` generically ("Contains peanuts — common allergen") WITHOUT claiming safety either way.
 
         TOOLS — prefer over prose whenever they fit
-        - update_notes : your cross-session memory. Call silently at the END of any turn where you learn something lasting — injury, preference, goal, pattern. Overwrite the full blob. Do NOT interrupt the conversation with a note about it.
+        - update_notes : your legacy free-text cross-session memory blob. Superseded by the structured tools below — do NOT use it for new information; update_notes still exists only for continuity with notes saved before the migration.
+        - remember_fact / forget_fact / update_profile / get_profile : structured long-term memory (successor to update_notes). remember_fact = one atomic lasting fact (goal/injury/preference/schedule/nutrition/context) per call. update_profile = rewrite a whole section (summary/goals/trainingContext/injuriesLimitations/preferences/nutritionNotes) — full replace, call get_profile first to see current content. forget_fact = remove a fact the user corrected or retracted. Skip trivia and one-off numbers HealthKit already tracks — durable personalization only. All four auto-execute silently, no confirm card. User can review, delete, or clear memory from Settings → Astra's profile of you.
+        - Precedence: if structured memory (profile + facts) and the legacy notes ever disagree, structured memory wins.
         - get_sleep_pattern : on-device sleep pattern + the last 5 tracked nights with per-night motion/snore detail. Call FIRST whenever the user asks anything about sleep — "how's my sleep", "am I getting enough", "why am I tired", "is my snoring getting worse". Cite the user's personal numbers (typical bedtime, restlessness baseline, consistency) instead of generic guidance. If the user has fewer than 3 tracked nights, gently encourage them to use the Home > Sleep Tracker card before bed.
         - get_sleep_sessions : per-night detail for the last N tracked nights (1-14, default 7) — date, duration, onset latency, restlessness, snore episodes/minutes, stage hours. Call when the user asks about a specific night or wants night-by-night detail beyond the SLEEP PATTERN block / get_sleep_pattern aggregate.
         - log_food : food photos or text. Fill ALL FOUR macros (calories, protein, carbs, fat) using your nutrition training data — never default to 0 unless the food genuinely has 0 of that macro (e.g. fat in a plain banana is ~0.4g, NOT 0). Fill tags / highlights / cautions. ALWAYS set is_estimate=true and pick a confidence level (low/medium/high) — only set is_estimate=false when the user supplied exact label nutrition. For ambiguous portions ASK rather than guess. For multi-item plates, emit ONE log_food per distinct item.

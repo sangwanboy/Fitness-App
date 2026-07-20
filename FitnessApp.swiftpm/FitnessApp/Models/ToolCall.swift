@@ -80,6 +80,16 @@ public enum ToolCall: Codable, Equatable {
     // this is internal coach memory, not user data.
     case updateNotes(notes: String)
 
+    // Structured long-term memory (AstraMemoryStore) — successor to the
+    // free-text notes blob above. All four auto-execute with no user
+    // confirmation, same rationale as updateNotes: this is Astra's own
+    // coach memory, not a user-visible write. Each feeds a small JSON
+    // payload back via functionResponse describing what happened.
+    case rememberFact(category: String, text: String)
+    case forgetFact(query: String)
+    case updateProfile(section: String, content: String)
+    case getProfile
+
     // Returns the user's full sleep pattern + last 5 sessions in structured
     // form. Auto-executes — Astra calls it whenever the user asks anything
     // sleep-related so the answer can cite real per-user numbers instead of
@@ -129,7 +139,8 @@ public enum ToolCall: Codable, Equatable {
         case .showMetricChart, .showComparisonChart, .renderCard,
              .listReminders, .listCalendarEvents, .getPredictions,
              .listFoodLog, .listWidgets, .updateNotes, .getSleepPattern,
-             .getMetricHistory, .getSleepSessions:
+             .getMetricHistory, .getSleepSessions,
+             .rememberFact, .forgetFact, .updateProfile, .getProfile:
             return false
         }
     }
@@ -144,7 +155,8 @@ public enum ToolCall: Codable, Equatable {
         case .listReminders, .listCalendarEvents, .getPredictions,
              .listFoodLog, .listWidgets, .updateNotes, .getSleepPattern,
              .getMetricHistory, .getSleepSessions,
-             .showMetricChart, .showComparisonChart, .renderCard:
+             .showMetricChart, .showComparisonChart, .renderCard,
+             .rememberFact, .forgetFact, .updateProfile, .getProfile:
             return true
         default: return false
         }
@@ -173,6 +185,10 @@ public enum ToolCall: Codable, Equatable {
         case .updateWidget: return "update_widget"
         case .deleteWidget: return "delete_widget"
         case .updateNotes: return "update_notes"
+        case .rememberFact: return "remember_fact"
+        case .forgetFact: return "forget_fact"
+        case .updateProfile: return "update_profile"
+        case .getProfile: return "get_profile"
         case .getSleepPattern: return "get_sleep_pattern"
         case .getMetricHistory: return "get_metric_history"
         case .getSleepSessions: return "get_sleep_sessions"
@@ -326,6 +342,19 @@ public enum ToolCall: Codable, Equatable {
         case "update_notes":
             guard let notes = args["notes"] as? String else { return nil }
             return .updateNotes(notes: notes)
+        case "remember_fact":
+            guard let category = args["category"] as? String,
+                  let text = args["text"] as? String else { return nil }
+            return .rememberFact(category: category, text: text)
+        case "forget_fact":
+            guard let query = args["query"] as? String else { return nil }
+            return .forgetFact(query: query)
+        case "update_profile":
+            guard let section = args["section"] as? String,
+                  let content = args["content"] as? String else { return nil }
+            return .updateProfile(section: section, content: content)
+        case "get_profile":
+            return .getProfile
         case "get_sleep_pattern":
             return .getSleepPattern
         case "get_metric_history":
@@ -473,6 +502,14 @@ public enum ToolCall: Codable, Equatable {
             return d
         case .updateNotes(let notes):
             return ["notes": notes]
+        case .rememberFact(let category, let text):
+            return ["category": category, "text": text]
+        case .forgetFact(let query):
+            return ["query": query]
+        case .updateProfile(let section, let content):
+            return ["section": section, "content": content]
+        case .getProfile:
+            return [:]
         case .getSleepPattern:
             return [:]
         case .getMetricHistory(let metric, let days):

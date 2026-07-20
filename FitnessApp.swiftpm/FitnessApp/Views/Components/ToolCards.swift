@@ -41,12 +41,29 @@ struct ToolCallCard: View {
     let messageId: UUID
     let call: ToolCall
     let status: ToolCall.Status
+    /// The tool's actual JSON payload (`ChatMessage.toolResultJSON`), once
+    /// execution has completed — nil while still pending. Memory tools honor
+    /// this to render the REAL outcome (disabled / no-match / failure)
+    /// instead of always assuming success from the request args alone.
+    var resultJSON: String? = nil
     let accentColor: Color
     let onConfirm: () -> Void
     let onCancel: () -> Void
 
     @AppStorage("theme_mode") private var themeMode = "dark"
     private var isDark: Bool { themeMode == "dark" }
+
+    /// Parses `resultJSON` into a dictionary, then reads the outcome flags
+    /// every memory-tool payload reports (`success`, `enabled`, `message`).
+    /// Returns nil when there's no result yet (still pending) — callers
+    /// should fall back to the optimistic request-args card in that case.
+    private var memoryOutcome: (succeeded: Bool, disabled: Bool, message: String?)? {
+        guard let resultJSON, let data = resultJSON.data(using: .utf8),
+              let payload = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+        let succeeded = (payload["success"] as? Bool) ?? true
+        let disabled = (payload["enabled"] as? Bool) == false
+        return (succeeded, disabled, payload["message"] as? String)
+    }
 
     var body: some View {
         switch call {
@@ -133,9 +150,55 @@ struct ToolCallCard: View {
                                 status: status, accentColor: .red,
                                 onConfirm: onConfirm, onCancel: onCancel)
         case .updateNotes:
-            ListSummaryCard(icon: "brain", color: .indigo,
-                            title: "Memory updated",
-                            subtitle: "Astra saved a note for future sessions")
+            if let outcome = memoryOutcome, !outcome.succeeded {
+                ListSummaryCard(icon: "brain", color: outcome.disabled ? .secondary : .orange,
+                                title: outcome.disabled ? "Memory is off" : "Couldn't save",
+                                subtitle: outcome.message ?? "Nothing was saved")
+            } else {
+                ListSummaryCard(icon: "brain", color: .indigo,
+                                title: "Memory updated",
+                                subtitle: "Astra saved a note for future sessions")
+            }
+        case .rememberFact(let category, let text):
+            if let outcome = memoryOutcome, !outcome.succeeded {
+                ListSummaryCard(icon: "brain.head.profile", color: outcome.disabled ? .secondary : .orange,
+                                title: outcome.disabled ? "Memory is off" : "Couldn't remember",
+                                subtitle: outcome.message ?? "Nothing was saved")
+            } else {
+                ListSummaryCard(icon: "brain.head.profile", color: .indigo,
+                                title: "Remembered · \(category.capitalized)",
+                                subtitle: text.count > 60 ? String(text.prefix(57)) + "…" : text)
+            }
+        case .forgetFact(let query):
+            if let outcome = memoryOutcome, !outcome.succeeded {
+                ListSummaryCard(icon: "brain.head.profile", color: outcome.disabled ? .secondary : .orange,
+                                title: outcome.disabled ? "Memory is off" : "No match found",
+                                subtitle: outcome.message ?? "Nothing matched \"\(query)\"")
+            } else {
+                ListSummaryCard(icon: "brain.head.profile", color: .indigo,
+                                title: "Forgot a memory",
+                                subtitle: "Matching \"\(query)\"")
+            }
+        case .updateProfile(let section, _):
+            if let outcome = memoryOutcome, !outcome.succeeded {
+                ListSummaryCard(icon: "person.text.rectangle", color: outcome.disabled ? .secondary : .orange,
+                                title: outcome.disabled ? "Memory is off" : "Couldn't update",
+                                subtitle: outcome.message ?? "Profile not updated")
+            } else {
+                ListSummaryCard(icon: "person.text.rectangle", color: .indigo,
+                                title: "Profile updated",
+                                subtitle: section.capitalized)
+            }
+        case .getProfile:
+            if let outcome = memoryOutcome, outcome.disabled {
+                ListSummaryCard(icon: "person.text.rectangle", color: .secondary,
+                                title: "Memory is off",
+                                subtitle: outcome.message ?? "Nothing to review")
+            } else {
+                ListSummaryCard(icon: "person.text.rectangle", color: .indigo,
+                                title: "Checked your profile",
+                                subtitle: "Reviewing memory before an update")
+            }
         case .getSleepPattern:
             ListSummaryCard(icon: "moon.zzz.fill", color: .indigo,
                             title: "Checked your sleep pattern",

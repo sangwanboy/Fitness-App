@@ -49,9 +49,14 @@
 	<string>Fitness Guru reads, completes, and creates reminders for hydration, workouts, supplements, and recovery.</string>
 	<key>NSUserNotificationsUsageDescription</key>
 	<string>Fitness Guru sends you a nudge when it detects prolonged inactivity, so you can move before sedentary time affects your health score.</string>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.tushar.fitnessapp.refresh</string>
+	</array>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>
+		<string>fetch</string>
 	</array>
 	<key>UILaunchScreen</key>
 	<dict/>

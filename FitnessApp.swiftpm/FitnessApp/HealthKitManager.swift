@@ -1924,6 +1924,17 @@ public final class HealthKitManager: ObservableObject {
             severity: sedentary?.severity,
             quietHours: sedentary?.quietHours ?? 0
         )
+
+        // Proactive Astra notifications (illness / streak / sleep / recovery) —
+        // cheap, idempotent, evaluated off the fresh snapshot every time.
+        NotificationManager.shared.evaluateProactiveNudges()
+
+        // Morning brief content depends on this same snapshot (recovery/sleep/
+        // streak) — re-arm it here too so a launch-time didBecomeActive call
+        // that found no data yet (and correctly left any pending brief alone,
+        // see NotificationManager.rescheduleMorningBrief) gets a real chance
+        // to schedule once HealthKit data actually lands.
+        NotificationManager.shared.rescheduleMorningBrief()
     }
 
     /// Coarse activity grouping for prediction. Mirrors the heuristics used

@@ -57,3 +57,6 @@ targets:
         NSLocalNetworkUsageDescription: "Fitness Guru connects to your development AI server on the local network. Not used in normal operation."
         UIBackgroundModes:
           - audio
+          - fetch
+        BGTaskSchedulerPermittedIdentifiers:
+          - com.tushar.fitnessapp.refresh

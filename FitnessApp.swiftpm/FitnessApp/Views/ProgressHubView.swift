@@ -33,6 +33,12 @@ public struct ProgressHubView: View {
     public var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: 16) {
+                // Weekly review — Astra's trailing-7-day recap, topmost card.
+                weeklyReviewCard
+                    .opacity(cardVisibleCount > 0 ? 1 : 0)
+                    .offset(y: cardVisibleCount > 0 ? 0 : 14)
+                    .animation(.spring(response: 0.5, dampingFraction: 0.82), value: cardVisibleCount)
+
                 // Quick-stats row at the top
                 quickStatsRow
                     .opacity(cardVisibleCount > 0 ? 1 : 0)
@@ -115,6 +121,12 @@ public struct ProgressHubView: View {
         .sheet(isPresented: $showNutrition)        { NutritionDashboardView() }
         .sheet(isPresented: $showWorkoutAnalytics) { WorkoutAnalyticsView() }
         .sheet(isPresented: $showBreathing)        { GuidedBreathingView() }
+    }
+
+    // MARK: - Weekly Review Card
+
+    private var weeklyReviewCard: some View {
+        WeeklyReviewCard()
     }
 
     // MARK: - Quick Stats Row

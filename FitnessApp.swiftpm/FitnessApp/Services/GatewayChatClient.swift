@@ -361,13 +361,56 @@ public actor GatewayChatClient {
                 ],
                 [
                     "name": "update_notes",
-                    "description": "Write to your cross-session memory. Call this whenever you learn something worth remembering for future conversations: the user's injury history, preferred workout times, dietary preferences, goals, recurring patterns, or any coaching decision you'd otherwise forget. Overwrite the full blob — include everything you want to remember, not just the new item. Call silently at the end of any turn where you learned something lasting. Examples: 'User prefers morning workouts, has a left knee issue, targets 10 km/week running, dislikes HIIT.' Keep it under 500 words and use bullet points for scannability.",
+                    "description": "Legacy free-text cross-session notes blob — superseded by remember_fact / update_profile. Do NOT use this for new information; call remember_fact (one atomic fact) or update_profile (full section rewrite) instead. Kept only for continuity with notes saved before the structured-memory migration.",
                     "parameters": [
                         "type": "object",
                         "properties": [
                             "notes": ["type": "string", "description": "Full updated notes blob — replaces whatever was there. Plain text, bullet points preferred, max 500 words."]
                         ],
                         "required": ["notes"]
+                    ]
+                ],
+                [
+                    "name": "remember_fact",
+                    "description": "Store a durable, atomic fact about the user in structured long-term memory: a goal, injury/limitation, preference, schedule habit, nutrition note, or other lasting context worth recalling in future sessions. Call it whenever the user shares something lasting or corrects a prior assumption. Do NOT use it for trivia or one-off numbers HealthKit already tracks (today's steps, a single workout, this meal) — those are live data, not memory. One idea per call. Auto-executes silently, no user confirmation. Response confirms what was saved and names any older fact evicted (hard cap of 60 facts, oldest dropped first).",
+                    "parameters": [
+                        "type": "object",
+                        "properties": [
+                            "category": ["type": "string", "description": "goal | injury | preference | schedule | nutrition | context"],
+                            "text":     ["type": "string", "description": "The fact itself, concise — e.g. 'Left knee sensitive to high-impact running, avoid box jumps.'"]
+                        ],
+                        "required": ["category", "text"]
+                    ]
+                ],
+                [
+                    "name": "forget_fact",
+                    "description": "Remove a previously stored memory fact that's outdated, wrong, or the user asked you to forget. Pass a short query describing it — matched by substring against stored fact text (e.g. 'left knee', 'HIIT'). Auto-executes silently. Response says exactly what was removed, or that nothing matched.",
+                    "parameters": [
+                        "type": "object",
+                        "properties": [
+                            "query": ["type": "string", "description": "Words identifying the fact to remove"]
+                        ],
+                        "required": ["query"]
+                    ]
+                ],
+                [
+                    "name": "update_profile",
+                    "description": "Rewrite one section of the user's long-term profile: summary | goals | trainingContext | injuriesLimitations | preferences | nutritionNotes. Replaces the FULL section content, not a diff — call get_profile first if you need to see what's already there before editing. Use this for durable, structured personalization; use remember_fact instead for a single standalone fact. Auto-executes silently, no user confirmation.",
+                    "parameters": [
+                        "type": "object",
+                        "properties": [
+                            "section": ["type": "string", "description": "summary | goals | trainingContext | injuriesLimitations | preferences | nutritionNotes"],
+                            "content": ["type": "string", "description": "Full replacement text for this section — a few sentences or short bullet lines, not a wall of text."]
+                        ],
+                        "required": ["section", "content"]
+                    ]
+                ],
+                [
+                    "name": "get_profile",
+                    "description": "Read the user's full long-term profile (every section) plus every stored memory fact and live basics (age, height, weight, VO2max, resting HR from Apple Health). Auto-executes and feeds it back via functionResponse. Call this before update_profile when you want to see current content, or when the user asks what you remember about them.",
+                    "parameters": [
+                        "type": "object",
+                        "properties": [:]
                     ]
                 ],
                 [
