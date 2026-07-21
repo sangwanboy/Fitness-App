@@ -17,6 +17,7 @@ public enum AstraNotificationKind: String, CaseIterable {
     case recoveryGuidance
     case weeklyReview
     case sedentaryAlert
+    case mealReminder
 }
 
 /// Owns every local Astra notification: the daily morning brief, the four
@@ -67,6 +68,21 @@ public final class NotificationManager: NSObject {
 
     @objc private func appDidBecomeActive() {
         rescheduleMorningBrief()
+
+        // "First foreground after 5am" trigger for MorningBriefEngine's
+        // Astra-written brief (Work Package B2). No meaningful "today" data
+        // exists before 5am, so gate here rather than inside the engine —
+        // `generateIfNeeded()` itself has no time-of-day opinion and is also
+        // called unconditionally from the BGAppRefresh handler
+        // (FitnessApp.swift). Once the async attempt lands (success OR an
+        // honest .engine fallback), reschedule again so the notification body
+        // picks up the freshest content instead of waiting for the next
+        // foreground/BG cycle.
+        guard Calendar.current.component(.hour, from: Date()) >= 5 else { return }
+        Task { @MainActor in
+            await MorningBriefEngine.shared.generateIfNeeded()
+            rescheduleMorningBrief()
+        }
     }
 
     // MARK: - Permission
@@ -166,7 +182,7 @@ public final class NotificationManager: NSObject {
                 fireDate = quietHoursEnd(after: date)
             case .sedentaryAlert:
                 break // zero behavior change — pre-migration this never checked quiet hours
-            case .illnessWarning, .streakRisk, .sleepWindDown, .recoveryGuidance:
+            case .illnessWarning, .streakRisk, .sleepWindDown, .recoveryGuidance, .mealReminder:
                 cancelPending(kind)
                 return false
             }
@@ -275,6 +291,27 @@ public final class NotificationManager: NSObject {
             fireDate = cal.date(byAdding: .day, value: 1, to: fireDate) ?? fireDate
         }
 
+        // Shared with MorningBriefCard's "Ask Astra about today" button
+        // (Views/Components/MorningBriefCard.swift, `coachPrompt`) — both
+        // routes into Coach must land on the identical prompt.
+        let chatPrompt = "Walk me through my morning brief"
+
+        // Work Package B2: if MorningBriefEngine already has an Astra-WRITTEN
+        // brief for TODAY, use its narrative + suggestion instead of the v1
+        // engine-composed one-liner. `.engine`-sourced or missing content
+        // falls straight through to the unchanged v1 body below — a live
+        // user never sees a blank notification.
+        if let astraContent = MorningBriefEngine.shared.todaysContent,
+           astraContent.source == .astra,
+           let narrative = astraContent.narrative, !narrative.isEmpty {
+            let suggestion = astraContent.suggestion ?? ""
+            let combined = suggestion.isEmpty ? narrative : "\(narrative) \(suggestion)"
+            schedule(.morningBrief, title: "Your morning brief",
+                     body: Self.truncatedNotificationBody(combined), at: fireDate,
+                     chatPrompt: chatPrompt)
+            return
+        }
+
         // No engine data yet (e.g. called from didBecomeActive during launch,
         // before HealthKit has returned anything) — leave any PREVIOUSLY
         // scheduled morning brief alone rather than cancelling it. This can
@@ -284,7 +321,15 @@ public final class NotificationManager: NSObject {
         guard let body = buildMorningBriefBody() else { return }
 
         schedule(.morningBrief, title: "Your morning brief", body: body, at: fireDate,
-                 chatPrompt: "Give me my morning brief for today.")
+                 chatPrompt: chatPrompt)
+    }
+
+    /// iOS shows roughly 4 lines of an expanded notification body — clip the
+    /// Astra-written narrative + suggestion to a safe character budget rather
+    /// than trusting the model to stay short on its own.
+    private static func truncatedNotificationBody(_ text: String, limit: Int = 240) -> String {
+        guard text.count > limit else { return text }
+        return String(text.prefix(max(limit - 1, 0))) + "\u{2026}"
     }
 
     /// Real values only, pulled from whatever engines currently have data:
@@ -343,6 +388,54 @@ public final class NotificationManager: NSObject {
         }
         evaluateStreakRisk()
         evaluateRecoveryGuidance()
+        evaluateMealReminder()
+    }
+
+    /// Source: `HealthKitManager.todayFoodLog` — the same source the Home
+    /// Meals card and Nutrition dashboard read for "meals logged today"
+    /// honesty (Session 33). Fires at most once per calendar day, deduped
+    /// via `notif_meal_last_fired`, and only past 14:00 local with nothing
+    /// logged yet today. Cancels any pending request the moment food IS
+    /// logged (e.g. right after `log_food` calls `refreshDietaryNow` and
+    /// `recomputePredictions` re-triggers this evaluation), so a reminder
+    /// scheduled earlier in the day never fires after the fact.
+    private func evaluateMealReminder() {
+        let hk = HealthKitManager.shared
+        guard hk.todayFoodLog.isEmpty, hk.dietaryCaloriesToday <= 0 else {
+            cancelPending(.mealReminder)
+            return
+        }
+
+        let cal = Calendar.current
+        let now = Date()
+        guard cal.component(.hour, from: now) >= 14 else {
+            cancelPending(.mealReminder)
+            return
+        }
+
+        let key = "notif_meal_last_fired"
+        if let last = UserDefaults.standard.object(forKey: key) as? Date, cal.isDateInToday(last) {
+            return
+        }
+
+        // Only quote a protein target if the user/Astra actually set one
+        // (NutritionTargets starts genuinely nil) — never invent a number.
+        let body: String
+        if let target = NutritionTargets.shared.proteinTargetG {
+            body = "Nothing logged yet today — protein target \(Int(target.rounded()))g."
+        } else {
+            body = "Nothing logged yet today."
+        }
+
+        // +5s, not `now` exactly — `schedule` requires `fireDate.timeIntervalSinceNow
+        // > 0`, and by the time it re-checks that, an exact `now` snapshot taken
+        // here would already read as zero/negative and get silently dropped
+        // (same race `evaluateIllnessWarning` avoids above).
+        if schedule(.mealReminder, title: "Log today's food?",
+                    body: body, at: now.addingTimeInterval(5),
+                    chatPrompt: "Help me log what I've eaten today.") {
+            UserDefaults.standard.set(now, forKey: key)
+        }
     }
 
     /// Source: `Predictions.illnessWarning` (`PredictionEngine.computeIllnessWarning`,

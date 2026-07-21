@@ -7,6 +7,7 @@ public struct NutritionDashboardView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var hk  = HealthKitManager.shared
     @ObservedObject private var nut = NutritionService.shared
+    @ObservedObject private var targets = NutritionTargets.shared
 
     @AppStorage("theme_mode") private var themeMode = "dark"
     @AppStorage("accent_color") private var accentColorHex = "#30D158"
@@ -40,6 +41,7 @@ public struct NutritionDashboardView: View {
                 VStack(spacing: 20) {
                     headerBar
                     macroRingsSection
+                    astraTargetsSection
                     weekTrendSection
                     mealsSection
                     micronutrientsSection
@@ -175,6 +177,46 @@ public struct NutritionDashboardView: View {
 
     private func openDetailedMetric(summary: MetricSummary) {
         detailSummary = summary
+    }
+
+    // MARK: - Astra's Targets Section
+    // Astra's own optional protein/kcal coaching targets (NutritionTargets) —
+    // distinct from the always-defaulted MacroGoals rings above. Honest
+    // "no target set" empty state instead of implying a target that was
+    // never actually confirmed by the user.
+
+    private var astraTargetsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionLabel(icon: "target", title: "Astra's Targets", color: .blue)
+
+            if targets.proteinTargetG == nil && targets.kcalTarget == nil {
+                emptyState(message: "No nutrition targets set yet.\nAsk Astra for an evidence-based protein target for your goal.")
+                    .padding(16)
+                    .frame(maxWidth: .infinity)
+                    .glassCard()
+            } else {
+                VStack(spacing: 12) {
+                    if let target = targets.proteinTargetG {
+                        AstraTargetRow(
+                            label: "Protein", icon: "bolt.fill",
+                            color: Color(red: 0.36, green: 0.61, blue: 1.0),
+                            actual: proteinToday, target: target, unit: "g",
+                            setBy: targets.proteinSetBy
+                        )
+                    }
+                    if let target = targets.kcalTarget {
+                        AstraTargetRow(
+                            label: "Calories", icon: "flame.fill", color: .orange,
+                            actual: caloriesToday, target: target, unit: "kcal",
+                            setBy: targets.kcalSetBy
+                        )
+                    }
+                }
+                .padding(14)
+                .frame(maxWidth: .infinity)
+                .glassCard()
+            }
+        }
     }
 
     // MARK: - 7-Day Trend Section
@@ -526,6 +568,72 @@ private struct MacroRingCard: View {
         return unit == "kcal"
             ? String(format: "%.0f", current)
             : String(format: "%.0f", current)
+    }
+}
+
+// MARK: - AstraTargetRow
+// One row of "actual vs Astra-set target" — same visual language as
+// MicroChip below (icon chip + label + progress bar), but driven by
+// NutritionTargets instead of the RDA constants MicroChip uses.
+
+private struct AstraTargetRow: View {
+    let label: String
+    let icon: String
+    let color: Color
+    let actual: Double
+    let target: Double
+    let unit: String
+    let setBy: NutritionTargets.SetBy?
+
+    @AppStorage("theme_mode") private var themeMode = "dark"
+    private var isDark: Bool { themeMode == "dark" }
+
+    private var progress: Double {
+        guard target > 0 else { return 0 }
+        return min(actual / target, 1.0)
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ZStack {
+                Circle()
+                    .fill(color.opacity(0.15))
+                    .frame(width: 34, height: 34)
+                Image(systemName: icon)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(color)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 4) {
+                    Text(label)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(isDark ? .white : .black)
+                    Spacer()
+                    Text("\(Int(actual.rounded())) / \(Int(target.rounded())) \(unit)")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundColor(color)
+                }
+
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(color.opacity(0.15))
+                            .frame(height: 4)
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(color)
+                            .frame(width: geo.size.width * CGFloat(progress), height: 4)
+                    }
+                }
+                .frame(height: 4)
+
+                if let setBy {
+                    Text(setBy == .user ? "Set by you" : "Set by Astra")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(isDark ? .white.opacity(0.4) : .black.opacity(0.4))
+                }
+            }
+        }
     }
 }
 

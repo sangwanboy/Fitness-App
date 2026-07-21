@@ -224,6 +224,12 @@ public struct DashboardView: View {
     public var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: gridSpacing) {
+                // Work Package B2: Astra-written morning brief sits above the
+                // AI Coach card/grid so it's the first personalized content
+                // the user sees. Fully self-hiding (5am gate, per-day dismiss,
+                // honest empty state) — see MorningBriefCard.swift.
+                MorningBriefCard(onOpenCoach: { switchToTab("chat") })
+
                 GlassEffectContainer(spacing: gridSpacing) {
                     VStack(spacing: gridSpacing) {
                         ForEach(Array(packedRows.enumerated()), id: \.offset) { rowIndex, row in

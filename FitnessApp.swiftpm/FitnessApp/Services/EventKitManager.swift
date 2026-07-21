@@ -170,6 +170,30 @@ public final class EventKitManager: ObservableObject {
         }
     }
 
+    /// Same as `addEvent` but returns the created event's identifier (nil on
+    /// failure or missing permission) instead of a bare Bool — used by
+    /// callers that need to remember the id for a later targeted delete
+    /// (e.g. `set_training_plan`'s execution, which tears down only the
+    /// events IT created when a plan is replaced). Purely additive: existing
+    /// `addEvent` callers are unaffected.
+    @discardableResult
+    public func addEventReturningId(title: String, startDate: Date, endDate: Date, notes: String? = nil) -> String? {
+        guard calendarsGranted else { return nil }
+        do {
+            let appCal = try ensureAppEventCalendar()
+            let ev = EKEvent(eventStore: store)
+            ev.title = title
+            ev.startDate = startDate
+            ev.endDate = endDate
+            ev.notes = notes
+            ev.calendar = appCal
+            try store.save(ev, span: .thisEvent, commit: true)
+            return ev.eventIdentifier
+        } catch {
+            return nil
+        }
+    }
+
     // MARK: - LLM-facing ops (app-scoped by construction)
     //
     // These are the only mutation entry points the AI coach is allowed to use.

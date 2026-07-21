@@ -126,6 +126,21 @@ public final class HealthKitManager: ObservableObject {
         }
     }
     
+    /// Outcome of a HealthKit write that needs to explain WHY it failed
+    /// instead of collapsing everything into a bare `false`. `.failure`'s
+    /// reason is either a denied-access message pointing the user at the
+    /// exact Settings toggle, or the thrown `HKError`'s own
+    /// `localizedDescription` — never an invented string, so Astra (and any
+    /// UI that reads it) can quote the real cause instead of guessing
+    /// "system connection error".
+    public enum HealthKitWriteOutcome {
+        case success
+        case failure(reason: String)
+
+        public var succeeded: Bool { if case .success = self { return true }; return false }
+        public var failureReason: String? { if case .failure(let r) = self { return r }; return nil }
+    }
+
     public func requestAuthorization() async -> Bool {
         guard HKHealthStore.isHealthDataAvailable() else {
             return false
@@ -845,10 +860,28 @@ public final class HealthKitManager: ObservableObject {
         }
     }
     
-    // Writes a new sample to HealthKit
+    // Writes a new sample to HealthKit. Thin bool wrapper over
+    // `logMetricValueDetailed` — kept for existing callers (manual logging UI,
+    // Astra-authored widget button_row "log_water" action) that only need a
+    // success flag. New call sites (and any UI that wants to explain a
+    // failure) should call the detailed variant below instead.
     @discardableResult
     public func logMetricValue(type: HealthMetricType, value: Double, start: Date? = nil, end: Date? = nil) async -> Bool {
-        guard HKHealthStore.isHealthDataAvailable() else { return false }
+        await logMetricValueDetailed(type: type, value: value, start: start, end: end).succeeded
+    }
+
+    /// Same write as `logMetricValue`, but surfaces the REAL failure reason
+    /// instead of collapsing everything into `false`. Pre-checks HealthKit
+    /// sharing authorization for the exact sample type being written — a user
+    /// who revoked write access gets pointed at precisely where to fix it —
+    /// and otherwise propagates the thrown error's `localizedDescription`.
+    /// Astra's `log_water` tool calls this so a failed write can be explained
+    /// honestly (never a made-up "connection error").
+    @discardableResult
+    public func logMetricValueDetailed(type: HealthMetricType, value: Double, start: Date? = nil, end: Date? = nil) async -> HealthKitWriteOutcome {
+        guard HKHealthStore.isHealthDataAvailable() else {
+            return .failure(reason: "HealthKit isn't available on this device.")
+        }
 
         let now = Date()
         let sampleStart = start ?? now
@@ -858,47 +891,92 @@ public final class HealthKitManager: ObservableObject {
 
         switch type {
         case .steps:
-            guard let sampleType = HKQuantityType.quantityType(forIdentifier: .stepCount) else { return false }
+            guard let sampleType = HKQuantityType.quantityType(forIdentifier: .stepCount) else {
+                return .failure(reason: "Steps isn't a supported HealthKit type on this device.")
+            }
             let quantity = HKQuantity(unit: HKUnit.count(), doubleValue: value)
             sample = HKQuantitySample(type: sampleType, quantity: quantity, start: sampleStart, end: sampleEnd)
         case .activeEnergy:
-            guard let sampleType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) else { return false }
+            guard let sampleType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) else {
+                return .failure(reason: "Active Energy isn't a supported HealthKit type on this device.")
+            }
             let quantity = HKQuantity(unit: HKUnit.kilocalorie(), doubleValue: value)
             sample = HKQuantitySample(type: sampleType, quantity: quantity, start: sampleStart, end: sampleEnd)
         case .heartRate:
-            guard let sampleType = HKQuantityType.quantityType(forIdentifier: .heartRate) else { return false }
+            guard let sampleType = HKQuantityType.quantityType(forIdentifier: .heartRate) else {
+                return .failure(reason: "Heart Rate isn't a supported HealthKit type on this device.")
+            }
             let quantity = HKQuantity(unit: HKUnit(from: "count/min"), doubleValue: value)
             sample = HKQuantitySample(type: sampleType, quantity: quantity, start: sampleStart, end: sampleEnd)
         case .distance:
-            guard let sampleType = HKQuantityType.quantityType(forIdentifier: .distanceWalkingRunning) else { return false }
+            guard let sampleType = HKQuantityType.quantityType(forIdentifier: .distanceWalkingRunning) else {
+                return .failure(reason: "Distance isn't a supported HealthKit type on this device.")
+            }
             let quantity = HKQuantity(unit: HKUnit.mile(), doubleValue: value)
             sample = HKQuantitySample(type: sampleType, quantity: quantity, start: sampleStart, end: sampleEnd)
         case .sleep:
-            guard let sampleType = HKCategoryType.categoryType(forIdentifier: .sleepAnalysis) else { return false }
+            guard let sampleType = HKCategoryType.categoryType(forIdentifier: .sleepAnalysis) else {
+                return .failure(reason: "Sleep isn't a supported HealthKit type on this device.")
+            }
             let sleepStart = start ?? sampleEnd.addingTimeInterval(-value * 3600.0)
             sample = HKCategorySample(type: sampleType, value: HKCategoryValueSleepAnalysis.asleep.rawValue, start: sleepStart, end: sampleEnd)
         case .hrv:
-            guard let sampleType = HKQuantityType.quantityType(forIdentifier: .heartRateVariabilitySDNN) else { return false }
+            guard let sampleType = HKQuantityType.quantityType(forIdentifier: .heartRateVariabilitySDNN) else {
+                return .failure(reason: "Heart Rate Variability isn't a supported HealthKit type on this device.")
+            }
             let quantity = HKQuantity(unit: HKUnit.secondUnit(with: .milli), doubleValue: value)
             sample = HKQuantitySample(type: sampleType, quantity: quantity, start: sampleStart, end: sampleEnd)
         case .hydration:
-            guard let sampleType = HKQuantityType.quantityType(forIdentifier: .dietaryWater) else { return false }
+            guard let sampleType = HKQuantityType.quantityType(forIdentifier: .dietaryWater) else {
+                return .failure(reason: "Water isn't a supported HealthKit type on this device.")
+            }
             let quantity = HKQuantity(unit: HKUnit.liter(), doubleValue: value)
             sample = HKQuantitySample(type: sampleType, quantity: quantity, start: sampleStart, end: sampleEnd)
         default:
             // Show-more tiles (restingHR, bodyMass, flights, exercise, stand, mindful, SpO2, VO2 Max)
             // are read-only from HealthKit in this app — no manual logging path.
-            return false
+            return .failure(reason: "\(type.displayName) can't be logged manually in this app.")
+        }
+
+        if let denied = writeDeniedReason(for: sample.sampleType, label: settingsLabel(for: type)) {
+            return .failure(reason: denied)
         }
 
         do {
             try await healthStore.save(sample)
             await fetchTodayData()
-            return true
+            return .success
         } catch {
             print("Failed to save sample: \(error.localizedDescription)")
-            return false
+            return .failure(reason: error.localizedDescription)
         }
+    }
+
+    /// User-facing label for the HealthKit Settings toggle that gates writing
+    /// `type` — used to build an exact "go fix it here" denial message
+    /// instead of a generic failure. Falls back to the metric's own
+    /// `displayName` for types not explicitly mapped.
+    private func settingsLabel(for type: HealthMetricType) -> String {
+        switch type {
+        case .steps: return "Steps"
+        case .heartRate: return "Heart Rate"
+        case .activeEnergy: return "Active Energy"
+        case .distance: return "Walking + Running Distance"
+        case .sleep: return "Sleep"
+        case .hrv: return "Heart Rate Variability"
+        case .hydration: return "Water"
+        default: return type.displayName
+        }
+    }
+
+    /// Denial message shown to the user (and threaded to Astra via the tool's
+    /// `error` field) when HealthKit write access for `sampleType` was
+    /// explicitly revoked. nil when access is authorized OR not-yet-determined
+    /// — in the not-determined case `save()` itself prompts / throws, so
+    /// there's nothing to pre-empt here.
+    private func writeDeniedReason(for sampleType: HKSampleType, label: String) -> String? {
+        guard healthStore.authorizationStatus(for: sampleType) == .sharingDenied else { return nil }
+        return "Health access for \(label) is turned off. Enable it in Settings → Health → Data Access & Devices → Fitness Guru → \(label)."
     }
 
     /// Write a single body-mass sample (used by EditProfileSheet).
@@ -931,7 +1009,31 @@ public final class HealthKitManager: ObservableObject {
         isEstimate: Bool = false,
         confidence: String? = nil
     ) async -> Bool {
+        await logFoodDetailed(name: name, calories: calories, protein: protein, carbs: carbs, fat: fat,
+                              date: date, isEstimate: isEstimate, confidence: confidence).succeeded
+    }
+
+    /// Same write as `logFood`, but surfaces the REAL failure reason instead
+    /// of a bare `false` — checks per-nutrient HealthKit sharing authorization
+    /// (naming exactly which nutrient is blocked) and otherwise propagates the
+    /// thrown error's `localizedDescription`. Astra's `log_food` tool calls
+    /// this so a denied/failed write can be explained honestly.
+    public func logFoodDetailed(
+        name: String,
+        calories: Double,
+        protein: Double,
+        carbs: Double,
+        fat: Double,
+        date: Date = Date(),
+        isEstimate: Bool = false,
+        confidence: String? = nil
+    ) async -> HealthKitWriteOutcome {
+        guard HKHealthStore.isHealthDataAvailable() else {
+            return .failure(reason: "HealthKit isn't available on this device.")
+        }
+
         var samples: [HKSample] = []
+        var deniedLabels: [String] = []
 
         var sampleMetadata: [String: Any] = [
             HKMetadataKeyFoodType: name,
@@ -941,25 +1043,35 @@ public final class HealthKitManager: ObservableObject {
             sampleMetadata["FitnessGuruEstimateConfidence"] = confidence
         }
 
-        func add(_ id: HKQuantityTypeIdentifier, _ value: Double, unit: HKUnit) {
+        func add(_ id: HKQuantityTypeIdentifier, _ value: Double, unit: HKUnit, label: String) {
             guard value > 0, let t = HKQuantityType.quantityType(forIdentifier: id) else { return }
+            if healthStore.authorizationStatus(for: t) == .sharingDenied {
+                deniedLabels.append(label)
+                return
+            }
             let q = HKQuantity(unit: unit, doubleValue: value)
             let s = HKQuantitySample(type: t, quantity: q, start: date, end: date,
                                      metadata: sampleMetadata)
             samples.append(s)
         }
-        add(.dietaryEnergyConsumed, calories, unit: .kilocalorie())
-        add(.dietaryProtein,        protein,  unit: .gram())
-        add(.dietaryCarbohydrates,  carbs,    unit: .gram())
-        add(.dietaryFatTotal,       fat,      unit: .gram())
-        guard !samples.isEmpty else { return false }
+        add(.dietaryEnergyConsumed, calories, unit: .kilocalorie(), label: "Dietary Energy")
+        add(.dietaryProtein,        protein,  unit: .gram(), label: "Protein")
+        add(.dietaryCarbohydrates,  carbs,    unit: .gram(), label: "Carbohydrates")
+        add(.dietaryFatTotal,       fat,      unit: .gram(), label: "Total Fat")
+
+        guard !samples.isEmpty else {
+            if !deniedLabels.isEmpty {
+                return .failure(reason: "Health access for \(deniedLabels.joined(separator: ", ")) is turned off. Enable it in Settings → Health → Data Access & Devices → Fitness Guru.")
+            }
+            return .failure(reason: "Nothing to log — every macro was zero.")
+        }
 
         do {
             try await healthStore.save(samples)
-            return true
+            return .success
         } catch {
             print("Failed to save food samples: \(error.localizedDescription)")
-            return false
+            return .failure(reason: error.localizedDescription)
         }
     }
 
@@ -1590,6 +1702,18 @@ public final class HealthKitManager: ObservableObject {
         let distAvgMiles = mean(last7(.distance))
         let distDisplay = LocaleUnits.distanceDisplay(fromMiles: distAvgMiles)
 
+        // Astra's learned profile + facts (goals, injuries, preferences) —
+        // the chat surface already sends this; giving the enrichment calls
+        // the same context makes insights/chips respect what Astra knows
+        // (e.g. no "push intensity" suggestion over a known injury).
+        // Same toggle, same compact deterministic render (≤~350 tokens).
+        let memoryBlock: String = {
+            guard AstraMemoryStore.shared.isEnabled else { return "" }
+            let rendered = AstraMemoryStore.shared.renderForSystemPrompt()
+            guard !rendered.isEmpty else { return "" }
+            return "\nASTRA'S LEARNED PROFILE (durable personalization — respect injuries/preferences in every suggestion)\n\(rendered)\n"
+        }()
+
         return """
         USER PROFILE
         - Name: \(name)
@@ -1597,6 +1721,7 @@ public final class HealthKitManager: ObservableObject {
         - Height: \(heightCm > 0 ? "\(Int(heightCm)) cm" : "—"), Weight: \(weightKg > 0 ? String(format: "%.1f kg", weightKg) : "—")
         - Coach style: \(coachPer)
         - Training goals: \(goalsRaw.isEmpty ? "none set" : goalsRaw)
+        \(memoryBlock)
 
         SETUP
         - Apple Watch / wearable HR data: \(hasWatchClassData ? "yes — Watch / chest strap detected in last 7 days" : "NO — user is iPhone-only. They do NOT own an Apple Watch.")

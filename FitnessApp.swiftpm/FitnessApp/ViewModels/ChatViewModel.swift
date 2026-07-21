@@ -236,6 +236,8 @@ public final class ChatViewModel: ObservableObject {
             return Self.getProfilePayload()
         case .getSleepPattern:
             return Self.sleepPatternPayload()
+        case .getTrainingPlan:
+            return Self.trainingPlanPayload()
         case .listWidgets:
             let widgets = AstraWidgetStore.shared.widgets
             let items: [[String: Any]] = widgets.map { w in
@@ -627,6 +629,39 @@ public final class ChatViewModel: ObservableObject {
         return d
     }
 
+    /// `get_training_plan` payload — active plan (this week, and next if
+    /// authored) with per-day completed flags + adherence, or an honest
+    /// "no plan set" when nothing has been authored yet via
+    /// `set_training_plan`.
+    private static func trainingPlanPayload() -> [String: Any] {
+        guard let plan = TrainingPlanStore.shared.activePlan else {
+            return ["available": false,
+                    "reason": "No training plan set yet. Offer to build one when the user asks, or when they engage during a weekly review — never set one unprompted."]
+        }
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"
+        let days: [[String: Any]] = plan.days.map { d in
+            [
+                "date": f.string(from: d.date),
+                "title": d.title,
+                "detail": d.detail,
+                "kind": d.kind.rawValue,
+                "duration_min": d.durationMin,
+                "completed": d.completed
+            ]
+        }
+        var result: [String: Any] = [
+            "available": true,
+            "week_start": f.string(from: plan.weekStart),
+            "days": days
+        ]
+        if let adherence = TrainingPlanStore.shared.adherence(for: plan.weekStart) {
+            result["adherence_completed"] = adherence.completed
+            result["adherence_total"] = adherence.total
+            result["adherence_pct"] = Int(adherence.pct.rounded())
+        }
+        return result
+    }
+
     /// Serialize the latest `HealthKitManager.predictions` snapshot into a
     /// dict shape Gemini can consume via functionResponse. Returns either
     /// the structured snapshot or `{ "available": false, "reason": ... }`
@@ -667,10 +702,12 @@ public final class ChatViewModel: ObservableObject {
                                            log: [FoodLogEntry],
                                            goals: MacroGoals) -> String {
         let goalsLine = "- Daily goals: \(Int(goals.calories)) kcal · \(Int(goals.protein))g protein · \(Int(goals.carbs))g carbs · \(Int(goals.fat))g fat — coach intake against these."
+        let targetsLine = Self.nutritionTargetsLine(caloriesToday: calories, proteinToday: protein)
         if log.isEmpty && calories <= 0 {
             return """
             NUTRITION TODAY (from HealthKit dietary samples)
             \(goalsLine)
+            \(targetsLine)
             - No meals logged yet today. If the user mentions a meal, do NOT claim to see it — confirm it isn't logged and offer to log it via the log_food tool.
             """
         }
@@ -687,8 +724,31 @@ public final class ChatViewModel: ObservableObject {
         let header = "NUTRITION TODAY (from HealthKit dietary samples — these are real entries already saved)"
         let totals = "- Total: \(Int(calories.rounded())) kcal · \(String(format: "%.0f", protein)) g protein"
         return items.isEmpty
-            ? "\(header)\n\(totals)\n\(goalsLine)"
-            : "\(header)\n\(totals)\n\(goalsLine)\n- Logged items:\n\(items)"
+            ? "\(header)\n\(totals)\n\(goalsLine)\n\(targetsLine)"
+            : "\(header)\n\(totals)\n\(goalsLine)\n\(targetsLine)\n- Logged items:\n\(items)"
+    }
+
+    /// One-line summary of Astra's own (optional) protein/kcal coaching
+    /// targets vs today's actual — distinct from the always-defaulted
+    /// `goalsLine` above (`MacroGoals`, which silently falls back to 2000
+    /// kcal/150g even if the user never touched it). Honest "none set yet"
+    /// when `NutritionTargets` is empty, so Astra never implies a target
+    /// exists that the user hasn't actually confirmed.
+    private static func nutritionTargetsLine(caloriesToday: Double, proteinToday: Double) -> String {
+        let t = NutritionTargets.shared
+        guard t.proteinTargetG != nil || t.kcalTarget != nil else {
+            return "- Astra's nutrition targets: none set yet — propose one via set_nutrition_targets when relevant (e.g. an evidence-based protein target for a hypertrophy goal)."
+        }
+        var parts: [String] = []
+        if let p = t.proteinTargetG {
+            let setBy = t.proteinSetBy == .user ? "user-set" : "Astra-set"
+            parts.append("protein \(Int(proteinToday.rounded()))g / \(Int(p))g target (\(setBy))")
+        }
+        if let k = t.kcalTarget {
+            let setBy = t.kcalSetBy == .user ? "user-set" : "Astra-set"
+            parts.append("kcal \(Int(caloriesToday.rounded())) / \(Int(k)) target (\(setBy))")
+        }
+        return "- Astra's nutrition targets: " + parts.joined(separator: " · ")
     }
 
     /// Full structured breakdown of the prediction snapshot for the system
@@ -924,6 +984,34 @@ public final class ChatViewModel: ObservableObject {
         return "- Acute (7d) \(Int(acute.rounded())) kcal-load/day vs chronic (28d) \(Int(chronic.rounded())) — ACWR \(String(format: "%.2f", engine.acwr)) (\(engine.acwrZone.label)). \(Int(minutes7.rounded())) workout min last 7d."
     }
 
+    /// TRAINING PLAN one-liner — active Astra-authored plan snapshot (days
+    /// completed, adherence this week, next planned session) so Astra has
+    /// "recent adherence" grounding without a get_training_plan round trip
+    /// on every turn. Empty string when no plan exists (block omitted) —
+    /// get_training_plan is still available for the full per-day detail.
+    fileprivate static func trainingPlanBlock() -> String {
+        guard let plan = TrainingPlanStore.shared.activePlan else { return "" }
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        let trainingDays = plan.days.filter { $0.kind != .rest }
+        let completed = trainingDays.filter { $0.completed }.count
+        let next = plan.days
+            .filter { $0.kind != .rest && !$0.completed && cal.startOfDay(for: $0.date) >= today }
+            .sorted { $0.date < $1.date }
+            .first
+        let f = DateFormatter(); f.dateFormat = "EEE MMM d"
+        var line = "- Active plan from \(f.string(from: plan.weekStart)): \(completed)/\(trainingDays.count) planned sessions completed"
+        if let adherence = TrainingPlanStore.shared.adherence(for: plan.weekStart) {
+            line += " (\(Int(adherence.pct.rounded()))% adherence this week)"
+        }
+        if let next {
+            line += ". Next planned: \(next.title) — \(f.string(from: next.date))"
+        } else if !trainingDays.isEmpty, completed == trainingDays.count {
+            line += ". All planned sessions done!"
+        }
+        return line
+    }
+
     /// HR ZONES one-liner — the five personalised Karvonen zone ranges from
     /// HeartRateZoneCalculator, same thresholds the Workout Analytics view
     /// shows. Caller gates injection on the user actually having HR data.
@@ -1018,10 +1106,22 @@ public final class ChatViewModel: ObservableObject {
         guard let idx = messages.firstIndex(where: { $0.id == messageId }),
               let call = messages[idx].toolCall else { return }
         messages[idx].toolStatus = .confirmed
-        let ok = await withTimeout(seconds: 60) {
+        let outcome = await withTimeout(seconds: 60) {
             await self.executeWriteTool(call)
-        } ?? false
-        messages[idx].toolStatus = ok ? .done : .failed
+        } ?? WriteToolOutcome(false, error: "Timed out after 60 seconds — please try again.")
+        messages[idx].toolStatus = outcome.success ? .done : .failed
+        // Merge the failure reason (and/or a non-failure `note`) into
+        // toolResultJSON so GatewayChatClient's history serializer folds it
+        // into this tool's functionResponse (`response.merge(parsed)`) —
+        // Astra receives the real `error` string instead of the generic
+        // "The action failed to execute" summary, and ToolCards.swift can
+        // render the same reason (or note) on the card itself.
+        var resultFields: [String: Any] = [:]
+        if let error = outcome.error { resultFields["error"] = error }
+        if let note = outcome.note { resultFields["note"] = note }
+        if !resultFields.isEmpty, let json = encodeJSON(resultFields) {
+            messages[idx].toolResultJSON = json
+        }
         persistLiveSnapshot()
         await sendFollowup()
     }
@@ -1147,38 +1247,88 @@ public final class ChatViewModel: ObservableObject {
         }
     }
 
-    private func executeWriteTool(_ call: ToolCall) async -> Bool {
+    /// Result of a confirmed write-tool execution. `error`, when present, is
+    /// the EXACT reason (a HealthKit access-denial message or the thrown
+    /// error's `localizedDescription`) — never an invented string. Stashed
+    /// onto the message's `toolResultJSON` on failure so it merges into the
+    /// tool's `functionResponse` (see GatewayChatClient's history serializer)
+    /// and Astra can quote the real cause instead of guessing.
+    private struct WriteToolOutcome: Sendable {
+        let success: Bool
+        let error: String?
+        /// Non-failure informational note (e.g. "calendar events skipped —
+        /// permission denied") merged into the functionResponse under a
+        /// separate `note` key so it never trips ToolCards' failure-detail
+        /// UI or reads to the model as an actual write failure. Only
+        /// `set_training_plan` uses this today.
+        let note: String?
+        init(_ success: Bool, error: String? = nil, note: String? = nil) {
+            self.success = success
+            self.error = error
+            self.note = note
+        }
+    }
+
+    /// Builds the HealthKit sample date for a backdated log: `daysAgo` days
+    /// before today (clamped 0-7), pinned to 12:00 local so the entry reads
+    /// as "sometime that day" rather than masquerading as the current
+    /// instant. `daysAgo <= 0` returns `Date()` unchanged (today, same-day
+    /// behavior is byte-identical to before backdating existed).
+    private static func dateForDaysAgo(_ daysAgo: Int) -> Date {
+        let clamped = max(0, min(daysAgo, 7))
+        guard clamped > 0 else { return Date() }
+        let cal = Calendar.current
+        guard let day = cal.date(byAdding: .day, value: -clamped, to: Date()) else { return Date() }
+        var comps = cal.dateComponents([.year, .month, .day], from: day)
+        comps.hour = 12; comps.minute = 0; comps.second = 0
+        return cal.date(from: comps) ?? day
+    }
+
+    private func executeWriteTool(_ call: ToolCall) async -> WriteToolOutcome {
         switch call {
-        case .logFood(let name, let cal, let p, let c, let f, _, _, _, _, let est, let conf):
-            let ok = await HealthKitManager.shared.logFood(
+        case .logFood(let name, let cal, let p, let c, let f, _, _, _, _, let est, let conf, let daysAgo):
+            let sampleDate = Self.dateForDaysAgo(daysAgo)
+            let outcome = await HealthKitManager.shared.logFoodDetailed(
                 name: name, calories: cal, protein: p, carbs: c, fat: f,
-                isEstimate: est, confidence: conf
+                date: sampleDate, isEstimate: est, confidence: conf
             )
-            if ok {
+            if outcome.succeeded {
                 // Refresh dietary state so the next Coach turn AND the Home
                 // Meals card AND the Health Meter recompute pick up the new
                 // entry immediately — without waiting for a full HK refetch.
+                // (Only meaningful for today's entries; a backdated entry
+                // doesn't move today's totals, but the refresh is cheap and
+                // keeps todayFoodLog/dietaryCaloriesToday consistent either way.)
                 await HealthKitManager.shared.refreshDietaryNow()
             }
-            return ok
-        case .addReminder(let title, let due, _):
-            return EventKitManager.shared.addReminder(title: title, dueDate: due)
-        case .addCalendarEvent(let title, let start, let end, let notes):
-            return EventKitManager.shared.addEvent(title: title, startDate: start, endDate: end, notes: notes)
-        case .updateReminder(let id, let title, let due, let notes):
-            return await EventKitManager.shared.updateAppReminder(id: id, title: title, dueDate: due, notes: notes)
-        case .updateCalendarEvent(let id, let title, let start, let end, let notes):
-            return EventKitManager.shared.updateAppEvent(id: id, title: title, startDate: start, endDate: end, notes: notes)
-        case .deleteReminder(let id, _):
-            return EventKitManager.shared.deleteAppReminder(id: id)
-        case .deleteCalendarEvent(let id, _):
-            return EventKitManager.shared.deleteAppEvent(id: id)
-        case .updateFoodLog(let id, let name, let cal, let p, let c, let f):
-            return await HealthKitManager.shared.updateAppFood(
-                id: id, name: name, calories: cal, protein: p, carbs: c, fat: f
+            return WriteToolOutcome(outcome.succeeded, error: outcome.failureReason)
+        case .logWater(let ml, let daysAgo):
+            guard ml > 0 else {
+                return WriteToolOutcome(false, error: "Amount must be greater than 0 ml.")
+            }
+            let sampleDate = Self.dateForDaysAgo(daysAgo)
+            let outcome = await HealthKitManager.shared.logMetricValueDetailed(
+                type: .hydration, value: ml / 1000.0, start: sampleDate, end: sampleDate
             )
+            return WriteToolOutcome(outcome.succeeded, error: outcome.failureReason)
+        case .addReminder(let title, let due, _):
+            return WriteToolOutcome(EventKitManager.shared.addReminder(title: title, dueDate: due))
+        case .addCalendarEvent(let title, let start, let end, let notes):
+            return WriteToolOutcome(EventKitManager.shared.addEvent(title: title, startDate: start, endDate: end, notes: notes))
+        case .updateReminder(let id, let title, let due, let notes):
+            return WriteToolOutcome(await EventKitManager.shared.updateAppReminder(id: id, title: title, dueDate: due, notes: notes))
+        case .updateCalendarEvent(let id, let title, let start, let end, let notes):
+            return WriteToolOutcome(EventKitManager.shared.updateAppEvent(id: id, title: title, startDate: start, endDate: end, notes: notes))
+        case .deleteReminder(let id, _):
+            return WriteToolOutcome(EventKitManager.shared.deleteAppReminder(id: id))
+        case .deleteCalendarEvent(let id, _):
+            return WriteToolOutcome(EventKitManager.shared.deleteAppEvent(id: id))
+        case .updateFoodLog(let id, let name, let cal, let p, let c, let f):
+            return WriteToolOutcome(await HealthKitManager.shared.updateAppFood(
+                id: id, name: name, calories: cal, protein: p, carbs: c, fat: f
+            ))
         case .deleteFoodLog(let id, _):
-            return await HealthKitManager.shared.deleteAppFood(id: id)
+            return WriteToolOutcome(await HealthKitManager.shared.deleteAppFood(id: id))
         case .createWidget(let title, let icon, let color, let layout, let headline, let body, let bullets, let metricRef, let goalValue, let blocks):
             // Default to .composed when blocks are provided so the legacy
             // layout enum doesn't conflict.
@@ -1192,41 +1342,156 @@ public final class ChatViewModel: ObservableObject {
                 metricRef: metricRef, goalValue: goalValue,
                 blocks: blocks
             )
-            return AstraWidgetStore.shared.add(widget)
+            return WriteToolOutcome(AstraWidgetStore.shared.add(widget))
         case .updateWidget(let id, let title, let icon, let color, let layout, let headline, let body, let bullets, let metricRef, let goalValue, let blocks):
-            guard let uuid = UUID(uuidString: id) else { return false }
+            guard let uuid = UUID(uuidString: id) else { return WriteToolOutcome(false, error: "Invalid widget id.") }
             let layoutEnum: WidgetLayout? = layout.flatMap { WidgetLayout(rawValue: $0) }
                 ?? (blocks != nil ? .composed : nil)
-            return AstraWidgetStore.shared.update(
+            return WriteToolOutcome(AstraWidgetStore.shared.update(
                 id: uuid,
                 title: title, icon: icon, colorName: color, layout: layoutEnum,
                 headline: headline, body: body, bullets: bullets,
                 metricRef: metricRef, goalValue: goalValue, blocks: blocks
-            )
+            ))
         case .deleteWidget(let id, _):
-            guard let uuid = UUID(uuidString: id) else { return false }
-            return AstraWidgetStore.shared.remove(id: uuid)
+            guard let uuid = UUID(uuidString: id) else { return WriteToolOutcome(false, error: "Invalid widget id.") }
+            return WriteToolOutcome(AstraWidgetStore.shared.remove(id: uuid))
         case .updateGoal(let metric, let value):
             guard let type = Self.historyMetricType(from: metric),
                   type.isUserConfigurableGoal,
-                  value > 0 else { return false }
+                  value > 0 else {
+                return WriteToolOutcome(false, error: "'\(metric)' isn't a user-configurable goal, or the value was invalid.")
+            }
             let clamped: Double = {
                 guard let range = type.goalRange else { return value }
                 return min(max(value, range.min), range.max)
             }()
             HealthKitManager.shared.setGoal(clamped, for: type)
-            return true
+            return WriteToolOutcome(true)
+        case .setDateOfBirth(let date):
+            let age = Calendar.current.dateComponents([.year], from: date, to: Date()).year ?? -1
+            guard age >= 5, age <= 120 else {
+                return WriteToolOutcome(false, error: "That date puts the user's age at \(age) years, outside the plausible 5-120 range — nothing was saved. Double-check the birth date with the user.")
+            }
+            UserDefaults.standard.set(date.timeIntervalSince1970, forKey: "athlete_dob")
+            return WriteToolOutcome(true)
+        case .setNutritionTargets(let proteinG, let kcal):
+            if let p = proteinG, !NutritionTargets.proteinRange.contains(p) {
+                return WriteToolOutcome(false, error: "Protein target \(Int(p))g is outside the sane range (\(Int(NutritionTargets.proteinRange.lowerBound))-\(Int(NutritionTargets.proteinRange.upperBound))g) — nothing was saved.")
+            }
+            if let k = kcal, !NutritionTargets.kcalRange.contains(k) {
+                return WriteToolOutcome(false, error: "Calorie target \(Int(k)) kcal is outside the sane range (\(Int(NutritionTargets.kcalRange.lowerBound))-\(Int(NutritionTargets.kcalRange.upperBound)) kcal) — nothing was saved.")
+            }
+            guard proteinG != nil || kcal != nil else {
+                return WriteToolOutcome(false, error: "No target values supplied — nothing was saved.")
+            }
+            NutritionTargets.shared.setTargets(proteinG: proteinG, kcal: kcal, setBy: .astra)
+            return WriteToolOutcome(true)
+        case .setTrainingPlan(let weekStart, let daysArgs):
+            return Self.executeSetTrainingPlan(weekStart: weekStart, daysArgs: daysArgs)
+        case .markWorkoutDone(let date):
+            guard TrainingPlanStore.shared.markCompleted(date: date) else {
+                return WriteToolOutcome(false, error: "No planned session found on that date — check get_training_plan for the current schedule.")
+            }
+            return WriteToolOutcome(true)
         case .showMetricChart, .showComparisonChart, .renderCard,
              .listReminders, .listCalendarEvents, .getPredictions,
              .listFoodLog, .listWidgets, .updateNotes, .getSleepPattern,
              .getMetricHistory, .getSleepSessions,
-             .rememberFact, .forgetFact, .updateProfile, .getProfile:
+             .rememberFact, .forgetFact, .updateProfile, .getProfile,
+             .getTrainingPlan:
             // These never actually route through executeWriteTool — they're
             // producesPayload/no-confirmation tools dispatched via
             // executeReadTool / autoExecuteReadTool instead. Kept here only
             // so this switch stays exhaustive.
-            return true
+            return WriteToolOutcome(true)
         }
+    }
+
+    /// `set_training_plan` execution — validates the proposed week (1-14
+    /// days, dates inside a 14-day window starting `weekStart`, kind ∈
+    /// {strength, cardio, mobility, rest}, duration 10-240 min), tears down
+    /// calendar events the app created for whatever plan is being replaced
+    /// (only ones it made, by stored id), writes a fresh event per non-rest
+    /// day (skipped honestly via `note` when calendar access isn't granted —
+    /// the plan itself still saves), then persists the new plan. Runs
+    /// synchronously inside `confirmToolCall`'s 60s timeout.
+    private static func executeSetTrainingPlan(weekStart weekStartRaw: Date,
+                                               daysArgs: [ToolCall.PlannedDayArg]) -> WriteToolOutcome {
+        let cal = Calendar.current
+        // Snap to Monday: the store's adherence math and the card's week
+        // chips both anchor on Monday-of-week; an unenforced model-supplied
+        // weekStart (the prompt only ASKS for Monday) would desync them.
+        let weekStart = TrainingPlanStore.mondayOfWeek(containing: cal.startOfDay(for: weekStartRaw))
+
+        guard !daysArgs.isEmpty, daysArgs.count <= 14 else {
+            return WriteToolOutcome(false, error: "A training plan must cover 1-14 days — got \(daysArgs.count). Nothing was saved.")
+        }
+        guard let windowEnd = cal.date(byAdding: .day, value: 13, to: weekStart) else {
+            return WriteToolOutcome(false, error: "Could not resolve the plan's date window. Nothing was saved.")
+        }
+
+        let df = DateFormatter(); df.dateStyle = .medium
+        var parsedDays: [TrainingPlanStore.PlannedDay] = []
+        for arg in daysArgs {
+            guard let kind = TrainingPlanStore.PlannedDay.Kind(rawValue: arg.kind.lowercased()) else {
+                return WriteToolOutcome(false, error: "Unknown day kind '\(arg.kind)' for '\(arg.title)' — use strength, cardio, mobility, or rest. Nothing was saved.")
+            }
+            let dayStart = cal.startOfDay(for: arg.date)
+            guard dayStart >= weekStart, dayStart <= windowEnd else {
+                return WriteToolOutcome(false, error: "\(df.string(from: arg.date)) falls outside the plan's 14-day window starting \(df.string(from: weekStart)). Nothing was saved.")
+            }
+            guard (10...240).contains(arg.durationMin) else {
+                return WriteToolOutcome(false, error: "Duration \(arg.durationMin) min for '\(arg.title)' is outside the sane 10-240 min range. Nothing was saved.")
+            }
+            let detail = String(arg.detail.prefix(400))
+            parsedDays.append(TrainingPlanStore.PlannedDay(
+                date: dayStart, title: arg.title, detail: detail,
+                kind: kind, durationMin: arg.durationMin
+            ))
+        }
+        parsedDays.sort { $0.date < $1.date }
+
+        // Tear down whatever calendar events the OLD plan created — only
+        // ones this app made (stored ids) — before the store is overwritten.
+        if let oldPlan = TrainingPlanStore.shared.activePlan {
+            for oldDay in oldPlan.days {
+                if let eventId = oldDay.calendarEventId {
+                    _ = EventKitManager.shared.deleteAppEvent(id: eventId)
+                }
+            }
+        }
+
+        // Create a Calendar event per non-rest day at a sensible default
+        // time (6 PM local) — honest skip when access isn't granted; the
+        // plan still saves either way.
+        var calendarNote: String? = nil
+        if !EventKitManager.shared.calendarsGranted {
+            calendarNote = "Calendar access isn't granted, so sessions weren't added to your calendar — enable it in Settings to have them show up automatically. The plan itself still saved."
+        } else {
+            var wanted = 0, created = 0
+            for idx in parsedDays.indices where parsedDays[idx].kind != .rest {
+                wanted += 1
+                let day = parsedDays[idx]
+                guard let startDate = cal.date(bySettingHour: 18, minute: 0, second: 0, of: day.date) else { continue }
+                let endDate = cal.date(byAdding: .minute, value: day.durationMin, to: startDate) ?? startDate
+                if let eventId = EventKitManager.shared.addEventReturningId(
+                    title: day.title, startDate: startDate, endDate: endDate, notes: day.detail
+                ) {
+                    parsedDays[idx].calendarEventId = eventId
+                    created += 1
+                }
+            }
+            // Honest partial-failure note: a green "synced" line over silently
+            // missing events would be a fake write.
+            if created < wanted {
+                calendarNote = "Only \(created) of \(wanted) sessions could be added to your calendar — the rest failed to save as events. The plan itself is fully saved."
+            }
+        }
+
+        let plan = TrainingPlanStore.TrainingPlan(weekStart: weekStart, days: parsedDays)
+        TrainingPlanStore.shared.upsert(plan)
+        return WriteToolOutcome(true, note: calendarNote)
     }
 
     /// Re-fire whichever request produced the most recent error bubble. If the
@@ -1640,6 +1905,10 @@ public final class ChatViewModel: ObservableObject {
         if !trainingLoad.isEmpty {
             liveConditionalBlocks.append("TRAINING LOAD (28-day window — same math as the Workout Analytics card)\n\(trainingLoad)")
         }
+        let trainingPlan = Self.trainingPlanBlock()
+        if !trainingPlan.isEmpty {
+            liveConditionalBlocks.append("TRAINING PLAN (Astra-authored — get_training_plan / set_training_plan / mark_workout_done)\n\(trainingPlan)")
+        }
         if hk.hasWatchClassData || rhr > 0 {
             liveConditionalBlocks.append("HR ZONES (personalised)\n\(Self.hrZonesLine(userAge: ageYears))")
         }
@@ -1760,7 +2029,10 @@ public final class ChatViewModel: ObservableObject {
         - Precedence: if structured memory (profile + facts) and the legacy notes ever disagree, structured memory wins.
         - get_sleep_pattern : on-device sleep pattern + the last 5 tracked nights with per-night motion/snore detail. Call FIRST whenever the user asks anything about sleep — "how's my sleep", "am I getting enough", "why am I tired", "is my snoring getting worse". Cite the user's personal numbers (typical bedtime, restlessness baseline, consistency) instead of generic guidance. If the user has fewer than 3 tracked nights, gently encourage them to use the Home > Sleep Tracker card before bed.
         - get_sleep_sessions : per-night detail for the last N tracked nights (1-14, default 7) — date, duration, onset latency, restlessness, snore episodes/minutes, stage hours. Call when the user asks about a specific night or wants night-by-night detail beyond the SLEEP PATTERN block / get_sleep_pattern aggregate.
-        - log_food : food photos or text. Fill ALL FOUR macros (calories, protein, carbs, fat) using your nutrition training data — never default to 0 unless the food genuinely has 0 of that macro (e.g. fat in a plain banana is ~0.4g, NOT 0). Fill tags / highlights / cautions. ALWAYS set is_estimate=true and pick a confidence level (low/medium/high) — only set is_estimate=false when the user supplied exact label nutrition. For ambiguous portions ASK rather than guess. For multi-item plates, emit ONE log_food per distinct item.
+        - log_food : food photos or text. Fill ALL FOUR macros (calories, protein, carbs, fat) using your nutrition training data — never default to 0 unless the food genuinely has 0 of that macro (e.g. fat in a plain banana is ~0.4g, NOT 0). Fill tags / highlights / cautions. ALWAYS set is_estimate=true and pick a confidence level (low/medium/high) — only set is_estimate=false when the user supplied exact label nutrition. For ambiguous portions ASK rather than guess. For multi-item plates, emit ONE log_food per distinct item. Backdating: pass days_ago (0-7) when the user is logging something from a prior day ("had this yesterday", "forgot to log Tuesday's lunch") instead of silently logging it to today.
+        - log_water : log a hydration amount (amount_ml) to Apple Health, confirmation-gated. Same days_ago backdating (0-7) as log_food. Use whenever the user asks to log water/hydration in chat.
+        - set_date_of_birth : call whenever the user states their birth date (date as YYYY-MM-DD) — this is the ONLY path a conversational birthday reaches the structured store HR-zone math and Live Basics read, so a stated birthday you don't call this for leaves the user with two disagreeing ages. Confirmation-gated. If the summary in update_profile also mentions age, refresh it too so the two stay consistent.
+        - set_nutrition_targets : set Astra's own protein_g and/or kcal daily coaching target(s), confirmation-gated — shown against today's actual intake on the Nutrition dashboard. For hypertrophy / muscle-gain goals, suggest an evidence-based protein target (~1.6-2.2 g/kg bodyweight/day, from Live Basics weight) when the user asks about nutrition or protein, or when reviewing their nutrition pillar — then offer to set it via this tool. NEVER call it to silently apply a number; only after the user agrees to a value.
         - add_reminder / add_calendar_event : convert relative times to ISO8601 in the user's TZ. Default workout 30 min.
         - list_reminders / list_calendar_events : READ-ONLY. Use FIRST when asked to modify / postpone / delete — you cannot guess ids. If list returns exactly ONE match for the user's description, proceed straight to update_/delete_ without asking.
         - update_reminder / update_calendar_event / delete_reminder / delete_calendar_event : by id from the prior list_* call. Always pass `title` on deletes.
@@ -1771,6 +2043,7 @@ public final class ChatViewModel: ObservableObject {
         - list_food_log / update_food_log / delete_food_log : READ + WRITE for today's logged meals. Use list_food_log FIRST when the user asks to fix, correct, rename, change, or delete a logged meal — you cannot guess the id. If list returns exactly ONE match for the user's description, proceed straight to update_/delete_ without asking. Pass `name` on deletes so the confirm card shows what's about to go.
         - create_widget / list_widgets / update_widget / delete_widget : ASTRA STUDIO — your creative canvas on the user's Home screen. See the WIDGET STUDIO block below for when and how to use it.
         - update_goal : change a user-configurable daily goal (steps, activeEnergy, sleep, distance, hydration, exerciseMinutes, standHours, mindfulMinutes, flightsClimbed). Confirmation-gated — the user approves before the write. Use it when the user agrees to adjust a goal, or asks to. Deterministic "Goal suggestion" lines appear inline in the PREDICTIONS block when 28-day attainment warrants a change — propose them ONLY when the user engages with goals; never apply unprompted.
+        - get_training_plan / set_training_plan / mark_workout_done : Astra-authored adaptive weekly training plan. get_training_plan (auto-executes) reads the active plan + per-day completed flags + adherence — the TRAINING PLAN block below already gives you a one-line snapshot, so call this when you need per-day detail. set_training_plan (confirmation-gated, user previews the whole week before it writes) PROPOSES and REPLACES the active plan — call it ONLY when the user asks for a plan, or accepts your offer during a weekly-review discussion; NEVER set one unprompted. Ground every proposal in the TRAINING LOAD block's periodization state, the user's goals/profile (e.g. chest hypertrophy primary, supporting endurance/flexibility/sleep), and recent adherence. Plan every day of the week explicitly, including rest days (kind='rest') — 1-14 days total, kind ∈ {strength, cardio, mobility, rest}, duration_min 10-240, detail ≤400 characters. Non-rest days get a Calendar event automatically; if the functionResponse carries a `note` field, calendar access was denied and events were skipped — relay that honestly, the plan itself still saved. On Sunday-review chats, proactively offer to adjust next week's plan using adherence + load. mark_workout_done (confirmation-gated) marks a planned day complete by date — also reachable from a button on the user's Progress-hub plan card.
 
         WIDGET STUDIO (6-slot canvas on the user's Home — make every card surprising and useful)
         - TWO AUTHORING MODES — pick one per widget:
@@ -1797,7 +2070,8 @@ public final class ChatViewModel: ObservableObject {
         NEVER FAKE WRITES (this is the most important rule in this section)
         - You can ONLY claim to have updated / logged / deleted / scheduled something if you actually invoked the matching tool in THIS turn and the tool's confirmation state was `.done`.
         - If the user asks to correct a meal and you haven't called list_food_log + update_food_log, do NOT say "I've updated it" or "Got it, updated". Say honestly that you'll update it, then call the tool.
-        - This applies to log_food, update_food_log, delete_food_log, add_reminder/update/delete, add_calendar_event/update/delete. Hallucinating success on any of these breaks trust.
+        - This applies to log_food, log_water, update_food_log, delete_food_log, add_reminder/update/delete, add_calendar_event/update/delete, set_date_of_birth, set_nutrition_targets. Hallucinating success on any of these breaks trust.
+        - WRITE FAILURES — report the REAL reason, never invent one: when a write tool's confirmation state comes back `.failed`, its functionResponse carries an `error` field with the exact cause (a HealthKit permission denial naming the Settings toggle to fix, or the underlying system error). Quote that string to the user plainly. Never say generic things like "there was a connection error" when a specific reason was provided — and never claim success when the state is `.failed`.
 
         SCOPE
         - You see and modify only items the app created — never the user's personal calendar / reminders. Don't claim you can.

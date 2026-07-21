@@ -609,6 +609,21 @@ public final class WeeklyReviewEngine: ObservableObject {
             let sign = trend >= 0 ? "+" : ""
             context.append("Sleep duration trend (on-device tracked nights): \(sign)\(trend) min vs prior week")
         }
+        // Astra-authored training plan (TrainingPlanStore) adherence for
+        // this exact reviewed window — omitted entirely when no plan
+        // existed for this week (nil `adherence`) rather than a fake 0/0.
+        if let adherence = TrainingPlanStore.shared.adherence(for: data.weekStart) {
+            context.append("Plan adherence: \(adherence.completed) of \(adherence.total) planned sessions completed")
+        }
+        // Astra's learned profile — lets the "focus" line align with the
+        // user's actual goals/injuries instead of generic advice. Same
+        // toggle + compact render every other AI surface uses.
+        if AstraMemoryStore.shared.isEnabled {
+            let rendered = AstraMemoryStore.shared.renderForSystemPrompt()
+            if !rendered.isEmpty {
+                context.append("What you know about the user (respect injuries/preferences when choosing the focus):\n\(rendered)")
+            }
+        }
 
         return """
         You are Astra, the user's AI fitness coach inside Fitness Guru. Write their weekly review.

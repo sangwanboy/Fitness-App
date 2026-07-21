@@ -20,6 +20,17 @@ func toolColor(name: String?) -> Color {
     }
 }
 
+/// Badge text for a backdated log_food / log_water call — nil for today
+/// (daysAgo <= 0), "YESTERDAY" for 1, "N DAYS AGO" beyond that. Shared so a
+/// backdated entry never silently looks like it landed on today.
+func backdatedBadgeText(_ daysAgo: Int) -> String? {
+    switch daysAgo {
+    case ..<1: return nil
+    case 1: return "YESTERDAY"
+    default: return "\(daysAgo) DAYS AGO"
+    }
+}
+
 // Cards rendered inline in chat when Astra makes a function call.
 // Three flavors:
 // * Write actions (log_food, add_reminder, add_calendar_event) → Confirm / Cancel
@@ -65,13 +76,30 @@ struct ToolCallCard: View {
         return (succeeded, disabled, payload["message"] as? String)
     }
 
+    /// The tool's exact failure reason, when `status == .failed` — read from
+    /// the `error` field write-tool executions stash in `resultJSON`
+    /// (`ChatViewModel.confirmToolCall`). Threaded into the cards below so
+    /// the user sees the REAL cause (e.g. a HealthKit permission denial
+    /// naming the Settings toggle to flip) instead of a bare "Failed".
+    private var writeErrorDetail: String? {
+        guard status == .failed, let resultJSON,
+              let data = resultJSON.data(using: .utf8),
+              let payload = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+        return payload["error"] as? String
+    }
+
     var body: some View {
         switch call {
-        case .logFood(let name, let cal, let p, let c, let f, let serving, let tags, let highlights, let cautions, let isEstimate, let confidence):
+        case .logFood(let name, let cal, let p, let c, let f, let serving, let tags, let highlights, let cautions, let isEstimate, let confidence, let daysAgo):
             FoodToolCard(name: name, calories: cal, protein: p, carbs: c, fat: f, serving: serving,
                          tags: tags, highlights: highlights, cautions: cautions,
-                         isEstimate: isEstimate, confidence: confidence,
-                         status: status, accentColor: accentColor, onConfirm: onConfirm, onCancel: onCancel)
+                         isEstimate: isEstimate, confidence: confidence, daysAgo: daysAgo,
+                         status: status, accentColor: accentColor, failureDetail: writeErrorDetail,
+                         onConfirm: onConfirm, onCancel: onCancel)
+        case .logWater(let milliliters, let daysAgo):
+            WaterToolCard(milliliters: milliliters, daysAgo: daysAgo,
+                          status: status, accentColor: accentColor, failureDetail: writeErrorDetail,
+                          onConfirm: onConfirm, onCancel: onCancel)
         case .addReminder(let title, let due, let category):
             ReminderToolCard(title: title, dueAt: due, category: category,
                              status: status, accentColor: accentColor, onConfirm: onConfirm, onCancel: onCancel)
@@ -223,8 +251,60 @@ struct ToolCallCard: View {
                                 detail: "Streaks, challenges, and pace predictions adapt instantly.",
                                 confirmLabel: "Update",
                                 status: status, accentColor: .green,
+                                failureDetail: writeErrorDetail,
+                                onConfirm: onConfirm, onCancel: onCancel)
+        case .setDateOfBirth(let date):
+            MutationConfirmCard(icon: "birthday.cake.fill", color: .pink,
+                                title: "Update birth date",
+                                summary: Self.dobDateFormatter.string(from: date),
+                                detail: "Updates heart-rate zones and the Live Basics profile card to match.",
+                                confirmLabel: "Save",
+                                status: status, accentColor: .pink,
+                                failureDetail: writeErrorDetail,
+                                onConfirm: onConfirm, onCancel: onCancel)
+        case .setNutritionTargets(let proteinG, let kcal):
+            MutationConfirmCard(icon: "target", color: .blue,
+                                title: "Set nutrition target",
+                                summary: nutritionTargetsSummary(proteinG: proteinG, kcal: kcal),
+                                detail: "Shown against today's actual on the Nutrition dashboard.",
+                                confirmLabel: "Set target",
+                                status: status, accentColor: .blue,
+                                failureDetail: writeErrorDetail,
+                                onConfirm: onConfirm, onCancel: onCancel)
+        case .getTrainingPlan:
+            ListSummaryCard(icon: "calendar.badge.checkmark", color: .indigo,
+                            title: "Checked your training plan",
+                            subtitle: "This week's sessions + adherence")
+        case .setTrainingPlan(let weekStart, let days):
+            TrainingPlanToolCard(weekStart: weekStart, days: days,
+                                status: status, resultJSON: resultJSON, accentColor: accentColor,
+                                failureDetail: writeErrorDetail,
+                                onConfirm: onConfirm, onCancel: onCancel)
+        case .markWorkoutDone(let date):
+            MutationConfirmCard(icon: "checkmark.seal.fill", color: .green,
+                                title: "Mark workout done",
+                                summary: Self.markDoneDateFormatter.string(from: date),
+                                detail: "Marks this planned session complete on your training plan.",
+                                confirmLabel: "Mark done",
+                                status: status, accentColor: .green,
+                                failureDetail: writeErrorDetail,
                                 onConfirm: onConfirm, onCancel: onCancel)
         }
+    }
+
+    private static let dobDateFormatter: DateFormatter = {
+        let f = DateFormatter(); f.dateStyle = .long; return f
+    }()
+
+    private static let markDoneDateFormatter: DateFormatter = {
+        let f = DateFormatter(); f.dateStyle = .medium; return f
+    }()
+
+    private func nutritionTargetsSummary(proteinG: Double?, kcal: Double?) -> String {
+        var parts: [String] = []
+        if let p = proteinG { parts.append("\(Int(p.rounded()))g protein") }
+        if let k = kcal { parts.append("\(Int(k.rounded())) kcal") }
+        return parts.isEmpty ? "No target specified" : parts.joined(separator: " · ")
     }
 
     private func updateGoalSummary(metric: String, value: Double) -> String {
@@ -441,6 +521,9 @@ private struct MutationConfirmCard: View {
     let confirmLabel: String
     let status: ToolCall.Status
     let accentColor: Color
+    /// The tool's exact failure reason (from `toolResultJSON`'s `error`
+    /// field), shown under the "Failed" row when present.
+    var failureDetail: String? = nil
     let onConfirm: () -> Void
     let onCancel: () -> Void
 
@@ -478,7 +561,8 @@ private struct MutationConfirmCard: View {
                 .foregroundColor(isDark ? .white.opacity(0.6) : .black.opacity(0.6))
                 .fixedSize(horizontal: false, vertical: true)
             ConfirmFooterShim(status: status, accentColor: accentColor,
-                              confirmLabel: confirmLabel, onConfirm: onConfirm, onCancel: onCancel)
+                              confirmLabel: confirmLabel, failureDetail: failureDetail,
+                              onConfirm: onConfirm, onCancel: onCancel)
         }
         .padding(14)
         .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 16))
@@ -490,6 +574,9 @@ private struct ConfirmFooterShim: View {
     let status: ToolCall.Status
     let accentColor: Color
     let confirmLabel: String
+    /// The tool's exact failure reason (from `toolResultJSON`'s `error`
+    /// field). nil falls back to the plain "Failed" row unchanged.
+    var failureDetail: String? = nil
     let onConfirm: () -> Void
     let onCancel: () -> Void
     var body: some View {
@@ -504,11 +591,18 @@ private struct ConfirmFooterShim: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .transition(.opacity.combined(with: .scale(scale: 0.95)))
             case .failed:
-                HStack(spacing: 6) {
-                    Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.red)
-                    Text("Failed").font(.system(size: 13, weight: .semibold)).foregroundColor(.red)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.red)
+                        Text("Failed").font(.system(size: 13, weight: .semibold)).foregroundColor(.red)
+                    }
+                    if let failureDetail, !failureDetail.isEmpty {
+                        Text(failureDetail)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.red.opacity(0.85))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
-                .frame(height: 36)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .transition(.opacity.combined(with: .scale(scale: 0.95)))
             case .cancelled:
@@ -560,6 +654,11 @@ private struct ConfirmFooter: View {
     let status: ToolCall.Status
     let accentColor: Color
     let confirmLabel: String
+    /// The tool's exact failure reason (from `toolResultJSON`'s `error`
+    /// field), when the status is `.failed`. nil for every other status, and
+    /// nil for tools that don't thread a reason through — falls back to the
+    /// original generic "Failed" pill so existing callers are unaffected.
+    var failureDetail: String? = nil
     let onConfirm: () -> Void
     let onCancel: () -> Void
 
@@ -568,7 +667,21 @@ private struct ConfirmFooter: View {
         case .done:
             label("Added", icon: "checkmark", color: .green)
         case .failed:
-            label("Failed", icon: "exclamationmark.triangle.fill", color: .red)
+            if let failureDetail, !failureDetail.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.red)
+                        Text("Failed").font(.system(size: 13, weight: .bold)).foregroundColor(.red)
+                    }
+                    Text(failureDetail)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.red.opacity(0.85))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                label("Failed", icon: "exclamationmark.triangle.fill", color: .red)
+            }
         case .cancelled:
             label("Cancelled", icon: "xmark", color: .secondary)
         case .confirmed:
@@ -632,8 +745,13 @@ private struct FoodToolCard: View {
     let cautions: [String]
     let isEstimate: Bool
     let confidence: String?
+    /// 0 = today, 1 = yesterday, up to 7 — backdated logging. Renders as a
+    /// "YESTERDAY" / "N DAYS AGO" badge so a backdated entry never looks like
+    /// it silently landed on today.
+    let daysAgo: Int
     let status: ToolCall.Status
     let accentColor: Color
+    var failureDetail: String? = nil
     let onConfirm: () -> Void
     let onCancel: () -> Void
 
@@ -683,6 +801,20 @@ private struct FoodToolCard: View {
                         .lineLimit(1)
                         .minimumScaleFactor(0.75)
                 }
+            }
+
+            if let dayBadge = backdatedBadgeText(daysAgo) {
+                HStack(spacing: 4) {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.system(size: 9, weight: .bold))
+                    Text(dayBadge)
+                        .font(.system(size: 9, weight: .bold))
+                        .tracking(0.5)
+                }
+                .foregroundColor(.blue)
+                .padding(.horizontal, 6).padding(.vertical, 2)
+                .background(Color.blue.opacity(0.16))
+                .clipShape(Capsule())
             }
 
             // Tag capsules
@@ -745,6 +877,7 @@ private struct FoodToolCard: View {
 
             ConfirmFooter(status: status, accentColor: accentColor,
                           confirmLabel: "Add to today's diet",
+                          failureDetail: failureDetail,
                           onConfirm: onConfirm, onCancel: onCancel)
         }
         .padding(14).frame(maxWidth: 320)
@@ -764,6 +897,209 @@ private struct FoodToolCard: View {
                 .minimumScaleFactor(0.6)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+// MARK: - Water (log_water)
+private struct WaterToolCard: View {
+    let milliliters: Double
+    /// 0 = today, 1 = yesterday, up to 7 — same backdating as FoodToolCard.
+    let daysAgo: Int
+    let status: ToolCall.Status
+    let accentColor: Color
+    var failureDetail: String? = nil
+    let onConfirm: () -> Void
+    let onCancel: () -> Void
+
+    @AppStorage("theme_mode") private var themeMode = "dark"
+    private var isDark: Bool { themeMode == "dark" }
+    private var color: Color { .cyan }
+
+    private var literString: String { String(format: "%.2f L", milliliters / 1000.0) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "drop.fill")
+                    .foregroundColor(color)
+                Text("Log water")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(color).tracking(0.4)
+                    .lineLimit(1)
+                Spacer()
+                if let dayBadge = backdatedBadgeText(daysAgo) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "clock.arrow.circlepath")
+                            .font(.system(size: 9, weight: .bold))
+                        Text(dayBadge)
+                            .font(.system(size: 9, weight: .bold))
+                            .tracking(0.5)
+                    }
+                    .foregroundColor(.blue)
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(Color.blue.opacity(0.16))
+                    .clipShape(Capsule())
+                }
+            }
+            HStack(alignment: .lastTextBaseline, spacing: 4) {
+                Text("\(Int(milliliters.rounded()))")
+                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                    .foregroundColor(isDark ? .white : .black)
+                Text("ml")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(isDark ? .white.opacity(0.55) : .black.opacity(0.55))
+                Text("· \(literString)")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(isDark ? .white.opacity(0.45) : .black.opacity(0.45))
+            }
+            ConfirmFooter(status: status, accentColor: accentColor,
+                          confirmLabel: "Log water",
+                          failureDetail: failureDetail,
+                          onConfirm: onConfirm, onCancel: onCancel)
+        }
+        .padding(14).frame(maxWidth: 260)
+        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 18))
+    }
+}
+
+// MARK: - Training plan preview (set_training_plan)
+
+/// Confirm card for `set_training_plan` — previews every proposed day (date,
+/// kind icon, title, detail, duration) before the user approves replacing
+/// the active plan. Post-confirm, surfaces the calendar outcome: either a
+/// quiet "synced to your calendar" line, or the honest `note` the execution
+/// stashed in `resultJSON` when calendar access was denied (see
+/// `ChatViewModel.executeSetTrainingPlan`) — never silently implies events
+/// were created when they weren't.
+private struct TrainingPlanToolCard: View {
+    let weekStart: Date
+    let days: [ToolCall.PlannedDayArg]
+    let status: ToolCall.Status
+    var resultJSON: String? = nil
+    let accentColor: Color
+    var failureDetail: String? = nil
+    let onConfirm: () -> Void
+    let onCancel: () -> Void
+
+    @AppStorage("theme_mode") private var themeMode = "dark"
+    private var isDark: Bool { themeMode == "dark" }
+
+    private var calendarNote: String? {
+        guard let resultJSON, let data = resultJSON.data(using: .utf8),
+              let payload = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+        return payload["note"] as? String
+    }
+
+    private static let dayFormatter: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "EEE MMM d"; return f
+    }()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "calendar.badge.plus")
+                    .foregroundColor(.indigo)
+                Text("New training plan")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(.indigo).tracking(0.4)
+                    .lineLimit(1)
+                Spacer()
+                Text("\(days.count) day\(days.count == 1 ? "" : "s")")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(isDark ? .white.opacity(0.5) : .black.opacity(0.5))
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(Array(days.enumerated()), id: \.offset) { _, day in
+                    dayRow(day)
+                }
+            }
+
+            if let calendarNote {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 11))
+                        .foregroundColor(.orange)
+                    Text(calendarNote)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.orange.opacity(0.9))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } else if status == .done {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill").foregroundColor(.green)
+                    Text("Synced to your calendar")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.green.opacity(0.9))
+                }
+            }
+
+            ConfirmFooterShim(status: status, accentColor: accentColor,
+                              confirmLabel: "Set plan", failureDetail: failureDetail,
+                              onConfirm: onConfirm, onCancel: onCancel)
+        }
+        .padding(14).frame(maxWidth: 320)
+        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 18))
+    }
+
+    @ViewBuilder
+    private func dayRow(_ day: ToolCall.PlannedDayArg) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(kindColor(day.kind).opacity(0.18))
+                    .frame(width: 28, height: 28)
+                Image(systemName: kindIcon(day.kind))
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(kindColor(day.kind))
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(Self.dayFormatter.string(from: day.date))
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(isDark ? .white.opacity(0.5) : .black.opacity(0.5))
+                    Text("· \(day.durationMin) min")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(isDark ? .white.opacity(0.4) : .black.opacity(0.4))
+                }
+                Text(day.title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(isDark ? .white : .black)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                if !day.detail.isEmpty {
+                    Text(day.detail)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(isDark ? .white.opacity(0.6) : .black.opacity(0.6))
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    /// Falls back gracefully for a kind string Gemini hasn't yet had
+    /// validated against `TrainingPlanStore.PlannedDay.Kind` (validation
+    /// happens at confirm-time execution) — same graceful-degradation
+    /// convention as `toolColor(name:)` above.
+    private func kindIcon(_ raw: String) -> String {
+        switch raw.lowercased() {
+        case "strength": return "dumbbell.fill"
+        case "cardio":   return "figure.run"
+        case "mobility": return "figure.flexibility"
+        case "rest":     return "bed.double.fill"
+        default:         return "figure.strengthtraining.traditional"
+        }
+    }
+    private func kindColor(_ raw: String) -> Color {
+        switch raw.lowercased() {
+        case "strength": return .red
+        case "cardio":   return .orange
+        case "mobility": return .teal
+        case "rest":     return .indigo
+        default:         return accentColor
+        }
     }
 }
 

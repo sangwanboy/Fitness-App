@@ -16,6 +16,7 @@ struct FoodCameraView: View {
     var onBarcode: ((String) -> Void)? = nil
 
     @StateObject private var cam = FoodCameraModel()
+    @Environment(\.scenePhase) private var scenePhase
     @State private var photoItem: PhotosPickerItem? = nil
     /// Debounce: once a code is handled we ignore further reads until the view
     /// reappears (reset in onAppear).
@@ -42,6 +43,12 @@ struct FoodCameraView: View {
                              title: "Camera unavailable",
                              body: "No camera on this device. Upload a photo from your library below.",
                              showSettings: false)
+            case .failed(let reason):
+                stateMessage(icon: "exclamationmark.triangle.fill",
+                             title: "Camera didn't start",
+                             body: reason + " You can also upload a photo from your library below.",
+                             showSettings: false,
+                             retry: { cam.start() })
             }
 
             // Overlay chrome
@@ -81,6 +88,13 @@ struct FoodCameraView: View {
             cam.start()
         }
         .onDisappear { cam.stop() }
+        // Belt-and-braces: releasing the camera must not depend on
+        // onDisappear alone — backgrounding with the scanner open must
+        // drop the session (and its green status-bar indicator) too.
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background { cam.stop() }
+            else if phase == .active && cam.state == .ready { cam.start() }
+        }
         .onChange(of: photoItem) { _, item in
             guard let item else { return }
             Task {
@@ -152,7 +166,8 @@ struct FoodCameraView: View {
         .padding(.bottom, 28)
     }
 
-    private func stateMessage(icon: String, title: String, body: String, showSettings: Bool) -> some View {
+    private func stateMessage(icon: String, title: String, body: String, showSettings: Bool,
+                              retry: (() -> Void)? = nil) -> some View {
         VStack(spacing: 12) {
             Image(systemName: icon)
                 .font(.system(size: 40))
@@ -165,6 +180,14 @@ struct FoodCameraView: View {
                 .foregroundColor(.white.opacity(0.7))
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 36)
+            if let retry {
+                Button("Try again", action: retry)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 9)
+                    .background(.white.opacity(0.15), in: Capsule())
+            }
             if showSettings {
                 Button("Open Settings") {
                     if let url = URL(string: UIApplication.openSettingsURLString) {
@@ -184,15 +207,28 @@ struct FoodCameraView: View {
 // MARK: - Camera session
 
 final class FoodCameraModel: NSObject, ObservableObject {
-    enum CamState { case configuring, ready, denied, unavailable }
+    enum CamState: Equatable { case configuring, ready, denied, unavailable, failed(String) }
 
     @Published var state: CamState = .configuring
 
-    let session = AVCaptureSession()
-    private let output = AVCapturePhotoOutput()
-    private let metadataOutput = AVCaptureMetadataOutput()
-    private let queue = DispatchQueue(label: "fitnessapp.food.camera")
+    // Session/queue are recreated on retry after a hang: AVCaptureSession's
+    // startRunning is synchronous and CAN block indefinitely (hardware
+    // contention/interruption — seen live: infinite spinner, and the later
+    // stop() queued behind the hang so the green camera indicator persisted
+    // on Home after the scanner closed). A poisoned pair is abandoned, never
+    // reused.
+    private(set) var session = AVCaptureSession()
+    private var output = AVCapturePhotoOutput()
+    private var metadataOutput = AVCaptureMetadataOutput()
+    private var queue = DispatchQueue(label: "fitnessapp.food.camera")
     private var configured = false
+    private var poisoned = false
+    private var watchdog: Task<Void, Never>?
+    private var sessionObservers: [NSObjectProtocol] = []
+    /// Identifies the current start attempt. A hung attempt that unblocks
+    /// AFTER a retry rebuilt the session must not touch state (the poisoned
+    /// flag alone can't protect — a retry resets it).
+    private var attemptID = UUID()
 
     /// Called on the main thread with the captured/normalised still.
     var onCapture: ((UIImage) -> Void)?
@@ -202,12 +238,18 @@ final class FoodCameraModel: NSObject, ObservableObject {
     func start() {
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .authorized:
+            if poisoned { rebuildSessionObjects() }
+            state = .configuring
+            armWatchdog()
             configureAndRun()
         case .notDetermined:
             AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
                 DispatchQueue.main.async {
-                    if granted { self?.configureAndRun() }
-                    else { self?.state = .denied }
+                    guard let self else { return }
+                    if granted {
+                        self.armWatchdog()
+                        self.configureAndRun()
+                    } else { self.state = .denied }
                 }
             }
         default:
@@ -215,44 +257,122 @@ final class FoodCameraModel: NSObject, ObservableObject {
         }
     }
 
+    /// Abandon a queue whose startRunning hung and start clean — enqueueing
+    /// anything else behind a blocked serial queue would never run.
+    private func rebuildSessionObjects() {
+        sessionObservers.forEach { NotificationCenter.default.removeObserver($0) }
+        sessionObservers = []
+        // Enqueue a stop for the abandoned pair on ITS OWN queue: it runs the
+        // moment the hung startRunning finally unblocks, so the orphaned
+        // session can't keep the camera (green indicator) alive forever.
+        let oldSession = session
+        queue.async { if oldSession.isRunning { oldSession.stopRunning() } }
+        session = AVCaptureSession()
+        output = AVCapturePhotoOutput()
+        metadataOutput = AVCaptureMetadataOutput()
+        queue = DispatchQueue(label: "fitnessapp.food.camera.\(UUID().uuidString.prefix(8))")
+        configured = false
+        poisoned = false
+        attemptID = UUID()
+    }
+
+    /// If the session isn't live within 5 s, stop showing an infinite spinner:
+    /// mark the attempt poisoned and surface an honest retryable state.
+    private func armWatchdog() {
+        watchdog?.cancel()
+        watchdog = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(5))
+            guard let self, !Task.isCancelled, self.state == .configuring else { return }
+            self.poisoned = true
+            self.state = .failed("The camera didn't start — another app may be using it, or the system camera service stalled.")
+        }
+    }
+
+    /// Honest states for mid-use interruptions (Camera app grabs the device,
+    /// thermal shutdown, media-services reset) instead of a frozen preview.
+    private func observeSession(_ s: AVCaptureSession) {
+        let nc = NotificationCenter.default
+        sessionObservers.append(nc.addObserver(
+            forName: AVCaptureSession.wasInterruptedNotification, object: s, queue: .main
+        ) { [weak self] _ in
+            self?.state = .failed("The camera was interrupted by another app or the system.")
+        })
+        sessionObservers.append(nc.addObserver(
+            forName: AVCaptureSession.interruptionEndedNotification, object: s, queue: .main
+        ) { [weak self] _ in
+            self?.start()
+        })
+        sessionObservers.append(nc.addObserver(
+            forName: AVCaptureSession.runtimeErrorNotification, object: s, queue: .main
+        ) { [weak self] note in
+            let msg = (note.userInfo?[AVCaptureSessionErrorKey] as? AVError)?.localizedDescription
+            self?.poisoned = true
+            self?.state = .failed(msg ?? "The camera hit a system error.")
+        })
+    }
+
     private func configureAndRun() {
+        // Capture THIS attempt's objects. The block must never read
+        // self.session/self.output: a hung block that unblocks after a retry
+        // rebuilt the pair would otherwise configure/start the NEW session
+        // concurrently from a stale queue (AVCaptureSession is not safe for
+        // concurrent configuration). With locals, a stale attempt can only
+        // touch its own abandoned objects — and rebuildSessionObjects() has
+        // already queued a stopRunning behind it on the same stale queue.
+        let attempt = attemptID
+        let session = self.session
+        let output = self.output
+        let metadataOutput = self.metadataOutput
+        let needsConfigure = !configured
         queue.async { [weak self] in
-            guard let self else { return }
-            if !self.configured {
-                self.session.beginConfiguration()
-                self.session.sessionPreset = .photo
+            if needsConfigure {
+                session.beginConfiguration()
+                session.sessionPreset = .photo
                 guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
                       let input = try? AVCaptureDeviceInput(device: device),
-                      self.session.canAddInput(input),
-                      self.session.canAddOutput(self.output) else {
-                    self.session.commitConfiguration()
-                    DispatchQueue.main.async { self.state = .unavailable }
+                      session.canAddInput(input),
+                      session.canAddOutput(output) else {
+                    session.commitConfiguration()
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self, attempt == self.attemptID else { return }
+                        self.state = .unavailable
+                    }
                     return
                 }
-                self.session.addInput(input)
-                self.session.addOutput(self.output)
+                session.addInput(input)
+                session.addOutput(output)
 
                 // Barcode / QR metadata scanning on the same session. Delegate
                 // callbacks land on the main queue. metadataObjectTypes can only
                 // be set AFTER the output is added to the session.
-                if self.session.canAddOutput(self.metadataOutput) {
-                    self.session.addOutput(self.metadataOutput)
-                    self.metadataOutput.setMetadataObjectsDelegate(self, queue: .main)
+                if session.canAddOutput(metadataOutput), let self {
+                    session.addOutput(metadataOutput)
+                    metadataOutput.setMetadataObjectsDelegate(self, queue: .main)
                     let wanted: [AVMetadataObject.ObjectType] =
                         [.ean13, .ean8, .upce, .code128, .qr]
-                    self.metadataOutput.metadataObjectTypes =
-                        wanted.filter { self.metadataOutput.availableMetadataObjectTypes.contains($0) }
+                    metadataOutput.metadataObjectTypes =
+                        wanted.filter { metadataOutput.availableMetadataObjectTypes.contains($0) }
                 }
 
-                self.session.commitConfiguration()
-                self.configured = true
+                session.commitConfiguration()
             }
-            if !self.session.isRunning { self.session.startRunning() }
-            DispatchQueue.main.async { self.state = .ready }
+            if !session.isRunning { session.startRunning() }
+            DispatchQueue.main.async { [weak self] in
+                // A hung attempt may complete long after the watchdog failed
+                // the UI — or after a retry already rebuilt the session pair
+                // (which resets `poisoned`). The attempt token is the only
+                // reliable identity check: stale attempts touch nothing.
+                guard let self, attempt == self.attemptID, !self.poisoned else { return }
+                self.configured = true
+                self.watchdog?.cancel()
+                if self.sessionObservers.isEmpty { self.observeSession(session) }
+                self.state = .ready
+            }
         }
     }
 
     func stop() {
+        watchdog?.cancel()
         queue.async { [weak self] in
             guard let self, self.session.isRunning else { return }
             self.session.stopRunning()

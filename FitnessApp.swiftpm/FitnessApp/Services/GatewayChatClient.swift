@@ -75,7 +75,7 @@ public actor GatewayChatClient {
             "functionDeclarations": [
                 [
                     "name": "log_food",
-                    "description": "Render a rich food info card and let the user confirm logging it to today's diet in Apple Health. Always emit this when the user uploads a food photo OR asks to log/identify a food item — fill in tags/highlights/cautions when relevant. ALWAYS set is_estimate=true and pick a confidence level unless the user gave you exact label nutrition data (then is_estimate=false). Multi-item plates → one call per distinct item.",
+                    "description": "Render a rich food info card and let the user confirm logging it to today's diet in Apple Health. Always emit this when the user uploads a food photo OR asks to log/identify a food item — fill in tags/highlights/cautions when relevant. ALWAYS set is_estimate=true and pick a confidence level unless the user gave you exact label nutrition data (then is_estimate=false). Multi-item plates → one call per distinct item. Supports BACKDATING: pass days_ago when the user says 'yesterday' / 'this morning' / 'on Tuesday' / 'N days ago' instead of quietly logging it to today.",
                     "parameters": [
                         "type": "object",
                         "properties": [
@@ -89,9 +89,22 @@ public actor GatewayChatClient {
                             "highlights": ["type": "array", "items": ["type": "string"], "description": "Positive nutritional notes — one short bullet each"],
                             "cautions":   ["type": "array", "items": ["type": "string"], "description": "Warnings — high sodium, allergens, added sugar, etc. Cross-check against the user's allergies in the system prompt."],
                             "is_estimate": ["type": "boolean", "description": "TRUE when macros are guessed from a photo/description; FALSE only when user supplied exact label nutrition."],
-                            "confidence":  ["type": "string", "description": "low | medium | high — required when is_estimate is true."]
+                            "confidence":  ["type": "string", "description": "low | medium | high — required when is_estimate is true."],
+                            "days_ago":   ["type": "integer", "description": "0 = today (default). 1 = yesterday, up to 7. Use when the user is backdating a meal instead of logging it now."]
                         ],
                         "required": ["name", "calories", "is_estimate"]
+                    ]
+                ],
+                [
+                    "name": "log_water",
+                    "description": "Log a hydration amount to today's (or a recent day's) Apple Health water total. The user must confirm before it writes. This is the real tool to call whenever the user asks in chat to log water/hydration — distinct from a one-tap button on an Astra-authored widget. Supports BACKDATING via days_ago (0-7) for 'I drank 500ml yesterday' style requests.",
+                    "parameters": [
+                        "type": "object",
+                        "properties": [
+                            "amount_ml": ["type": "number", "description": "Amount of water in millilitres, e.g. 250 for a glass, 500 for a bottle."],
+                            "days_ago":  ["type": "integer", "description": "0 = today (default). 1 = yesterday, up to 7."]
+                        ],
+                        "required": ["amount_ml"]
                     ]
                 ],
                 [
@@ -449,6 +462,28 @@ public actor GatewayChatClient {
                     ]
                 ],
                 [
+                    "name": "set_date_of_birth",
+                    "description": "Update the user's stored birth date. Call this whenever the user states their birth date in chat — this is the ONLY way a conversational birthday reaches the structured store that HR-zone math and the Live Basics profile card read, so skipping this call leaves the user with two disagreeing ages. Confirmation-gated: the user approves the change on a card before anything writes, since it affects heart-rate zone targets. Rejects (honestly, no write) if the derived age would be outside 5-120 years — double-check the date with the user in that case rather than guessing which part they meant.",
+                    "parameters": [
+                        "type": "object",
+                        "properties": [
+                            "date": ["type": "string", "description": "Birth date as YYYY-MM-DD, e.g. '1998-03-04'."]
+                        ],
+                        "required": ["date"]
+                    ]
+                ],
+                [
+                    "name": "set_nutrition_targets",
+                    "description": "Set Astra's own daily protein and/or calorie coaching target(s) — shown against today's actual intake on the Nutrition dashboard. Confirmation-gated: the user approves before anything is saved, so NEVER call this to silently apply a number — only after the user agrees to a specific target you proposed, or asks you to set one directly. For hypertrophy / muscle-gain goals, suggest an evidence-based protein target (roughly 1.6-2.2 g/kg bodyweight/day) using the user's weight from Live Basics when they ask about nutrition or protein, then offer to set it via this tool. Pass only the field(s) that changed — at least one of protein_g / kcal is required.",
+                    "parameters": [
+                        "type": "object",
+                        "properties": [
+                            "protein_g": ["type": "number", "description": "Daily protein target in grams. Sane range 20-400."],
+                            "kcal":      ["type": "number", "description": "Daily calorie target in kcal. Sane range 800-6000."]
+                        ]
+                    ]
+                ],
+                [
                     "name": "get_sleep_sessions",
                     "description": "Per-night detail for the user's last N on-device tracked sleep sessions, newest first. Auto-executes and feeds {nights: [{date, duration_h, onset (minutes to fall asleep), restlessness_pct, snore_episodes, snore_total_min, stages {deep_h, light_h, awake_h}}]} back via functionResponse. Call when the user asks about a specific night or wants night-by-night detail beyond the aggregate SLEEP PATTERN block / get_sleep_pattern. Returns available:false when no sessions are tracked yet.",
                     "parameters": [
@@ -456,6 +491,51 @@ public actor GatewayChatClient {
                         "properties": [
                             "nights": ["type": "integer", "description": "1-14 (default 7)"]
                         ]
+                    ]
+                ],
+                [
+                    "name": "get_training_plan",
+                    "description": "Read the user's active Astra-authored weekly training plan (this week, and next week if authored) plus per-day completed flags and adherence. Auto-executes and feeds it back via functionResponse. Returns an honest 'no plan set yet' when nothing has been authored. Call this before proposing any plan so your suggestion is grounded in what was actually done vs planned — and whenever the user asks what's on their schedule.",
+                    "parameters": [
+                        "type": "object",
+                        "properties": [:]
+                    ]
+                ],
+                [
+                    "name": "set_training_plan",
+                    "description": "Author (or replace) the user's active weekly training plan. Confirmation-gated — the user reviews a preview of the whole week before anything is written. Replaces whatever plan currently exists (its previously-created calendar events are removed first, only ones this app made). PROPOSE a plan ONLY when the user asks for one, or accepts your offer during a weekly-review discussion — grounded in the TRAINING LOAD block, the user's goals/profile, and recent adherence from get_training_plan. NEVER call this unprompted. For each non-rest day the app creates a Calendar event automatically at a sensible default time; if calendar access is denied the plan still saves and the functionResponse carries a `note` field explaining events were skipped — relay that honestly, never claim events were created when they weren't.",
+                    "parameters": [
+                        "type": "object",
+                        "properties": [
+                            "week_start": ["type": "string", "description": "Monday of the plan's first week, YYYY-MM-DD."],
+                            "days": [
+                                "type": "array",
+                                "description": "1-14 days (covers the current week and optionally next). Plan every day of the week explicitly, including rest days (kind='rest') — don't just omit off days.",
+                                "items": [
+                                    "type": "object",
+                                    "properties": [
+                                        "date":         ["type": "string",  "description": "YYYY-MM-DD"],
+                                        "title":        ["type": "string",  "description": "Short session title, e.g. 'Push — chest focus'"],
+                                        "detail":       ["type": "string",  "description": "Exercises / notes, plain text, max ~400 characters"],
+                                        "kind":         ["type": "string",  "description": "strength | cardio | mobility | rest"],
+                                        "duration_min": ["type": "integer", "description": "10-240"]
+                                    ],
+                                    "required": ["date", "title", "detail", "kind", "duration_min"]
+                                ]
+                            ]
+                        ],
+                        "required": ["week_start", "days"]
+                    ]
+                ],
+                [
+                    "name": "mark_workout_done",
+                    "description": "Mark a planned training-plan day complete. Confirmation-gated. Requires an active plan with a day matching the given date — call get_training_plan first if you're unsure what's scheduled.",
+                    "parameters": [
+                        "type": "object",
+                        "properties": [
+                            "date": ["type": "string", "description": "YYYY-MM-DD — the planned day to mark complete."]
+                        ],
+                        "required": ["date"]
                     ]
                 ]
             ]

@@ -3435,3 +3435,54 @@ Rapid-response fixes from the user's first real production session (all screensh
 Deployed: **databaseSequenceNumber: 6908**.
 
 Latest deployed sequence: **6908**.
+
+---
+
+## Session 62 — 2026-07-21 (Wave: nutrition coaching, training plan, Morning Brief 2.0, camera hardening)
+
+Orchestrated: 3 sequential/parallel Sonnet WPs → Opus adversarial review → orchestrator fixes → ship.
+
+### WP-N Nutrition + logging honesty
+`HealthKitWriteOutcome`/`logMetricValueDetailed`/`logFoodDetailed`: auth pre-checks name the exact
+Settings toggle; real error strings thread tool→functionResponse→ToolCards (+WidgetsCard/
+MetricCards alerts). `days_ago` (0-7) backdating on log_food + new log_water (12:00 local,
+YESTERDAY badges). `set_date_of_birth` (fixes two-ages: writes athlete_dob). NEW NutritionTargets
++ `set_nutrition_targets` (protein/kcal vs actuals on Nutrition dashboard). `.mealReminder` kind
+(≥14:00, nothing logged, once/day).
+
+### WP-T Adaptive training plan
+NEW TrainingPlanStore (1 active plan, JSON) + TrainingPlanCard in ProgressHub (day chips,
+adherence ring, Mark done). Tools: set_training_plan (confirm-gated; calendar events per non-rest
+day at 18:00, app-created only, replaced plans tear down own events; honest notes on denied/partial)
+/ get_training_plan / mark_workout_done. TRAINING PLAN block in LIVE CONTEXT; adherence line feeds
+the weekly-review narrative.
+
+### WP-B2 Morning Brief 2.0
+NEW MorningBriefEngine: once/day Astra-written brief (strict-JSON, real stats only, profile-aware)
+via BG refresh + first-foreground≥5am + card .task; engine-composed fallback NEVER blank;
+rate-limit auto-retry + 401 self-heal. Notification body prefers .astra (≤240 chars). NEW
+MorningBriefCard atop Home (dismissible/day, Ask-Astra handoff).
+
+### Cross-seams (orchestrator)
+Plan→brief ("Planned: Push — chest focus (60 min)"); Astra's learned profile (≤350 tok, same
+toggle) now feeds prediction enrichment (buildAIUserContext), weekly narrative, and the brief —
+insights/chips/focus are goal- & injury-aware. "Thinking…" → "Writing insight…" (user request).
+
+### Camera (user-reported: infinite spinner + green dot after close)
+Root cause: AVCaptureSession.startRunning can hang; stop() queued behind it forever. Fix: 5s
+watchdog → honest failed-state + retry with FRESH session/queue; attempt-token so late unblocks
+touch nothing; stale queue gets stopRunning queued behind the hang; block uses captured locals
+(no concurrent config of the new session); interruption/runtime observers; stop on background.
+
+### Review cycle
+Opus: 1 blocker (brief double-generation race on first morning launch — synchronous .loading
+guard added) + camera leak/config-race hardening + partial-calendar-sync honesty note + plan
+weekStart snapped to Monday. Nits deferred: phantom top gap (verify visually), adherence history.
+
+### Verified on device
+`DebugNotificationAudit` (DEBUG tripwire → Documents/notification_audit.json, pulled via
+devicectl): authorized, 3 pending & correct — sleepWindDown tonight 21:30 (real 14-night
+forecast), morningBrief 07:30, weeklyReview Sun 19:00 (real stat). Conditional kinds correctly
+absent. Deployed + launched: **databaseSequenceNumber: 6980**.
+
+Latest deployed sequence: **6980**.

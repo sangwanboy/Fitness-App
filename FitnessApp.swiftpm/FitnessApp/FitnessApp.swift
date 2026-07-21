@@ -23,7 +23,10 @@ struct FitnessApp: App {
         Self.registerBackgroundRefresh()
 
         #if DEBUG
-        DispatchQueue.main.async { DebugScrollAudit.start() }
+        DispatchQueue.main.async {
+            DebugScrollAudit.start()
+            DebugNotificationAudit.start()
+        }
         #endif
     }
 
@@ -200,6 +203,13 @@ struct FitnessApp: App {
             await HealthKitManager.shared.refreshIfStale(maxAgeMinutes: 60)
             await MainActor.run {
                 NotificationManager.shared.evaluateProactiveNudges()
+            }
+            // Work Package B2: attempt today's Astra-written morning brief
+            // before rescheduling the notification, so the notification body
+            // (NotificationManager.rescheduleMorningBrief) can pick it up the
+            // same cycle instead of waiting for the next BG refresh.
+            await MorningBriefEngine.shared.generateIfNeeded()
+            await MainActor.run {
                 NotificationManager.shared.rescheduleMorningBrief()
             }
         }

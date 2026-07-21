@@ -12,8 +12,15 @@ public enum ToolCall: Codable, Equatable {
         highlights: [String],
         cautions: [String],
         isEstimate: Bool,
-        confidence: String?  // "low" | "medium" | "high" — nil for verified label data
+        confidence: String?,  // "low" | "medium" | "high" — nil for verified label data
+        daysAgo: Int          // 0 = today (default), max 7 — backdated logging
     )
+    // Logs a hydration sample (litres → HealthKit dietaryWater). Mirrors
+    // log_food's confirmation-gated write pattern; daysAgo backdates same as
+    // log_food. Distinct from the widget button_row "log_water" action (a
+    // tap on an Astra-authored widget, not an LLM tool call) — this is the
+    // real chat-callable tool so "log 500ml water" works from a conversation.
+    case logWater(milliliters: Double, daysAgo: Int)
     case addReminder(title: String, dueAt: Date?, category: String?)
     case addCalendarEvent(title: String, startsAt: Date, endsAt: Date, notes: String?)
     case showMetricChart(metric: String, days: Int)
@@ -112,6 +119,39 @@ public enum ToolCall: Codable, Equatable {
     // they adapt instantly after the write.
     case updateGoal(metric: String, value: Double)
 
+    // Confirmation-gated: changes HR-zone math + Live Basics. Called when the
+    // user states their birth date in chat — fixes the "two ages" problem
+    // where Astra learns a birthday conversationally but athlete_dob (the
+    // store Live Basics / HeartRateZoneCalculator read) never updates.
+    case setDateOfBirth(date: Date)
+
+    // Confirmation-gated: Astra's own suggested (or user-requested) daily
+    // protein/kcal targets, distinct from the always-defaulted MacroGoals
+    // used by the rings — this store starts genuinely empty ("no target
+    // set") so the Nutrition dashboard can be honest about it. At least one
+    // of the two fields is set per call.
+    case setNutritionTargets(proteinG: Double?, kcal: Double?)
+
+    // Astra-authored weekly training plan (TrainingPlanStore). Kind stays a
+    // raw String here (not TrainingPlanStore.PlannedDay.Kind) — same
+    // loose-args-in / validate-at-execution convention as `updateGoal`'s
+    // `metric: String` — so a malformed value from Gemini fails with an
+    // honest error at confirm-time instead of silently dropping the whole
+    // tool call at parse-time.
+    case getTrainingPlan
+    case setTrainingPlan(weekStart: Date, days: [PlannedDayArg])
+    case markWorkoutDone(date: Date)
+
+    /// One proposed day within a `setTrainingPlan` call, before semantic
+    /// validation (date window, kind enum, duration range) at execution.
+    public struct PlannedDayArg: Codable, Equatable {
+        public let date: Date
+        public let title: String
+        public let detail: String
+        public let kind: String
+        public let durationMin: Int
+    }
+
     public struct Stat: Codable, Equatable {
         public let label: String
         public let value: String
@@ -129,18 +169,20 @@ public enum ToolCall: Codable, Equatable {
 
     public var needsConfirmation: Bool {
         switch self {
-        case .logFood, .addReminder, .addCalendarEvent,
+        case .logFood, .logWater, .addReminder, .addCalendarEvent,
              .updateReminder, .updateCalendarEvent,
              .deleteReminder, .deleteCalendarEvent,
              .updateFoodLog, .deleteFoodLog,
              .createWidget, .updateWidget, .deleteWidget,
-             .updateGoal:
+             .updateGoal, .setDateOfBirth, .setNutritionTargets,
+             .setTrainingPlan, .markWorkoutDone:
             return true
         case .showMetricChart, .showComparisonChart, .renderCard,
              .listReminders, .listCalendarEvents, .getPredictions,
              .listFoodLog, .listWidgets, .updateNotes, .getSleepPattern,
              .getMetricHistory, .getSleepSessions,
-             .rememberFact, .forgetFact, .updateProfile, .getProfile:
+             .rememberFact, .forgetFact, .updateProfile, .getProfile,
+             .getTrainingPlan:
             return false
         }
     }
@@ -156,7 +198,8 @@ public enum ToolCall: Codable, Equatable {
              .listFoodLog, .listWidgets, .updateNotes, .getSleepPattern,
              .getMetricHistory, .getSleepSessions,
              .showMetricChart, .showComparisonChart, .renderCard,
-             .rememberFact, .forgetFact, .updateProfile, .getProfile:
+             .rememberFact, .forgetFact, .updateProfile, .getProfile,
+             .getTrainingPlan:
             return true
         default: return false
         }
@@ -165,6 +208,7 @@ public enum ToolCall: Codable, Equatable {
     public var name: String {
         switch self {
         case .logFood: return "log_food"
+        case .logWater: return "log_water"
         case .addReminder: return "add_reminder"
         case .addCalendarEvent: return "add_calendar_event"
         case .showMetricChart: return "show_metric_chart"
@@ -193,6 +237,11 @@ public enum ToolCall: Codable, Equatable {
         case .getMetricHistory: return "get_metric_history"
         case .getSleepSessions: return "get_sleep_sessions"
         case .updateGoal: return "update_goal"
+        case .setDateOfBirth: return "set_date_of_birth"
+        case .setNutritionTargets: return "set_nutrition_targets"
+        case .getTrainingPlan: return "get_training_plan"
+        case .setTrainingPlan: return "set_training_plan"
+        case .markWorkoutDone: return "mark_workout_done"
         }
     }
 
@@ -202,6 +251,7 @@ public enum ToolCall: Codable, Equatable {
         case "log_food":
             guard let n = args["name"] as? String,
                   let cals = (args["calories"] as? Double) ?? doubleFrom(args["calories"]) else { return nil }
+            let rawDaysAgo = Int(doubleFrom(args["days_ago"]) ?? 0)
             return .logFood(
                 name: n,
                 calories: cals,
@@ -215,8 +265,13 @@ public enum ToolCall: Codable, Equatable {
                 // Default to estimate=true for safety. Only label-verified data
                 // (user typed exact macros from a package label) should ever set false.
                 isEstimate: (args["is_estimate"] as? Bool) ?? true,
-                confidence: args["confidence"] as? String
+                confidence: args["confidence"] as? String,
+                daysAgo: max(0, min(rawDaysAgo, 7))
             )
+        case "log_water":
+            guard let ml = doubleFrom(args["amount_ml"]) else { return nil }
+            let rawDaysAgo = Int(doubleFrom(args["days_ago"]) ?? 0)
+            return .logWater(milliliters: ml, daysAgo: max(0, min(rawDaysAgo, 7)))
         case "add_reminder":
             guard let title = args["title"] as? String else { return nil }
             let due = (args["due_at"] as? String).flatMap { parseISO8601($0) }
@@ -368,6 +423,36 @@ public enum ToolCall: Codable, Equatable {
             guard let metric = args["metric"] as? String,
                   let value = doubleFrom(args["value"]) else { return nil }
             return .updateGoal(metric: metric, value: value)
+        case "set_date_of_birth":
+            guard let dateStr = args["date"] as? String,
+                  let date = parseDateOnly(dateStr) else { return nil }
+            return .setDateOfBirth(date: date)
+        case "set_nutrition_targets":
+            let proteinG = doubleFrom(args["protein_g"])
+            let kcal = doubleFrom(args["kcal"])
+            guard proteinG != nil || kcal != nil else { return nil }
+            return .setNutritionTargets(proteinG: proteinG, kcal: kcal)
+        case "get_training_plan":
+            return .getTrainingPlan
+        case "set_training_plan":
+            guard let weekStartStr = args["week_start"] as? String,
+                  let weekStart = parseDateOnly(weekStartStr),
+                  let daysArr = args["days"] as? [[String: Any]] else { return nil }
+            let days: [PlannedDayArg] = daysArr.compactMap { d in
+                guard let dateStr = d["date"] as? String,
+                      let date = parseDateOnly(dateStr),
+                      let title = d["title"] as? String,
+                      let kind = d["kind"] as? String else { return nil }
+                let detail = (d["detail"] as? String) ?? ""
+                let duration = Int(doubleFrom(d["duration_min"]) ?? 45)
+                return PlannedDayArg(date: date, title: title, detail: detail, kind: kind, durationMin: duration)
+            }
+            guard !days.isEmpty else { return nil }
+            return .setTrainingPlan(weekStart: weekStart, days: days)
+        case "mark_workout_done":
+            guard let dateStr = args["date"] as? String,
+                  let date = parseDateOnly(dateStr) else { return nil }
+            return .markWorkoutDone(date: date)
         default:
             return nil
         }
@@ -388,6 +473,18 @@ public enum ToolCall: Codable, Equatable {
         return f.date(from: s)
     }
 
+    /// Parses a plain "YYYY-MM-DD" date (no time component) for
+    /// set_date_of_birth — a birthday has no meaningful time-of-day, and
+    /// requiring full ISO8601 datetime from the model would be needless
+    /// friction for a value it should produce from "March 4th 1998" style input.
+    private static func parseDateOnly(_ s: String) -> Date? {
+        let f = DateFormatter()
+        f.calendar = Calendar(identifier: .gregorian)
+        f.timeZone = TimeZone.current
+        f.dateFormat = "yyyy-MM-dd"
+        return f.date(from: s)
+    }
+
     /// Serializes the tool args back to the dict shape Gemini originally sent.
     /// Used when the app needs to round-trip the original `functionCall` into a
     /// follow-up request so the model can attach a `functionResponse` to it.
@@ -395,12 +492,14 @@ public enum ToolCall: Codable, Equatable {
         let iso = ISO8601DateFormatter()
         iso.formatOptions = [.withInternetDateTime]
         switch self {
-        case .logFood(let n, let cals, let p, let c, let f, let s, let tags, let hi, let cau, let est, let conf):
+        case .logFood(let n, let cals, let p, let c, let f, let s, let tags, let hi, let cau, let est, let conf, let daysAgo):
             var d: [String: Any] = ["name": n, "calories": cals, "protein": p, "carbs": c, "fat": f,
                                      "serving": s, "tags": tags, "highlights": hi, "cautions": cau,
-                                     "is_estimate": est]
+                                     "is_estimate": est, "days_ago": daysAgo]
             if let conf { d["confidence"] = conf }
             return d
+        case .logWater(let ml, let daysAgo):
+            return ["amount_ml": ml, "days_ago": daysAgo]
         case .addReminder(let title, let due, let cat):
             var d: [String: Any] = ["title": title]
             if let due { d["due_at"] = iso.string(from: due) }
@@ -518,6 +617,37 @@ public enum ToolCall: Codable, Equatable {
             return ["nights": nights]
         case .updateGoal(let metric, let value):
             return ["metric": metric, "value": value]
+        case .setDateOfBirth(let date):
+            let f = DateFormatter()
+            f.calendar = Calendar(identifier: .gregorian)
+            f.timeZone = TimeZone.current
+            f.dateFormat = "yyyy-MM-dd"
+            return ["date": f.string(from: date)]
+        case .setNutritionTargets(let proteinG, let kcal):
+            var d: [String: Any] = [:]
+            if let proteinG { d["protein_g"] = proteinG }
+            if let kcal { d["kcal"] = kcal }
+            return d
+        case .getTrainingPlan:
+            return [:]
+        case .setTrainingPlan(let weekStart, let days):
+            let f = DateFormatter()
+            f.calendar = Calendar(identifier: .gregorian)
+            f.timeZone = TimeZone.current
+            f.dateFormat = "yyyy-MM-dd"
+            return [
+                "week_start": f.string(from: weekStart),
+                "days": days.map { d in
+                    ["date": f.string(from: d.date), "title": d.title, "detail": d.detail,
+                     "kind": d.kind, "duration_min": d.durationMin]
+                }
+            ]
+        case .markWorkoutDone(let date):
+            let f = DateFormatter()
+            f.calendar = Calendar(identifier: .gregorian)
+            f.timeZone = TimeZone.current
+            f.dateFormat = "yyyy-MM-dd"
+            return ["date": f.string(from: date)]
         }
     }
 }

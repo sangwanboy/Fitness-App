@@ -784,7 +784,8 @@ struct HydrationCard: View {
     @AppStorage("theme_mode") private var themeMode = "dark"
     private var isDark: Bool { themeMode == "dark" }
 
-    @State private var showWriteError = false
+    /// Real failure reason from `logMetricValueDetailed` — nil hides the alert.
+    @State private var writeErrorMessage: String? = nil
 
     var body: some View {
         let liters = summary?.currentValue ?? 0
@@ -836,22 +837,27 @@ struct HydrationCard: View {
             .padding(10)
             .accessibilityLabel("Log water")
         }
-        .alert("Couldn't log water", isPresented: $showWriteError) {
+        .alert("Couldn't log water", isPresented: Binding(
+            get: { writeErrorMessage != nil },
+            set: { shown in if !shown { writeErrorMessage = nil } }
+        )) {
             Button("OK", role: .cancel) {}
         } message: {
-            Text("Check Health write permission for Water in Settings > Health.")
+            Text(writeErrorMessage ?? "Check Health write permission for Water in Settings > Health.")
         }
     }
 
     /// Writes a `dietaryWater` quantity sample via HealthKitManager. On success
-    /// fires a light haptic; on failure surfaces a visible alert so the user
-    /// knows to grant Water write permission in Settings > Health.
+    /// fires a light haptic; on failure surfaces the REAL reason (revoked
+    /// permission, unsupported type, etc.) via `logMetricValueDetailed`
+    /// instead of a generic message.
     private func log(_ liters: Double) async {
-        let ok = await HealthKitManager.shared.logMetricValue(type: .hydration, value: liters)
-        if ok {
+        let outcome = await HealthKitManager.shared.logMetricValueDetailed(type: .hydration, value: liters)
+        switch outcome {
+        case .success:
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        } else {
-            showWriteError = true
+        case .failure(let reason):
+            writeErrorMessage = reason
         }
     }
 }

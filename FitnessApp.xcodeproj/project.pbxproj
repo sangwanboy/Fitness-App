@@ -7,6 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		22754683D3FA494AB342CC37 /* TrainingPlanCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 595BB7631AC0415A819084C9 /* TrainingPlanCard.swift */; };
+		C01E99C4F76946A38FCE62BB /* TrainingPlanStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48882C1E348D44A597BF529A /* TrainingPlanStore.swift */; };
+		45AB142656B0461E99C5BE6F /* MorningBriefCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD10C629EFE244A393174AC4 /* MorningBriefCard.swift */; };
+		2BD7BF10B9D64C0690565DF0 /* MorningBriefEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D78209137464E348CB22E86 /* MorningBriefEngine.swift */; };
+		0DC86AE5B00B40FD8D3E558F /* NutritionTargets.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD8EFA02B6D94C92992A4691 /* NutritionTargets.swift */; };
+		2DD48287637F434AB8FA2F57 /* DebugNotificationAudit.swift in Sources */ = {isa = PBXBuildFile; fileRef = D97D3F02F3BE4BFAB7DAD98F /* DebugNotificationAudit.swift */; };
 		FF2546340B2741738396D2B4 /* AstraProfileSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = C792755A863D425F81524861 /* AstraProfileSection.swift */; };
 		5E968415B09B4E7DAE91FC45 /* AstraMemoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5BD00044E00420D9A3ED6B7 /* AstraMemoryStore.swift */; };
 		11973728339043618B6A391A /* WeeklyReviewCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A29B18ECDD09435FB754C2AC /* WeeklyReviewCard.swift */; };
@@ -108,6 +114,12 @@
 		/* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		595BB7631AC0415A819084C9 /* TrainingPlanCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrainingPlanCard.swift; sourceTree = "<group>"; };
+		48882C1E348D44A597BF529A /* TrainingPlanStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrainingPlanStore.swift; sourceTree = "<group>"; };
+		AD10C629EFE244A393174AC4 /* MorningBriefCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MorningBriefCard.swift; sourceTree = "<group>"; };
+		2D78209137464E348CB22E86 /* MorningBriefEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MorningBriefEngine.swift; sourceTree = "<group>"; };
+		CD8EFA02B6D94C92992A4691 /* NutritionTargets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NutritionTargets.swift; sourceTree = "<group>"; };
+		D97D3F02F3BE4BFAB7DAD98F /* DebugNotificationAudit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugNotificationAudit.swift; sourceTree = "<group>"; };
 		C792755A863D425F81524861 /* AstraProfileSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AstraProfileSection.swift; sourceTree = "<group>"; };
 		D5BD00044E00420D9A3ED6B7 /* AstraMemoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AstraMemoryStore.swift; sourceTree = "<group>"; };
 		A29B18ECDD09435FB754C2AC /* WeeklyReviewCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeeklyReviewCard.swift; sourceTree = "<group>"; };
@@ -294,6 +306,8 @@
 				DAAE63C8043C4C8AAB608047 /* NotificationSettingsSection.swift */,
 				A29B18ECDD09435FB754C2AC /* WeeklyReviewCard.swift */,
 				C792755A863D425F81524861 /* AstraProfileSection.swift */,
+				AD10C629EFE244A393174AC4 /* MorningBriefCard.swift */,
+				595BB7631AC0415A819084C9 /* TrainingPlanCard.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -361,6 +375,10 @@
 				2DADA946EAB94499BF042C9E /* DebugScrollAudit.swift */,
 				2F8CDBFE1F6342CE8C783B67 /* WeeklyReviewEngine.swift */,
 				D5BD00044E00420D9A3ED6B7 /* AstraMemoryStore.swift */,
+				D97D3F02F3BE4BFAB7DAD98F /* DebugNotificationAudit.swift */,
+				CD8EFA02B6D94C92992A4691 /* NutritionTargets.swift */,
+				2D78209137464E348CB22E86 /* MorningBriefEngine.swift */,
+				48882C1E348D44A597BF529A /* TrainingPlanStore.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -499,6 +517,12 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				22754683D3FA494AB342CC37 /* TrainingPlanCard.swift in Sources */,
+				C01E99C4F76946A38FCE62BB /* TrainingPlanStore.swift in Sources */,
+				45AB142656B0461E99C5BE6F /* MorningBriefCard.swift in Sources */,
+				2BD7BF10B9D64C0690565DF0 /* MorningBriefEngine.swift in Sources */,
+				0DC86AE5B00B40FD8D3E558F /* NutritionTargets.swift in Sources */,
+				2DD48287637F434AB8FA2F57 /* DebugNotificationAudit.swift in Sources */,
 				FF2546340B2741738396D2B4 /* AstraProfileSection.swift in Sources */,
 				5E968415B09B4E7DAE91FC45 /* AstraMemoryStore.swift in Sources */,
 				11973728339043618B6A391A /* WeeklyReviewCard.swift in Sources */,

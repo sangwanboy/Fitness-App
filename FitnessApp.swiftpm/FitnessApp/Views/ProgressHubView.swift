@@ -39,6 +39,12 @@ public struct ProgressHubView: View {
                     .offset(y: cardVisibleCount > 0 ? 0 : 14)
                     .animation(.spring(response: 0.5, dampingFraction: 0.82), value: cardVisibleCount)
 
+                // Training plan — Astra-authored weekly plan at a glance.
+                trainingPlanCard
+                    .opacity(cardVisibleCount > 0 ? 1 : 0)
+                    .offset(y: cardVisibleCount > 0 ? 0 : 14)
+                    .animation(.spring(response: 0.5, dampingFraction: 0.82), value: cardVisibleCount)
+
                 // Quick-stats row at the top
                 quickStatsRow
                     .opacity(cardVisibleCount > 0 ? 1 : 0)
@@ -127,6 +133,12 @@ public struct ProgressHubView: View {
 
     private var weeklyReviewCard: some View {
         WeeklyReviewCard()
+    }
+
+    // MARK: - Training Plan Card
+
+    private var trainingPlanCard: some View {
+        TrainingPlanCard()
     }
 
     // MARK: - Quick Stats Row

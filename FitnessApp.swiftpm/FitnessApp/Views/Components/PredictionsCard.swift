@@ -325,7 +325,7 @@ private struct PulsingThinkingLabel: View {
     @State private var opacity: Double = 1.0
     @State private var animating = false
     var body: some View {
-        Text("Thinking…")
+        Text("Writing insight…")
             .font(.system(size: 11, weight: .semibold))
             .foregroundColor(.indigo)
             .tracking(0.3)

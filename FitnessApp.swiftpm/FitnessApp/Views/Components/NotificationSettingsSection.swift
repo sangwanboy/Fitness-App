@@ -48,7 +48,10 @@ public struct NotificationSettingsSection: View {
                  description: "A weekly recap of your training and recovery trends."),
         KindMeta(kind: .sedentaryAlert, icon: "figure.walk", color: .mint,
                  title: "Move reminder",
-                 description: "A nudge to get moving after a long stretch of inactivity.")
+                 description: "A nudge to get moving after a long stretch of inactivity."),
+        KindMeta(kind: .mealReminder, icon: "fork.knife", color: .cyan,
+                 title: "Meal reminder",
+                 description: "An afternoon nudge if nothing's been logged for the day yet.")
     ]
 
     public init() {}

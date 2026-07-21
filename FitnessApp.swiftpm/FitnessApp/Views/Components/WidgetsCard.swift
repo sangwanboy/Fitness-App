@@ -551,6 +551,9 @@ private struct ButtonRowBlockView: View {
     let onCoachPrompt: (String) -> Void
 
     @State private var loggedIDs: Set<UUID> = []
+    /// Real failure reason from `logMetricValueDetailed` (HealthKit write
+    /// permission revoked, unsupported type, etc.) — nil hides the alert.
+    @State private var logFailureMessage: String? = nil
 
     var body: some View {
         VStack(spacing: 6) {
@@ -578,6 +581,14 @@ private struct ButtonRowBlockView: View {
                 .buttonStyle(.plain)
             }
         }
+        .alert("Couldn't log water", isPresented: Binding(
+            get: { logFailureMessage != nil },
+            set: { shown in if !shown { logFailureMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(logFailureMessage ?? "")
+        }
     }
 
     private func perform(_ btn: WidgetButton) {
@@ -585,8 +596,13 @@ private struct ButtonRowBlockView: View {
         case "log_water":
             let ml = Double(btn.value ?? "250") ?? 250
             Task {
-                let ok = await HealthKitManager.shared.logMetricValue(type: .hydration, value: ml / 1000.0)
-                if ok { withAnimation { _ = loggedIDs.insert(btn.id) } }
+                let outcome = await HealthKitManager.shared.logMetricValueDetailed(type: .hydration, value: ml / 1000.0)
+                switch outcome {
+                case .success:
+                    withAnimation { _ = loggedIDs.insert(btn.id) }
+                case .failure(let reason):
+                    logFailureMessage = reason
+                }
             }
         case "coach_prompt":
             onCoachPrompt(btn.value ?? btn.label)
