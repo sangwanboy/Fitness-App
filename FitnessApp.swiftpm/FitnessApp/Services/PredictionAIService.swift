@@ -159,14 +159,17 @@ public actor PredictionAIService {
         // The chat model spends tokens on internal reasoning before emitting
         // text. Read the shared thinking_level preference and add headroom on
         // top of the caller's `maxTokens` so visible output is never starved.
-        let thinkingBudget = GatewayChatClient.thinkingBudgetTokens()
+        // Floor the picker's budget: "Minimal" = 0 starves the visible
+        // answer once the model's reasoning floor kicks in (see
+        // callGeminiJSON below).
+        let thinkingBudget = max(GatewayChatClient.thinkingBudgetTokens(), 256)
         let body = GatewayChatPayload.body(
             stream: true,
             system: "",
             messages: [GatewayChatPayload.message(role: "user",
                                                   parts: [GatewayChatPayload.textPart(prompt)])],
             generationConfig: [
-                "maxOutputTokens": maxTokens + thinkingBudget,
+                "maxOutputTokens": maxTokens + thinkingBudget + 512,
                 "temperature": 0.7,
                 "thinkingConfig": ["thinkingBudget": thinkingBudget]
             ]
@@ -305,11 +308,13 @@ public actor PredictionAIService {
     /// One-shot /v1/chat call through the gateway. Optionally constrains the
     /// response to JSON.
     private func callGeminiJSON(prompt: String, maxTokens: Int, responseJSON: Bool) async throws -> String {
-        // Add headroom on top of the caller's maxTokens so the model's
-        // internal thoughts can't starve the visible JSON payload.
-        let thinkingBudget = GatewayChatClient.thinkingBudgetTokens()
+        // Fixed budget + headroom — decoupled from the chat Thinking Level
+        // picker: at "Minimal" that budget is 0 and thinking-class models
+        // keep a reasoning floor anyway, so thoughts consumed the whole
+        // allowance and the JSON payload arrived truncated/absent.
+        let thinkingBudget = 512
         var generationConfig: [String: Any] = [
-            "maxOutputTokens": maxTokens + thinkingBudget,
+            "maxOutputTokens": maxTokens + thinkingBudget + 1024,
             "temperature": 0.7,
             "thinkingConfig": ["thinkingBudget": thinkingBudget]
         ]

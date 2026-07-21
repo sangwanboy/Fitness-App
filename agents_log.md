@@ -3550,3 +3550,20 @@ doesn't write an HKWorkout — plan completions invisible to workout count/rings
 Deployed + launched: **databaseSequenceNumber: 7012**.
 
 Latest deployed sequence: **7012**.
+
+---
+
+## Session 63b — 2026-07-21 (One-shot AI calls starved by thinking budget — final narrative fix)
+
+Diag file from device (stage=request/parseError; catch clobbered the specific entry — fixed) +
+the thinking picker mapping cracked it: "Minimal" → budget 0, and thinking-class models keep a
+reasoning floor regardless, so one-shot calls' maxOutputTokens (answer+0) was consumed by
+thoughts → truncated/absent JSON → parseError. Streaming chat immune (large caps). Explains
+"every other feature works" precisely: the broken class = one-shot JSON (narrative, brief,
+enrichment fresh calls); enrichment looked alive via same-day cache.
+Fix: one-shots decoupled from the picker (fixed 512 budget + 1024 headroom); streaming
+why-sheets floor the picker budget at 256 + 512 headroom; diag no longer clobbers parse entries.
+
+Deployed + launched: **databaseSequenceNumber: 7020**.
+
+Latest deployed sequence: **7020**.

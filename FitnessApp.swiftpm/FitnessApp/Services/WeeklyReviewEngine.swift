@@ -505,7 +505,11 @@ public final class WeeklyReviewEngine: ObservableObject {
                     self.persistToDisk(weekKey: weekKey, data: data, narrative: result)
                 }
             } catch {
-                Self.writeDiag(stage: "request", detail: String(describing: error))
+                // parseError already wrote its specific extract/json entry —
+                // don't clobber it with this generic one (single-file diag).
+                if !(error is WeeklyReviewNarrativeError) {
+                    Self.writeDiag(stage: "request", detail: String(describing: error))
+                }
                 await MainActor.run {
                     guard self.currentWeekKey == weekKey else { return }
                     self.lastNarrativeFailureAt = Date()
@@ -564,10 +568,16 @@ public final class WeeklyReviewEngine: ObservableObject {
     /// is outside this task's file ownership).
     private static func generateNarrative(for data: WeeklyReviewData) async throws -> WeeklyReviewNarrative {
         let prompt = narrativePrompt(for: data)
-        let thinkingBudget = GatewayChatClient.thinkingBudgetTokens()
+        // Decoupled from the chat Thinking Level picker: at "Minimal" that
+        // budget is 0, and thinking-class flash models keep a reasoning
+        // floor regardless — thoughts then consume the entire
+        // maxOutputTokens and the JSON answer arrives truncated or absent
+        // (the live "narrative unavailable" root cause). Fixed small budget
+        // + generous headroom so the answer can never be starved.
+        let thinkingBudget = 512
         let maxTokens = 320
         let generationConfig: [String: Any] = [
-            "maxOutputTokens": maxTokens + thinkingBudget,
+            "maxOutputTokens": maxTokens + thinkingBudget + 1024,
             "temperature": 0.6,
             "thinkingConfig": ["thinkingBudget": thinkingBudget],
             "responseMimeType": "application/json"

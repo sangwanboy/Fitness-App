@@ -280,10 +280,13 @@ public final class MorningBriefEngine: ObservableObject {
     /// TokenMeter accounting.
     private static func generateNarrative(stats: [String]) async throws -> (narrative: String, suggestion: String) {
         let prompt = buildPrompt(stats: stats)
-        let thinkingBudget = GatewayChatClient.thinkingBudgetTokens()
+        // Fixed budget + headroom — decoupled from the chat Thinking Level
+        // picker; see WeeklyReviewEngine.generateNarrative for the rationale
+        // (budget 0 starved the JSON answer).
+        let thinkingBudget = 512
         let maxTokens = 250
         let generationConfig: [String: Any] = [
-            "maxOutputTokens": maxTokens + thinkingBudget,
+            "maxOutputTokens": maxTokens + thinkingBudget + 1024,
             "temperature": 0.6,
             "thinkingConfig": ["thinkingBudget": thinkingBudget],
             "responseMimeType": "application/json"
