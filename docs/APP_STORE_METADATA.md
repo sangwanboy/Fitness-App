@@ -1,8 +1,7 @@
 # App Store Connect — submission pack (Fitness Guru 1.0.1)
 
 > Everything below is paste-ready for App Store Connect. URLs assume the legal
-> site at `https://sangwanboy.github.io/fitness-guru-legal/` (repo push pending
-> one permission grant — see agents_log Session 64).
+> site at `https://sangwanboy.github.io/Fitness-App/` (served from this repo's docs/ via GitHub Pages).
 
 ## App record
 - **Name:** Fitness Guru
@@ -12,10 +11,10 @@
 - **Price:** Free
 
 ## URLs
-- **Support URL:** https://sangwanboy.github.io/fitness-guru-legal/
+- **Support URL:** https://sangwanboy.github.io/Fitness-App/
 - **Marketing URL:** (same, optional)
-- **Privacy Policy URL:** https://sangwanboy.github.io/fitness-guru-legal/privacy.html
-- **Terms (EULA):** standard Apple EULA + in-app terms; link https://sangwanboy.github.io/fitness-guru-legal/terms.html
+- **Privacy Policy URL:** https://sangwanboy.github.io/Fitness-App/privacy.html
+- **Terms (EULA):** standard Apple EULA + in-app terms; link https://sangwanboy.github.io/Fitness-App/terms.html
 
 ## Promotional text (170 chars)
 Astra reads your real Apple Health data and coaches you like it knows you — because it does. Morning briefs, training plans, honest insights. Nothing stored server-side.
