@@ -276,6 +276,14 @@ public struct SettingsView: View {
             ProfileListDivider()
             ProfileListRow(icon: "number", iconColor: .teal, title: "AI token usage", detail: tokenUsageSummary,
                            action: { showTokenUsage = true })
+            ProfileListDivider()
+            // Replays the first-run flow. Non-destructive: onboarding only
+            // WRITES settings you explicitly save in it — existing profile,
+            // goals, session, and data stay intact; finishing (or having
+            // gone through it) sets is_onboarded back to true.
+            ProfileListRow(icon: "sparkles.rectangle.stack", iconColor: .orange,
+                           title: "Replay onboarding", detail: "",
+                           action: { withAnimation { isOnboarded = false } })
         }
     }
 

@@ -35,6 +35,9 @@ targets:
       path: FitnessApp.swiftpm/AppInfo.plist
       properties:
         UILaunchScreen: {}
+        # Standard HTTPS only — exempt from export-compliance docs, and this
+        # flag skips the per-build question on every App Store upload.
+        ITSAppUsesNonExemptEncryption: false
         # Version comes from build settings (single source of truth) — keep
         # these as variables so a future xcodegen regen can't reset them.
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
