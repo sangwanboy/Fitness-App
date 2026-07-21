@@ -29,6 +29,10 @@ struct EditProfileSheet: View {
 
     @State private var name: String = ""
     @State private var dob: Date = Date()
+    // Only persist the birth date if the user actually set one (wheel touched
+    // now, or a value existed before). Saving the untouched default used to
+    // stamp "born today" into athlete_dob — see migrateImplausibleDOB().
+    @State private var dobTouched = false
     @State private var heightCm: Double = 170
     @State private var weightKg: Double = 70
     @State private var saving = false
@@ -39,6 +43,7 @@ struct EditProfileSheet: View {
                 Section("You") {
                     TextField("Name", text: $name)
                     DatePicker("Date of birth", selection: $dob, displayedComponents: .date)
+                        .onChange(of: dob) { _, _ in dobTouched = true }
                 }
                 Section("Body") {
                     HStack {
@@ -73,7 +78,10 @@ struct EditProfileSheet: View {
             }
             .onAppear {
                 name = athleteName
-                if athleteDOBInterval > 0 { dob = Date(timeIntervalSince1970: athleteDOBInterval) }
+                if athleteDOBInterval > 0 {
+                    dob = Date(timeIntervalSince1970: athleteDOBInterval)
+                    dobTouched = true
+                }
                 if athleteHeightCm > 0 { heightCm = athleteHeightCm }
                 if athleteWeightKg > 0 { weightKg = athleteWeightKg }
             }
@@ -83,7 +91,7 @@ struct EditProfileSheet: View {
     private func save() async {
         saving = true
         athleteName = name.trimmingCharacters(in: .whitespaces)
-        athleteDOBInterval = dob.timeIntervalSince1970
+        if dobTouched { athleteDOBInterval = dob.timeIntervalSince1970 }
         athleteHeightCm = heightCm
         athleteWeightKg = weightKg
         // Best-effort write to Apple Health so the value isn't only in AppStorage.

@@ -12,6 +12,7 @@ struct FitnessApp: App {
     init() {
         Self.migrateHomeCardsList()
         Self.migrateLoginGate()
+        Self.migrateImplausibleDOB()
 
         // NotificationManager owns tap routing (queues a notification's
         // chatPrompt into ChatPrefillBus) and foreground presentation, so it
@@ -127,6 +128,23 @@ struct FitnessApp: App {
         let defaults = UserDefaults.standard
         if defaults.object(forKey: "is_logged_in") == nil && defaults.bool(forKey: "is_onboarded") {
             defaults.set(true, forKey: "is_logged_in")
+        }
+    }
+
+    /// One-time cleanup of a corrupt stored birth date. The Personal-details
+    /// sheet's date wheel used to default to *today*; saving without touching
+    /// it stamped `athlete_dob` ≈ save-day (seen live: "DOB May 2026" → Age 0,
+    /// which also poisoned HR-zone max-HR math with 220-0). An implausible
+    /// stored DOB (outside age 5…120) is bad data, not a fact — remove it so
+    /// every consumer falls back to Apple Health's DOB or honest absence.
+    private static func migrateImplausibleDOB() {
+        let ud = UserDefaults.standard
+        let interval = ud.double(forKey: "athlete_dob")
+        guard interval > 0 else { return }
+        let years = Calendar.current.dateComponents(
+            [.year], from: Date(timeIntervalSince1970: interval), to: Date()).year ?? 0
+        if !(5...120).contains(years) {
+            ud.removeObject(forKey: "athlete_dob")
         }
     }
 
