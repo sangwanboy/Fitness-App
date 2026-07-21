@@ -3501,3 +3501,19 @@ up to 3 progressive auto-retries (30/75/150 s, or server retryAfterMs). Consider
 Deployed + launched: **databaseSequenceNumber: 6988**.
 
 Latest deployed sequence: **6988**.
+
+---
+
+## Session 62c — 2026-07-21 (The REAL narrative killer: timeouts vs absorbed 429s)
+
+User's dashboard observation cracked it: "Upstream 429s: 11 — ALL ABSORBED" + errorRate 0 —
+the gateway RETRIES upstream 429s internally and succeeds, so clients never see rate_limited;
+they see LATENCY (p95 31s). Client timeouts were 12s (enrichment), 15s (brief AND narrative) —
+every absorbed-retry request became a client-side timeout while the gateway completed it for
+nobody. 62b's rate-limited auto-retry never fired (URLError.timedOut ≠ GatewayError).
+Fix: narrative + brief timeouts → 90s, enrichment 12→45s (dead-gateway fast-fail remains
+ensureReachable's 2s probe); narrative auto-retry now also triggers on .timedOut.
+
+Deployed + launched: **databaseSequenceNumber: 6996**.
+
+Latest deployed sequence: **6996**.

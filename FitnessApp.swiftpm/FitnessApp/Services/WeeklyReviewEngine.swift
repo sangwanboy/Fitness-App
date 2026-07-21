@@ -517,7 +517,12 @@ public final class WeeklyReviewEngine: ObservableObject {
                     case .rateLimited(let ms), .quotaExceeded(let ms):
                         self.scheduleNarrativeAutoRetry(afterMs: ms, for: data, weekKey: weekKey)
                     default:
-                        break
+                        // Timeouts get the same treatment: with the gateway
+                        // absorbing upstream 429s, a timed-out attempt was
+                        // usually slow-but-succeeding — worth retrying.
+                        if (error as? URLError)?.code == .timedOut {
+                            self.scheduleNarrativeAutoRetry(afterMs: nil, for: data, weekKey: weekKey)
+                        }
                     }
                 }
             }
@@ -573,7 +578,12 @@ public final class WeeklyReviewEngine: ObservableObject {
             generationConfig: generationConfig
         )
 
-        let raw = try await GatewayTransport.postJSON(path: "v1/chat", body: body, timeout: 15)
+        // 90s: the gateway absorbs upstream Vertex 429s by retrying them
+        // internally (dashboard: "all absorbed"), so slow-but-succeeding
+        // requests legitimately exceed 30s — a short timeout turns them into
+        // client failures the gateway then completes for nobody. Background
+        // call; dead-gateway fast-fail is ensureReachable's 2s probe.
+        let raw = try await GatewayTransport.postJSON(path: "v1/chat", body: body, timeout: 90)
 
         guard let obj = try? JSONSerialization.jsonObject(with: raw) as? [String: Any],
               let candidates = obj["candidates"] as? [[String: Any]],

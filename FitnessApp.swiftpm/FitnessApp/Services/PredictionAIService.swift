@@ -11,7 +11,12 @@ import Foundation
 public actor PredictionAIService {
     public static let shared = PredictionAIService()
 
-    private let timeout: TimeInterval = 12
+    // 45s (was 12): the gateway absorbs upstream Vertex 429s by retrying,
+    // legitimately pushing slow requests past 30s — a 12s cap turned those
+    // eventual successes into client-side failures. Dead-gateway fast-fail
+    // is covered by GatewayTransport.ensureReachable's 2s probe, so the
+    // long timeout only applies to genuinely slow-but-succeeding calls.
+    private let timeout: TimeInterval = 45
 
     /// In-flight task dedupe: if a second `enrichPredictions` lands while the
     /// first is still streaming, both await the same result instead of

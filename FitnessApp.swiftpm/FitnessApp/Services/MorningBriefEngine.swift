@@ -293,7 +293,12 @@ public final class MorningBriefEngine: ObservableObject {
             generationConfig: generationConfig
         )
 
-        let raw = try await GatewayTransport.postJSON(path: "v1/chat", body: body, timeout: 15)
+        // 90s: the gateway ABSORBS upstream Vertex 429s by retrying them
+        // (dashboard: "11 all absorbed"), which pushes worst-case latency
+        // past 30s. This is a background call — patience beats a dead
+        // socket the gateway then completes for nobody. Dead-gateway
+        // fast-fail is already handled by ensureReachable's 2s probe.
+        let raw = try await GatewayTransport.postJSON(path: "v1/chat", body: body, timeout: 90)
 
         guard let obj = try? JSONSerialization.jsonObject(with: raw) as? [String: Any],
               let candidates = obj["candidates"] as? [[String: Any]],
