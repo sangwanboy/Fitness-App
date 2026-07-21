@@ -58,19 +58,12 @@ public struct ChatView: View {
                     }
                     .padding(.horizontal, 20)
                     .animation(.spring(response: 0.4, dampingFraction: 0.75), value: viewModel.messages.count)
-                    // Clearance for the floating overlay, plus a comfortable
-                    // breathing-room cushion beyond the exact measured height
-                    // (~20pt) so the last bubble never sits flush against the
-                    // chrome above it. When focused, the chips row is hidden
-                    // (see below) and replaced by the small keyboard-dismiss
-                    // chevron row — composer (~58pt) + chevron row (~40pt) +
-                    // cushion ≈ 110pt. When unfocused, chips bar + composer
-                    // overlay the scroll — combined ≈ 150pt + cushion ≈ 170pt.
-                    // Earlier fixed 90/160pt values assumed chips were already
-                    // hidden while focused, but the row wasn't actually gated
-                    // on focus — that mismatch is what let the composer/chips
-                    // overlap the last bubble with the keyboard up.
-                    .padding(.bottom, isInputFocused ? 110 : 170)
+                    // Small cushion only — the chips+composer bar now lives in
+                    // .safeAreaInset(edge: .bottom), so the scroll view clears
+                    // its EXACT measured height automatically. No more
+                    // hand-tuned 110/170pt guesses (which left a huge dead gap
+                    // above the chips whenever the guess overshot).
+                    .padding(.bottom, 8)
                 }
                 .scrollContentBackground(.hidden)
                 .background(AdaptiveBackground())
@@ -89,11 +82,11 @@ public struct ChatView: View {
                 .onChange(of: prefillBus.composerSeed) {
                     consumeComposerSeedIfAny()
                 }
-            }
-            
-            VStack(spacing: 0) {
-                Spacer()
-
+                // Bottom bar as a safe-area inset: the scroll content clears
+                // exactly the bar's real height in every state (chips shown,
+                // chips hidden while typing, photo attached) — structurally
+                // immune to the padding-guess class of gap/overlap bugs.
+                .safeAreaInset(edge: .bottom, spacing: 0) {
                 VStack(spacing: 10) {
                     // Predictive suggestion chips — hidden while the composer
                     // is focused (nothing to suggest once the user's already
@@ -234,6 +227,7 @@ public struct ChatView: View {
                     .padding(.horizontal, 20)
                     .padding(.bottom, isInputFocused ? 10 : 20)
                     .animation(.easeOut(duration: 0.25), value: isInputFocused)
+                }
                 }
             }
         }

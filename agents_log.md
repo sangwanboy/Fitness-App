@@ -3747,3 +3747,17 @@ stale-binary incident class is dead. One combined gated deploy.
 Deployed + launched: **databaseSequenceNumber: 7068**.
 
 Latest deployed sequence: **7068**.
+
+---
+
+## Session 69 — 2026-07-21 (Chat bottom bar → safeAreaInset; gap class killed structurally)
+
+User: gap above chips still huge. Root: WP-S's fixed 110/170pt clearance guesses overshot.
+Structural fix: chips+composer moved from a floating ZStack overlay into
+`.safeAreaInset(edge: .bottom)` on the messages ScrollView — content now clears the bar's
+EXACT measured height in every state (chips shown/hidden, photo attached, keyboard). The
+padding-guess bug class (3 incidents today) is dead, not patched. Scroll cushion 8pt.
+
+Deployed + launched: **databaseSequenceNumber: 7076**.
+
+Latest deployed sequence: **7076**.
