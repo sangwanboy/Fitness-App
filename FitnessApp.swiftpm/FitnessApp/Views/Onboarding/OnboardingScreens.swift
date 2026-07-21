@@ -174,6 +174,20 @@ struct SignInScreen: View {
     @State private var showPrivacyPolicy = false
     @State private var showTerms = false
 
+    // Email/password sign-in state — mirrors LoginView's block exactly.
+    @State private var authMode: AuthMode = .signIn
+    @State private var email = ""
+    @State private var password = ""
+    @State private var showForgotPassword = false
+
+    private var emailLooksValid: Bool {
+        email.contains("@") && email.contains(".")
+    }
+    private var isEmailAuthValid: Bool {
+        guard emailLooksValid else { return false }
+        return authMode == .register ? password.count >= 8 : !password.isEmpty
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             OnboardingBackButton(action: onBack)
@@ -194,7 +208,7 @@ struct SignInScreen: View {
 
             OnboardingTitle(
                 title: "Sign In",
-                subtitle: "Create your Astra account with Apple — no email, no password to remember."
+                subtitle: "Create your Astra account with Apple, or with your email and a password."
             )
 
             Spacer()
@@ -223,6 +237,72 @@ struct SignInScreen: View {
                     .cornerRadius(16)
                 }
                 .disabled(isSigningIn)
+
+                // "or" divider into the email/password alternative.
+                HStack(spacing: 10) {
+                    Rectangle().fill(Color.white.opacity(0.15)).frame(height: 1)
+                    Text("or")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.4))
+                    Rectangle().fill(Color.white.opacity(0.15)).frame(height: 1)
+                }
+
+                // Email/password — mirrors LoginView's block exactly.
+                VStack(spacing: 10) {
+                    Picker("", selection: $authMode) {
+                        Text("Sign In").tag(AuthMode.signIn)
+                        Text("Create Account").tag(AuthMode.register)
+                    }
+                    .pickerStyle(.segmented)
+                    .onChange(of: authMode) { _, _ in signInError = nil }
+
+                    TextField("Email", text: $email)
+                        .textContentType(.emailAddress)
+                        .keyboardType(.emailAddress)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .foregroundColor(.white)
+                        .tint(accentColor)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 12)
+                        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 14))
+
+                    SecureField("Password", text: $password)
+                        .textContentType(authMode == .register ? .newPassword : .password)
+                        .foregroundColor(.white)
+                        .tint(accentColor)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 12)
+                        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 14))
+
+                    Button(action: emailAuthTapped) {
+                        HStack(spacing: 8) {
+                            if isSigningIn {
+                                ProgressView().controlSize(.small).tint(.white)
+                            }
+                            Text(authMode == .signIn ? "Sign In" : "Create Account")
+                                .fontWeight(.semibold)
+                        }
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 50)
+                        .background(accentColor, in: .rect(cornerRadius: 14))
+                    }
+                    .disabled(isSigningIn || !isEmailAuthValid)
+                    .opacity(isEmailAuthValid ? 1 : 0.5)
+
+                    if authMode == .signIn {
+                        Button(action: {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            showForgotPassword = true
+                        }) {
+                            Text("Forgot password?")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(accentColor)
+                        }
+                        .disabled(isSigningIn)
+                    }
+                }
 
                 // Compact marketing consent row — same key + explicit
                 // opt-in-only default as LoginView's toggle.
@@ -294,6 +374,36 @@ struct SignInScreen: View {
         }
         .sheet(isPresented: $showTerms) {
             LegalDocumentSheet(title: "Terms of Service", text: LegalTexts.terms)
+        }
+        .sheet(isPresented: $showForgotPassword) {
+            ForgotPasswordView()
+        }
+    }
+
+    /// Email/password sign-in or account creation — identical shape to
+    /// LoginView.emailAuthTapped, just calling `onContinue()` on success
+    /// instead of relying on the caller to react to `isLoggedIn` flipping.
+    private func emailAuthTapped() {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        signInError = nil
+        isSigningIn = true
+        let enteredEmail = email
+        Task {
+            do {
+                if authMode == .signIn {
+                    try await GatewayAuth.shared.signInWithEmail(email: enteredEmail, password: password)
+                } else {
+                    try await GatewayAuth.shared.registerWithEmail(email: enteredEmail, password: password)
+                }
+                UserDefaults.standard.set(enteredEmail, forKey: "account_email")
+                isSigningIn = false
+                isLoggedIn = true
+                onContinue()
+            } catch {
+                let context: EmailAuthContext = authMode == .signIn ? .login : .register
+                signInError = (error as? GatewayError)?.emailAuthMessage(context) ?? "Sign-in failed. Try again."
+                isSigningIn = false
+            }
         }
     }
 

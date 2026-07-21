@@ -43,6 +43,10 @@ public actor GatewayAuth {
     /// instead of racing rotations (a lost rotation kills the session).
     private var refreshTask: Task<String, Error>?
 
+    /// This app's bundle id, sent on every unauthenticated email/password auth
+    /// call so the gateway can scope accounts per-app.
+    public static var bundleId: String { Bundle.main.bundleIdentifier ?? "com.tushar.fitnessapp" }
+
     private init() {
         if let access = KeychainStore.string(for: Key.access),
            let refresh = KeychainStore.string(for: Key.refresh),
@@ -133,6 +137,58 @@ public actor GatewayAuth {
                                            body: ["identityToken": appleIdentityToken])
         store(auth)
         await Self.postSessionEstablished()
+    }
+
+    // MARK: - Email + password auth
+
+    /// Register a new email/password account. Per the gateway contract this
+    /// auto-logs-in on success — same AuthResponse shape as every other auth
+    /// path — so this mirrors `signIn(appleIdentityToken:)` exactly.
+    public func registerWithEmail(email: String, password: String) async throws {
+        let auth = try await Self.postAuth(path: "v1/auth/register",
+                                           body: ["email": email, "password": password, "bundleId": Self.bundleId])
+        store(auth)
+        await Self.postSessionEstablished()
+    }
+
+    /// Sign in with an existing email/password account.
+    public func signInWithEmail(email: String, password: String) async throws {
+        let auth = try await Self.postAuth(path: "v1/auth/login",
+                                           body: ["email": email, "password": password, "bundleId": Self.bundleId])
+        store(auth)
+        await Self.postSessionEstablished()
+    }
+
+    /// Complete a password reset with the emailed code + a new password. The
+    /// gateway auto-logs-in on success — same AuthResponse shape.
+    public func resetPassword(email: String, code: String, newPassword: String) async throws {
+        let auth = try await Self.postAuth(path: "v1/auth/reset-password",
+                                           body: ["email": email, "code": code,
+                                                  "newPassword": newPassword, "bundleId": Self.bundleId])
+        store(auth)
+        await Self.postSessionEstablished()
+    }
+
+    /// Request a password-reset code by email. Per the gateway contract this
+    /// ALWAYS returns `{ok:true}` — whether or not the email is registered —
+    /// so the caller should always advance to the "check your email" step
+    /// rather than branching on the result.
+    public func requestPasswordReset(email: String) async throws {
+        try await Self.postExpectingOK(path: "v1/auth/request-password-reset",
+                                       body: ["email": email, "bundleId": Self.bundleId])
+    }
+
+    /// Ask the gateway to email a verification code to the signed-in user's
+    /// address. Authenticated — routed through `GatewayTransport` so bearer
+    /// injection and the one-shot 401-refresh-retry happen automatically.
+    /// The response body carries nothing the caller needs.
+    public func sendEmailVerification() async throws {
+        _ = try await GatewayTransport.postJSON(path: "v1/me/email/send-code", body: [:])
+    }
+
+    /// Verify the signed-in user's email with the code they were sent.
+    public func verifyEmail(code: String) async throws {
+        _ = try await GatewayTransport.postJSON(path: "v1/me/email/verify", body: ["code": code])
     }
 
     /// AI features that failed while signed out (weekly narrative, prediction
@@ -257,6 +313,36 @@ public actor GatewayAuth {
             return try JSONDecoder().decode(AuthResponse.self, from: data)
         } catch {
             throw GatewayError.http(http.statusCode, "Could not decode auth response.")
+        }
+    }
+
+    /// POST to an UNauthenticated endpoint that returns no `AuthResponse`
+    /// body (e.g. the password-reset request, which is always `{ok:true}`)
+    /// — mirrors `postAuth`'s request/error handling but decodes nothing,
+    /// just validates a 2xx status. Modeled on how `performDeleteAccount`
+    /// hand-rolls a non-AuthResponse request.
+    private static func postExpectingOK(path: String, body: [String: Any]) async throws {
+        guard let url = GatewayConfig.url(for: path) else {
+            throw GatewayError.notConfigured
+        }
+        var request = URLRequest(url: url, timeoutInterval: 15)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            throw GatewayError.network(underlying: error)
+        }
+        guard let http = response as? HTTPURLResponse else {
+            throw GatewayError.http(0, "No HTTP response from gateway.")
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            if http.statusCode == 401 { throw GatewayError.unauthorized }
+            throw GatewayError(status: http.statusCode, data: data)
         }
     }
 }

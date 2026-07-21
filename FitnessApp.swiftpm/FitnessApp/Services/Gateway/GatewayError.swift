@@ -17,6 +17,9 @@ public enum GatewayError: LocalizedError {
     case quotaExceeded(retryAfterMs: Int?)
     /// The account isn't allowed this capability (403).
     case forbiddenCapability
+    /// Duplicate-email register attempt (409, code "conflict") — an account
+    /// with that email already exists.
+    case conflict
     /// The gateway itself is missing its GCP credentials (503) — a server
     /// deployment gap, not a client bug.
     case upstreamNotConfigured
@@ -44,6 +47,7 @@ public enum GatewayError: LocalizedError {
 
         switch code {
         case "unauthorized":             self = .unauthorized
+        case "conflict":                 self = .conflict
         case "forbidden_capability":     self = .forbiddenCapability
         case "rate_limited":             self = .rateLimited(retryAfterMs: retryAfterMs)
         case "quota_exceeded":           self = .quotaExceeded(retryAfterMs: retryAfterMs)
@@ -73,6 +77,8 @@ public enum GatewayError: LocalizedError {
                 return "You've reached your AI usage limit — resets in ~\(s)s."
             }
             return "You've reached your AI usage limit for now. Try again later."
+        case .conflict:
+            return "An account with this email already exists — try signing in."
         case .forbiddenCapability:
             return "Your account isn't enabled for this AI feature."
         case .upstreamNotConfigured:
@@ -96,5 +102,40 @@ public enum GatewayError: LocalizedError {
     private static func seconds(_ ms: Int?) -> Int? {
         guard let ms, ms > 0 else { return nil }
         return max(1, Int((Double(ms) / 1000).rounded(.up)))
+    }
+}
+
+/// Which email/password auth call site produced a `GatewayError` — lets
+/// `emailAuthMessage(_:)` below give `.unauthorized` a message that matches
+/// what actually happened, instead of the generic `userMessage` ("Your Astra
+/// session expired — please sign in again."), which is wrong on all three:
+/// none of these flows involve an existing session dying mid-use.
+public enum EmailAuthContext {
+    case login
+    case register
+    case resetCode
+}
+
+public extension GatewayError {
+    /// Context-appropriate user-facing message for the three email/password
+    /// auth call sites (LoginView.emailAuthTapped, onboarding SignInScreen's
+    /// emailAuthTapped, ForgotPasswordView.resetPassword). Every case besides
+    /// `.unauthorized` keeps its normal `userMessage` (a duplicate-email
+    /// register conflict already gets the right copy from `.conflict`
+    /// itself); only `.unauthorized` needs an override here.
+    func emailAuthMessage(_ context: EmailAuthContext) -> String {
+        guard case .unauthorized = self else { return userMessage }
+        switch context {
+        case .login:
+            return "Incorrect email or password."
+        case .register:
+            // The gateway signals a duplicate-email register with 409
+            // ("conflict"), never 401 — this branch shouldn't be reachable,
+            // but falls back to the generic message rather than claiming a
+            // wrong password on an account that was never created.
+            return userMessage
+        case .resetCode:
+            return "That code is invalid or expired."
+        }
     }
 }

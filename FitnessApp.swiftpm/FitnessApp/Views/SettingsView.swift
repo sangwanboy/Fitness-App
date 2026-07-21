@@ -49,6 +49,21 @@ public struct SettingsView: View {
     @State private var gatewayTest: GatewayTestState = .idle
     @State private var showFeedbackSheet = false
 
+    // Email verification (gateway v1/me/email/*). nil = unknown (fetch
+    // failed, or endpoint not deployed yet) — the row only shows on a
+    // confirmed `false`, never on a guess.
+    @State private var emailVerified: Bool?
+    // Gateway's GET /v1/me `authMethod` field: "apple" | "password" | "both".
+    // nil = unknown (fetch failed, or the field isn't deployed yet). Apple-only
+    // accounts also come back with emailVerified == false (no stored
+    // email/password to verify), so the "Verify email" row additionally
+    // requires a confirmed non-Apple auth method — same nil-gating discipline
+    // as emailVerified, never shown on a guess.
+    @State private var authMethod: String?
+    @State private var isSendingVerificationCode = false
+    @State private var sendCodeError: String?
+    @State private var showVerifyEmailSheet = false
+
     enum GatewayTestState: Equatable {
         case idle
         case testing
@@ -160,11 +175,30 @@ public struct SettingsView: View {
         } message: {
             Text(deleteAccountError ?? "")
         }
+        .alert("Couldn't send code", isPresented: Binding(
+            get: { sendCodeError != nil },
+            set: { if !$0 { sendCodeError = nil } }
+        )) {
+            Button("OK") { sendCodeError = nil }
+        } message: {
+            Text(sendCodeError ?? "")
+        }
+        .sheet(isPresented: $showVerifyEmailSheet) {
+            VerifyEmailCodeSheet(onVerified: { emailVerified = true })
+        }
         .onAppear {
             glassTintColorHex = "#FFFFFF"
         }
         .task {
             gatewaySessionUserId = await GatewayAuth.shared.currentUserId
+            // Honest: only set emailVerified/authMethod when the fetch
+            // actually succeeds and the keys are present — otherwise leave
+            // them nil so the row stays hidden instead of claiming a false
+            // state.
+            if let profile = await GatewayProfileSync.fetchMe() {
+                emailVerified = profile["emailVerified"] as? Bool
+                authMethod = profile["authMethod"] as? String
+            }
         }
     }
 
@@ -340,6 +374,10 @@ public struct SettingsView: View {
                            action: { showEditProfile = true })
             ProfileListDivider()
             emailRow
+            if emailVerified == false, let authMethod, authMethod != "apple" {
+                ProfileListDivider()
+                verifyEmailRow
+            }
             ProfileListDivider()
             marketingOptInRow
             ProfileListDivider()
@@ -409,6 +447,60 @@ public struct SettingsView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
+    }
+
+    /// Only rendered when `emailVerified == false` AND `authMethod` is
+    /// confirmed non-Apple (both read from `/v1/me`, never a guess) — Apple-only
+    /// accounts also report `emailVerified == false` (no stored email/password
+    /// to verify) but can't complete this flow, so they must not see the row.
+    /// Sends the code, then presents `VerifyEmailCodeSheet`; the row
+    /// disappears once verification succeeds.
+    private var verifyEmailRow: some View {
+        Button(action: {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            Task { await startEmailVerification() }
+        }) {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.orange.opacity(0.18))
+                        .frame(width: 30, height: 30)
+                    Image(systemName: "envelope.badge.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.orange)
+                }
+                Text("Verify email")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundColor(isDark ? .white : .black)
+                Spacer()
+                if isSendingVerificationCode {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(isDark ? .white.opacity(0.3) : .black.opacity(0.3))
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+        }
+        .buttonStyle(PlainButtonStyle())
+        .disabled(isSendingVerificationCode)
+    }
+
+    /// POST /v1/me/email/send-code, then present the code-entry sheet.
+    /// On failure (endpoint not deployed, network error, etc.) shows an
+    /// honest alert and leaves the row in place — never a silent no-op.
+    private func startEmailVerification() async {
+        isSendingVerificationCode = true
+        sendCodeError = nil
+        do {
+            try await GatewayAuth.shared.sendEmailVerification()
+            showVerifyEmailSheet = true
+        } catch {
+            sendCodeError = (error as? GatewayError)?.userMessage ?? error.localizedDescription
+        }
+        isSendingVerificationCode = false
     }
 
     private var marketingOptInRow: some View {
@@ -972,5 +1064,105 @@ struct FeedbackSheet: View {
         } catch {
             sendError = (error as? GatewayError)?.userMessage ?? error.localizedDescription
         }
+    }
+}
+
+// MARK: - Email verification sheet (POST /v1/me/email/verify)
+
+/// Small code-entry sheet presented after `SettingsView.startEmailVerification()`
+/// successfully requests a code. `onVerified` flips the caller's local
+/// `emailVerified` state so the "Verify email" row disappears immediately —
+/// no extra round trip to `/v1/me` needed.
+struct VerifyEmailCodeSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @AppStorage("theme_mode") private var themeMode = "dark"
+    @AppStorage("accent_color") private var accentColorHex = "#30D158"
+
+    let onVerified: () -> Void
+
+    @State private var code = ""
+    @State private var isVerifying = false
+    @State private var errorMessage: String?
+
+    private var isDark: Bool { themeMode == "dark" }
+    private var accentColor: Color { ThemeHelper.color(from: accentColorHex) }
+    private var canVerify: Bool { code.trimmingCharacters(in: .whitespaces).count == 6 }
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Enter the 6-digit code we emailed you to verify your address.")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(isDark ? .white.opacity(0.7) : .black.opacity(0.7))
+
+                TextField("6-digit code", text: $code)
+                    .keyboardType(.numberPad)
+                    .foregroundColor(isDark ? .white : .black)
+                    .tint(accentColor)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                    .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 14))
+                    .onChange(of: code) { _, newValue in
+                        let digitsOnly = String(newValue.filter(\.isNumber).prefix(6))
+                        if digitsOnly != newValue { code = digitsOnly }
+                    }
+
+                if let errorMessage {
+                    Text(errorMessage)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Button(action: { Task { await verify() } }) {
+                    HStack(spacing: 8) {
+                        if isVerifying {
+                            ProgressView().controlSize(.small).tint(.white)
+                        }
+                        Text("Verify").fontWeight(.semibold)
+                    }
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 50)
+                    .background(accentColor, in: .rect(cornerRadius: 14))
+                }
+                .buttonStyle(PlainButtonStyle())
+                .disabled(!canVerify || isVerifying)
+                .opacity((!canVerify || isVerifying) ? 0.5 : 1)
+
+                Spacer()
+            }
+            .padding(20)
+            .background(AdaptiveBackground())
+            .navigationTitle("Verify Email")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func verify() async {
+        isVerifying = true
+        errorMessage = nil
+        do {
+            try await GatewayAuth.shared.verifyEmail(code: code)
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            onVerified()
+            dismiss()
+        } catch {
+            // A wrong/expired code comes back as 400 ("bad_request") — the
+            // generic .badRequest userMessage ("The AI server rejected the
+            // request...") reads like a client bug, not what actually
+            // happened, so give this specific call site an honest override.
+            if case .badRequest = error as? GatewayError {
+                errorMessage = "That code is invalid or expired."
+            } else {
+                errorMessage = (error as? GatewayError)?.userMessage ?? "Couldn't verify email. Try again."
+            }
+        }
+        isVerifying = false
     }
 }

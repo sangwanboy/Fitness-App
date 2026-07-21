@@ -3850,3 +3850,47 @@ Astra profile (this fix stops them re-forming but doesn't retroactively purge ex
 Deployed + launched: **databaseSequenceNumber: 7092**.
 
 Latest deployed sequence: **7092**.
+
+---
+
+## Session 72 — 2026-07-21 (WP-E: email + password auth alongside Sign in with Apple)
+
+Orchestrated under the refined model (main loop = Opus, delegate all work): Fable design → Sonnet
+implement (gateway + app) → Opus verify → Sonnet fixes → Opus delta-verify → ship.
+
+### Gateway (~/Multi App Ai Backend — ALREADY LIVE on origin/main)
+Commits `7428528` (impl, ADR-010) + `7117f76` (security-review fixes G1/A2/G2). Pushed to prod by
+a concurrent process before the planned Opus gate; verified retroactively — Opus verdict
+SOUND-AS-LIVE, no hotfix. Adds POST /v1/auth/{register,login,request-password-reset,reset-password}
++ POST /v1/me/email/{send-code,verify} + emailVerified/authMethod on GET /v1/me. scrypt
+(N=32768,r=8,p=1, maxmem 64MB) password hashing; 6-digit codes stored sha256-hashed, 15-min TTL,
+5-attempt cap, single-use; login timing-equalized (always one scrypt verify) → no user enumeration;
+reset revokes all refresh families before minting; provider-agnostic EmailSender with Resend adapter
++ stub fallback. G1 fix: request-password-reset is now timing/shape-identical for existing vs
+non-existing accounts (code+email fire-and-forget) + IP-keyed limiter. A2: verify returns 400 (not
+401) so the app's token-refresh can't double-consume attempts. Tests 81→109 (all genuine, Opus-checked).
+appleSub now optional. **NOT YET USABLE end-to-end for email: no RESEND_API_KEY/EMAIL_FROM set in any
+env — verification & password-reset emails don't deliver until the user adds the Resend key + domain DNS.**
+
+### App (this repo — deployed seq 7100)
+NEW Views/ForgotPasswordView.swift (2-step reset: request code → new password, no existence leak).
+GatewayAuth: registerWithEmail/signInWithEmail/resetPassword/requestPasswordReset (postExpectingOK
+helper)/sendEmailVerification/verifyEmail, reusing store(auth)+postSessionEstablished. Email/password
+block (segmented Sign In / Create Account, SecureField, glass) on LoginView + onboarding SignInScreen;
+"Forgot password?" sheet. SettingsView: verify-email row (gated on emailVerified==false && authMethod
+!= apple), VerifyEmailCodeSheet. GatewayError: new .conflict case + emailAuthMessage(context) →
+"Incorrect email or password." / conflict copy / "That code is invalid or expired." (Opus A1 fix).
+No password ever logged; SecureField throughout. Compile gate green on the NEW sim device
+(6C6A4B8D-D292-4B89-9E01-0266C4AE1A71 — old FF8921FE deleted in a disk cleanup).
+
+### Ops
+Disk hit ~99% mid-session; freed via subagents: deleted 21 simulator device instances (~3GB+, recreated
+one gate sim), pruned build logs. No Time Machine local snapshots existed. iOS device backup size
+unknown (Full Disk Access blocks the terminal) — user to check/decide, not deleted. ~15GB free at ship.
+
+USER ACTION NEEDED: (1) add RESEND_API_KEY + EMAIL_FROM to the gateway + verify sending-domain DNS to
+make email verification/reset actually deliver. (2) Prior: still purge the 2 night-shift facts.
+
+Deployed + launched: **databaseSequenceNumber: 7100**.
+
+Latest deployed sequence: **7100**.

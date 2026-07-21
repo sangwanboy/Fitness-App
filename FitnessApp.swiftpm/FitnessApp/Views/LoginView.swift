@@ -1,6 +1,14 @@
 import SwiftUI
 import AuthenticationServices
 
+/// Shared by LoginView and the onboarding SignInScreen (which mirrors this
+/// block) to switch the email/password form between the two gateway
+/// endpoints (`v1/auth/login` vs `v1/auth/register`).
+enum AuthMode {
+    case signIn
+    case register
+}
+
 public struct LoginView: View {
     @AppStorage("is_logged_in") private var isLoggedIn = false
     @AppStorage("accent_color") private var accentColorHex = "#30D158"
@@ -17,6 +25,12 @@ public struct LoginView: View {
     /// Retained for the duration of the SIWA flow (release builds).
     @State private var appleSignIn = AppleSignInCoordinator()
 
+    // Email/password sign-in state
+    @State private var authMode: AuthMode = .signIn
+    @State private var email = ""
+    @State private var password = ""
+    @State private var showForgotPassword = false
+
     // Legal document sheets (guideline 5.1.1(i) — visible Privacy Policy / Terms links).
     @State private var showPrivacyPolicy = false
     @State private var showTerms = false
@@ -25,6 +39,16 @@ public struct LoginView: View {
 
     private var isDark: Bool { themeMode == "dark" }
     private var accentColor: Color { ThemeHelper.color(from: accentColorHex) }
+
+    /// Basic client-side shape check — real validation happens server-side;
+    /// this just keeps the button disabled for obviously-wrong input.
+    private var emailLooksValid: Bool {
+        email.contains("@") && email.contains(".")
+    }
+    private var isEmailAuthValid: Bool {
+        guard emailLooksValid else { return false }
+        return authMode == .register ? password.count >= 8 : !password.isEmpty
+    }
 
     public var body: some View {
         ZStack {
@@ -142,6 +166,79 @@ public struct LoginView: View {
                     .disabled(isSigningIn)
                     .padding(.horizontal, 24)
 
+                    // "or" divider into the email/password alternative.
+                    HStack(spacing: 10) {
+                        Rectangle().fill(isDark ? Color.white.opacity(0.15) : Color.black.opacity(0.12))
+                            .frame(height: 1)
+                        Text("or")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(isDark ? .white.opacity(0.4) : .black.opacity(0.4))
+                        Rectangle().fill(isDark ? Color.white.opacity(0.15) : Color.black.opacity(0.12))
+                            .frame(height: 1)
+                    }
+                    .padding(.horizontal, 24)
+
+                    // Email/password — the alternative to Apple for anyone
+                    // who'd rather not use Sign in with Apple.
+                    VStack(spacing: 10) {
+                        Picker("", selection: $authMode) {
+                            Text("Sign In").tag(AuthMode.signIn)
+                            Text("Create Account").tag(AuthMode.register)
+                        }
+                        .pickerStyle(.segmented)
+                        .onChange(of: authMode) { _, _ in signInError = nil }
+
+                        TextField("Email", text: $email)
+                            .textContentType(.emailAddress)
+                            .keyboardType(.emailAddress)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .foregroundColor(isDark ? .white : .black)
+                            .tint(accentColor)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 12)
+                            .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 14))
+
+                        SecureField("Password", text: $password)
+                            .textContentType(authMode == .register ? .newPassword : .password)
+                            .foregroundColor(isDark ? .white : .black)
+                            .tint(accentColor)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 12)
+                            .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 14))
+
+                        Button(action: emailAuthTapped) {
+                            HStack(spacing: 8) {
+                                if isSigningIn {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                        .tint(.white)
+                                }
+                                Text(authMode == .signIn ? "Sign In" : "Create Account")
+                                    .fontWeight(.semibold)
+                            }
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 50)
+                            .background(accentColor, in: .rect(cornerRadius: 14))
+                        }
+                        .disabled(isSigningIn || !isEmailAuthValid)
+                        .opacity(isEmailAuthValid ? 1 : 0.5)
+
+                        if authMode == .signIn {
+                            Button(action: {
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                showForgotPassword = true
+                            }) {
+                                Text("Forgot password?")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundColor(accentColor)
+                            }
+                            .disabled(isSigningIn)
+                        }
+                    }
+                    .padding(.horizontal, 24)
+
                     // Compact marketing consent row — explicit opt-in only,
                     // never defaulted on.
                     Toggle(isOn: $marketingOptIn) {
@@ -160,7 +257,7 @@ public struct LoginView: View {
 
                     // Sign-up copy (guideline 5.1.1(i)) — explains what the
                     // account is for and the never-stored-server-side promise.
-                    Text("Signing in creates your AI coach account through Apple — no email required. Your chat messages and health context are sent to our AI gateway only to generate that reply, and are never stored on our servers.")
+                    Text("Create your AI coach account with Apple, or with your email and a password. Your chat messages and health context are sent to our AI gateway only to generate that reply, and are never stored on our servers.")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(isDark ? .white.opacity(0.45) : .black.opacity(0.45))
                         .multilineTextAlignment(.center)
@@ -236,6 +333,39 @@ public struct LoginView: View {
         }
         .sheet(isPresented: $showTerms) {
             LegalDocumentSheet(title: "Terms of Service", text: LegalTexts.terms)
+        }
+        .sheet(isPresented: $showForgotPassword) {
+            ForgotPasswordView()
+        }
+    }
+
+    /// Email/password sign-in or account creation against the Atlas AI
+    /// Gateway. Same success/failure shape as `signInTapped` below — an
+    /// honest inline error on failure, never a crash, never a logged
+    /// credential.
+    private func emailAuthTapped() {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        signInError = nil
+        isSigningIn = true
+        let enteredEmail = email
+        Task {
+            do {
+                if authMode == .signIn {
+                    try await GatewayAuth.shared.signInWithEmail(email: enteredEmail, password: password)
+                } else {
+                    try await GatewayAuth.shared.registerWithEmail(email: enteredEmail, password: password)
+                }
+                // We know this email with certainty (unlike Apple's private
+                // relay, which only discloses one on the first ever
+                // authorization) — keep Settings' Email row honest right away
+                // rather than waiting on the profile-sync round trip.
+                UserDefaults.standard.set(enteredEmail, forKey: "account_email")
+                withAnimation { isLoggedIn = true }
+            } catch {
+                let context: EmailAuthContext = authMode == .signIn ? .login : .register
+                signInError = (error as? GatewayError)?.emailAuthMessage(context) ?? "Sign-in failed. Try again."
+            }
+            isSigningIn = false
         }
     }
 

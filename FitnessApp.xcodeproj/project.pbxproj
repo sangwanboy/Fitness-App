@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		5A12450E08DE441AA9F1DF9A /* ForgotPasswordView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FA60E8530744336A1C35B9E /* ForgotPasswordView.swift */; };
 		FEC0227DE9C24A89ABAF9657 /* GatewayProfileSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = C54D46CA60814B3D99640617 /* GatewayProfileSync.swift */; };
 		7D8F4C3F607C41AFA14B892D /* MealIdeasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DA3893D939348A996EFEE4B /* MealIdeasView.swift */; };
 		B2E6EC5C45294044879883AA /* MealIdeasEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C2A112492E24AB294E73CC0 /* MealIdeasEngine.swift */; };
@@ -118,6 +119,7 @@
 		/* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		4FA60E8530744336A1C35B9E /* ForgotPasswordView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForgotPasswordView.swift; sourceTree = "<group>"; };
 		C54D46CA60814B3D99640617 /* GatewayProfileSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GatewayProfileSync.swift; sourceTree = "<group>"; };
 		9DA3893D939348A996EFEE4B /* MealIdeasView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MealIdeasView.swift; sourceTree = "<group>"; };
 		3C2A112492E24AB294E73CC0 /* MealIdeasEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MealIdeasEngine.swift; sourceTree = "<group>"; };
@@ -296,6 +298,7 @@
 				8A99EEA92948AE3D64A88C06 /* Onboarding */,
 				3E7E4F03E437415AB0BFCF94 /* LegalDocumentSheet.swift */,
 				D528D9A6A006431F93DB068E /* Meals */,
+				4FA60E8530744336A1C35B9E /* ForgotPasswordView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -537,6 +540,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5A12450E08DE441AA9F1DF9A /* ForgotPasswordView.swift in Sources */,
 				FEC0227DE9C24A89ABAF9657 /* GatewayProfileSync.swift in Sources */,
 				7D8F4C3F607C41AFA14B892D /* MealIdeasView.swift in Sources */,
 				B2E6EC5C45294044879883AA /* MealIdeasEngine.swift in Sources */,
