@@ -327,6 +327,14 @@ final class FoodCameraModel: NSObject, ObservableObject {
         queue.async { [weak self] in
             if needsConfigure {
                 session.beginConfiguration()
+                // CRITICAL: photo-only capture must not touch the app's
+                // shared AVAudioSession. The default (true) makes startRunning
+                // reconfigure it — which deadlocks against SnoreDetector's
+                // live .record session whenever sleep tracking is active
+                // (root cause of the all-day "camera didn't start" on device:
+                // the sleep session resumes on every launch, so every camera
+                // start collided with it).
+                session.automaticallyConfiguresApplicationAudioSession = false
                 session.sessionPreset = .photo
                 guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
                       let input = try? AVCaptureDeviceInput(device: device),
@@ -357,14 +365,22 @@ final class FoodCameraModel: NSObject, ObservableObject {
                 session.commitConfiguration()
             }
             if !session.isRunning { session.startRunning() }
+            // startRunning can also RETURN with the session not running
+            // (silent failure) — don't report .ready on faith.
+            let actuallyRunning = session.isRunning
             DispatchQueue.main.async { [weak self] in
                 // A hung attempt may complete long after the watchdog failed
                 // the UI — or after a retry already rebuilt the session pair
                 // (which resets `poisoned`). The attempt token is the only
                 // reliable identity check: stale attempts touch nothing.
                 guard let self, attempt == self.attemptID, !self.poisoned else { return }
-                self.configured = true
                 self.watchdog?.cancel()
+                guard actuallyRunning else {
+                    self.poisoned = true
+                    self.state = .failed("The camera session couldn't start. Close any app using the camera and try again.")
+                    return
+                }
+                self.configured = true
                 if self.sessionObservers.isEmpty { self.observeSession(session) }
                 self.state = .ready
             }

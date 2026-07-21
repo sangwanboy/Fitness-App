@@ -3594,6 +3594,26 @@ Settings → AI Coach → **Replay onboarding** row (non-destructive) for on-dev
 Remaining (user-only): ASC record + agreements, privacy labels (script ready), screenshots
 (large-size set), upload. Estimate: ~1 focused hour of user time to "Submitted".
 
+Deployed + launched: **databaseSequenceNumber: 7028**.
+
+Latest deployed sequence: **7028**.
+
+---
+
+## Session 65 — 2026-07-21 (Camera root cause: shared-audio-session deadlock with sleep tracking)
+
+The watchdog's honest failed-state held (user screenshots: "Camera didn't start" + iOS Privacy
+panel "FitnessApp — Camera, recently"), but retries kept failing all day. Root cause (Fable,
+direct): `AVCaptureSession.automaticallyConfiguresApplicationAudioSession` defaults TRUE — even
+photo-only startRunning reconfigures the app's SHARED AVAudioSession, deadlocking against
+SnoreDetector's live `.record` session whenever sleep tracking is active (the user's sleep
+session resumes each launch — bed icon all day — so every camera start collided). Also explains
+weeks of camera working fine before sleep tracking ran concurrently, and why abandoned hung
+sessions couldn't be stopped (stop queued behind the hang → lingering green indicator).
+Fix: `automaticallyConfiguresApplicationAudioSession = false` (photo capture never touches
+audio), plus honest failure when startRunning returns with `isRunning == false` instead of
+reporting .ready on faith. Session-64 seq typo (7044→7028) corrected in this commit.
+
 Deployed + launched: **databaseSequenceNumber: 7044**.
 
 Latest deployed sequence: **7044**.
