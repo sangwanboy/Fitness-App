@@ -453,6 +453,9 @@ public final class WeeklyReviewEngine: ObservableObject {
 
     // MARK: - Narrative (gateway call)
 
+    private let engineStart = Date()
+    private var launchDelayApplied = false
+
     private func kickoffNarrativeIfNeeded() {
         // Never spend a gateway call on a narrative for a week that doesn't
         // have enough data to review yet — `computeAndCache` already skips
@@ -461,6 +464,19 @@ public final class WeeklyReviewEngine: ObservableObject {
         // other guard against the same insufficient-data week.
         guard insufficientDataDays == nil else { return }
         guard let data, narrative == nil, narrativeState != .loading else { return }
+        // Dodge the cold-launch volley: enrichment ×3 + morning brief fire in
+        // the first seconds after launch and Vertex's per-minute quota 429s
+        // the stragglers (seen live — the narrative lost repeatedly). Hold
+        // the first attempt for 30 s so the volley has drained.
+        if !launchDelayApplied, Date().timeIntervalSince(engineStart) < 30 {
+            launchDelayApplied = true
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(30))
+                self?.kickoffNarrativeIfNeeded()
+            }
+            return
+        }
+        launchDelayApplied = true
         startNarrativeTask(for: data, weekKey: currentWeekKey ?? Self.isoWeekKey(for: Date()))
     }
 
@@ -485,6 +501,7 @@ public final class WeeklyReviewEngine: ObservableObject {
                     self.narrativeState = .ready
                     self.lastNarrativeFailureAt = nil
                     self.narrativeAutoRetryScheduled = false
+                    self.narrativeAutoRetryCount = 0
                     self.persistToDisk(weekKey: weekKey, data: data, narrative: result)
                 }
             } catch {
@@ -511,13 +528,24 @@ public final class WeeklyReviewEngine: ObservableObject {
     /// success (or week rollover), so repeated 429s fall back to the normal
     /// backoff + manual retry rather than hammering the gateway.
     private var narrativeAutoRetryScheduled = false
+    /// Seen live: Vertex per-minute quota 429s the launch burst (enrichment ×3
+    /// + morning brief + narrative land within seconds), and the narrative —
+    /// last in the volley — kept losing. One retry re-entered the same burst,
+    /// so allow up to 3, spaced progressively wider so the volley has passed.
+    private var narrativeAutoRetryCount = 0
+    private static let narrativeAutoRetryMax = 3
     private func scheduleNarrativeAutoRetry(afterMs: Int?, for data: WeeklyReviewData, weekKey: String) {
-        guard !narrativeAutoRetryScheduled else { return }
+        guard !narrativeAutoRetryScheduled,
+              narrativeAutoRetryCount < Self.narrativeAutoRetryMax else { return }
         narrativeAutoRetryScheduled = true
-        let delay = max(Double(afterMs ?? 30_000) / 1000.0, 30)
+        narrativeAutoRetryCount += 1
+        // 30s, then 75s, then 150s (or the server's retryAfterMs if longer).
+        let base = 30.0 * pow(2.2, Double(narrativeAutoRetryCount - 1))
+        let delay = max(Double(afterMs ?? 0) / 1000.0, base)
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(delay))
             guard let self, self.currentWeekKey == weekKey, self.narrative == nil else { return }
+            self.narrativeAutoRetryScheduled = false
             self.startNarrativeTask(for: data, weekKey: weekKey, bypassBackoff: true)
         }
     }

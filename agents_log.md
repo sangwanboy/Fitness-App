@@ -3486,3 +3486,18 @@ forecast), morningBrief 07:30, weeklyReview Sun 19:00 (real stat). Conditional k
 absent. Deployed + launched: **databaseSequenceNumber: 6980**.
 
 Latest deployed sequence: **6980**.
+
+---
+
+## Session 62b — 2026-07-21 (Weekly narrative vs Vertex 429 bursts)
+
+Narrative STILL unavailable post-wave. Prod health: upstream429s 3→11 (61 req, 0 gateway errors)
+— the cold-launch volley (enrichment ×3 + morning brief + narrative) trips Vertex's per-minute
+quota and the narrative, last in line, kept losing; the single 30 s auto-retry re-entered the
+next volley. Fix: first narrative attempt deferred 30 s past engine start (volley drains), and
+up to 3 progressive auto-retries (30/75/150 s, or server retryAfterMs). Consider: GCP quota bump
+(user, console) + upstream smoothing in the gateway governor (backend repo).
+
+Deployed + launched: **databaseSequenceNumber: 6988**.
+
+Latest deployed sequence: **6988**.
