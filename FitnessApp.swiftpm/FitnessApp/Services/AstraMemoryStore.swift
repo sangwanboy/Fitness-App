@@ -130,13 +130,24 @@ public final class AstraMemoryStore: ObservableObject {
     public var isEmpty: Bool { facts.isEmpty && profile.isEmpty }
 
     /// Compact text block for injection into the system prompt: non-empty
-    /// profile sections first (always included in full), then facts grouped
-    /// by category (one line per category, semicolon-joined), added
-    /// newest-first until `systemPromptCharBudget` runs out — so budget
-    /// pressure drops the OLDEST memories, not whatever the model just wrote
-    /// this session. When facts get cut, one trailing line notes how many
-    /// were omitted so the model knows its memory isn't fully in view. The
-    /// empty string is returned when there's nothing to say.
+    /// profile sections first (always included in full), then facts — one
+    /// line each, newest-first selected until `systemPromptCharBudget` runs
+    /// out (so budget pressure drops the OLDEST memories, not whatever the
+    /// model just wrote this session), then re-displayed oldest-first so a
+    /// fact's own chronology reads naturally. When facts get cut, one
+    /// trailing line notes how many were omitted so the model knows its
+    /// memory isn't fully in view. The empty string is returned when there's
+    /// nothing to say.
+    ///
+    /// Each fact renders with the date it was noted (`- [schedule, noted 14
+    /// Jul 25] Works night shifts…`) — a real incident had Astra treating a
+    /// week-old "on nights until Thursday" fact as still current days later.
+    /// Surfacing the date lets the GROUNDING & MEMORY HYGIENE system-prompt
+    /// rule tell the model to re-confirm schedule-type facts older than 7
+    /// days instead of silently trusting them forever. `createdAt` has been a
+    /// required (non-optional) field on `MemoryFact` since the type was
+    /// introduced, so every stored fact — old or new — always has one; there
+    /// is no legacy "undated" shape to fall back on.
     public func renderForSystemPrompt() -> String {
         var profileLines: [String] = []
         for section in AstraUserProfile.Section.allCases {
@@ -146,23 +157,38 @@ public final class AstraMemoryStore: ObservableObject {
         }
         let profileBlock = profileLines.isEmpty ? "" : "PROFILE\n" + profileLines.joined(separator: "\n")
 
+        // "d MMM yy" (not just "d MMM") so a fact's age is unambiguous across
+        // a year boundary — the GROUNDING rule asks the model to judge
+        // "older than 7 days" from this date, which breaks if two Julys look
+        // identical. Derived purely from the fact's own fixed `createdAt`
+        // (never from "today"), so re-rendering the same fact is always
+        // byte-identical turn to turn — this block stays in the cacheable
+        // STATIC run (see `buildSystemInstruction`'s STATIC/LIVE split);
+        // only a change to the facts themselves (remember_fact/forget_fact)
+        // should ever change these bytes.
+        let notedFormatter = DateFormatter()
+        // Fixed POSIX locale so the month/year render identically regardless of
+        // device language — keeps the STATIC block byte-stable everywhere.
+        notedFormatter.locale = Locale(identifier: "en_US_POSIX")
+        notedFormatter.dateFormat = "d MMM yy"
+
         let newestFirst = facts.sorted { $0.createdAt > $1.createdAt }
         var remainingBudget = Self.systemPromptCharBudget - profileBlock.count
-        var includedByCategory: [MemoryFact.Category: [String]] = [:]
+        var included: [MemoryFact] = []
         var omittedCount = 0
         for fact in newestFirst {
-            let cost = fact.text.count + 2 // rough "; "-separator overhead
+            let cost = fact.text.count + 27 // rough "[category, noted D Mon YY] " prefix overhead
             guard remainingBudget - cost > 0 else { omittedCount += 1; continue }
-            includedByCategory[fact.category, default: []].append(fact.text)
+            included.append(fact)
             remainingBudget -= cost
         }
 
         var factLines: [String] = []
-        for category in MemoryFact.Category.allCases {
-            guard let texts = includedByCategory[category], !texts.isEmpty else { continue }
-            // Selection above walked newest-first; restore oldest-first for
-            // display so a category's line still reads in chronological order.
-            factLines.append("- \(category.displayName): " + texts.reversed().joined(separator: "; "))
+        // Selection above walked newest-first; restore oldest-first for
+        // display so memory still reads in chronological order.
+        for fact in included.reversed() {
+            let noted = notedFormatter.string(from: fact.createdAt)
+            factLines.append("- [\(fact.category.rawValue), noted \(noted)] \(fact.text)")
         }
         if omittedCount > 0 {
             factLines.append("(\(omittedCount) older memor\(omittedCount == 1 ? "y" : "ies") omitted for space)")

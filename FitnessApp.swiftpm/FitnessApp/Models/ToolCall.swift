@@ -21,6 +21,16 @@ public enum ToolCall: Codable, Equatable {
     // tap on an Astra-authored widget, not an LLM tool call) — this is the
     // real chat-callable tool so "log 500ml water" works from a conversation.
     case logWater(milliliters: Double, daysAgo: Int)
+    // Logs a sleep session the user reports conversationally ("I slept 1:30
+    // to 9", "napped 2h", "slept from 1:30 to now") to Apple Health as an
+    // `.asleepUnspecified` sample — the tool that didn't exist when a real
+    // incident had Astra confabulate "data gaps" / "check your watch
+    // settings" instead of just writing down what the user said. `end`
+    // defaults to now when the model omits it (the common "slept until now"
+    // phrasing). Confirmation-gated like logWater; plausibility (end > start,
+    // duration, staleness, future end) is validated at execution time in
+    // `ChatViewModel.sleepLogError`, not here.
+    case logSleep(start: Date, end: Date)
     case addReminder(title: String, dueAt: Date?, category: String?)
     case addCalendarEvent(title: String, startsAt: Date, endsAt: Date, notes: String?)
     case showMetricChart(metric: String, days: Int)
@@ -169,7 +179,7 @@ public enum ToolCall: Codable, Equatable {
 
     public var needsConfirmation: Bool {
         switch self {
-        case .logFood, .logWater, .addReminder, .addCalendarEvent,
+        case .logFood, .logWater, .logSleep, .addReminder, .addCalendarEvent,
              .updateReminder, .updateCalendarEvent,
              .deleteReminder, .deleteCalendarEvent,
              .updateFoodLog, .deleteFoodLog,
@@ -209,6 +219,7 @@ public enum ToolCall: Codable, Equatable {
         switch self {
         case .logFood: return "log_food"
         case .logWater: return "log_water"
+        case .logSleep: return "log_sleep"
         case .addReminder: return "add_reminder"
         case .addCalendarEvent: return "add_calendar_event"
         case .showMetricChart: return "show_metric_chart"
@@ -272,6 +283,14 @@ public enum ToolCall: Codable, Equatable {
             guard let ml = doubleFrom(args["amount_ml"]) else { return nil }
             let rawDaysAgo = Int(doubleFrom(args["days_ago"]) ?? 0)
             return .logWater(milliliters: ml, daysAgo: max(0, min(rawDaysAgo, 7)))
+        case "log_sleep":
+            // Same ISO8601 parsing convention as add_reminder's due_at below.
+            // `end` omitted (or unparseable) defaults to now — the common
+            // "slept from 1:30 to now" phrasing.
+            guard let startStr = args["start"] as? String,
+                  let start = parseISO8601(startStr) else { return nil }
+            let end = (args["end"] as? String).flatMap { parseISO8601($0) } ?? Date()
+            return .logSleep(start: start, end: end)
         case "add_reminder":
             guard let title = args["title"] as? String else { return nil }
             let due = (args["due_at"] as? String).flatMap { parseISO8601($0) }
@@ -500,6 +519,8 @@ public enum ToolCall: Codable, Equatable {
             return d
         case .logWater(let ml, let daysAgo):
             return ["amount_ml": ml, "days_ago": daysAgo]
+        case .logSleep(let start, let end):
+            return ["start": iso.string(from: start), "end": iso.string(from: end)]
         case .addReminder(let title, let due, let cat):
             var d: [String: Any] = ["title": title]
             if let due { d["due_at"] = iso.string(from: due) }

@@ -979,6 +979,42 @@ public final class HealthKitManager: ObservableObject {
         return "Health access for \(label) is turned off. Enable it in Settings → Health → Data Access & Devices → Fitness Guru → \(label)."
     }
 
+    /// Writes a sleep session the user reported conversationally ("I slept
+    /// 1:30 to 9") as an `.asleepUnspecified` category sample — the tool that
+    /// didn't exist when a real incident had Astra confabulate excuses for
+    /// missing sleep data instead of just logging what the user said.
+    /// Distinct from `logMetricValueDetailed(.sleep:)` (duration-only, backs
+    /// the manual-logging UI, always writes `.asleep`) and from
+    /// `SleepSessionManager`'s own on-device-tracked writes (motion-derived
+    /// `.inBed`/`.asleepDeep`/etc., a richer multi-sample session) — this is
+    /// the single-sample path for a plain user-reported range. Astra's
+    /// `log_sleep` tool calls this only after the user confirms; range
+    /// plausibility (end > start, duration, staleness) is validated by the
+    /// caller (`ChatViewModel.sleepLogError`) before this ever runs. Sleep
+    /// write access is already requested in `requestAuthorization` above
+    /// (shared with `SleepSessionManager`), so no separate authorization
+    /// prompt is needed here.
+    public func logSleep(start: Date, end: Date) async -> HealthKitWriteOutcome {
+        guard HKHealthStore.isHealthDataAvailable() else {
+            return .failure(reason: "HealthKit isn't available on this device.")
+        }
+        guard let sampleType = HKCategoryType.categoryType(forIdentifier: .sleepAnalysis) else {
+            return .failure(reason: "Sleep isn't a supported HealthKit type on this device.")
+        }
+        if let denied = writeDeniedReason(for: sampleType, label: "Sleep") {
+            return .failure(reason: denied)
+        }
+        let sample = HKCategorySample(type: sampleType, value: HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue, start: start, end: end)
+        do {
+            try await healthStore.save(sample)
+            await fetchTodayData()
+            return .success
+        } catch {
+            print("Failed to save sleep sample: \(error.localizedDescription)")
+            return .failure(reason: error.localizedDescription)
+        }
+    }
+
     /// Write a single body-mass sample (used by EditProfileSheet).
     public func logBodyMass(kilograms: Double) async -> Bool {
         guard kilograms > 0, let t = HKQuantityType.quantityType(forIdentifier: .bodyMass) else { return false }

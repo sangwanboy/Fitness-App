@@ -100,6 +100,15 @@ struct ToolCallCard: View {
             WaterToolCard(milliliters: milliliters, daysAgo: daysAgo,
                           status: status, accentColor: accentColor, failureDetail: writeErrorDetail,
                           onConfirm: onConfirm, onCancel: onCancel)
+        case .logSleep(let start, let end):
+            MutationConfirmCard(icon: "bed.double.fill", color: .indigo,
+                                title: "Log sleep",
+                                summary: sleepLogSummary(start: start, end: end),
+                                detail: sleepLogDetail(start: start, end: end),
+                                confirmLabel: "Log sleep",
+                                status: status, accentColor: .indigo,
+                                failureDetail: writeErrorDetail,
+                                onConfirm: onConfirm, onCancel: onCancel)
         case .addReminder(let title, let due, let category):
             ReminderToolCard(title: title, dueAt: due, category: category,
                              status: status, accentColor: accentColor, onConfirm: onConfirm, onCancel: onCancel)
@@ -455,6 +464,29 @@ struct ToolCallCard: View {
         }
         if notes != nil { parts.append("notes") }
         return parts.isEmpty ? "No changes specified." : "Changing: \(parts.joined(separator: ", "))"
+    }
+
+    private static let sleepLogTimeFormatter: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "EEE h:mm a"; return f
+    }()
+
+    /// "Mon 1:30 AM → Mon 9:00 AM" summary line for the log_sleep confirm
+    /// card — mirrors eventUpdateDetail's start/end formatting below.
+    private func sleepLogSummary(start: Date, end: Date) -> String {
+        "\(Self.sleepLogTimeFormatter.string(from: start)) → \(Self.sleepLogTimeFormatter.string(from: end))"
+    }
+
+    /// Duration line under the summary — "7h 30m asleep — logged to Apple
+    /// Health as a sleep session." Honest fallback if the range is somehow
+    /// non-positive by the time this renders (execution-time validation in
+    /// `ChatViewModel.sleepLogError` should already have caught it).
+    private func sleepLogDetail(start: Date, end: Date) -> String {
+        let seconds = end.timeIntervalSince(start)
+        guard seconds > 0 else { return "Logs a sleep session to Apple Health." }
+        let hours = Int(seconds) / 3600
+        let minutes = (Int(seconds) % 3600) / 60
+        let durationStr = hours > 0 ? "\(hours)h \(minutes)m" : "\(minutes)m"
+        return "\(durationStr) asleep — logged to Apple Health as a sleep session."
     }
 
     private func eventUpdateDetail(title: String?, start: Date?, end: Date?, notes: String?) -> String {

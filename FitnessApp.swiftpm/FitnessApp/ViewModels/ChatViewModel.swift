@@ -397,12 +397,21 @@ public final class ChatViewModel: ObservableObject {
 
     /// Per-night payload for `get_sleep_sessions` — the last N tracked
     /// sessions from SleepSessionStore (newest first), each compressed to the
-    /// numbers Astra needs to discuss a concrete night. Honest
-    /// `{available: false}` when nothing has been tracked yet.
+    /// numbers Astra needs to discuss a concrete night. Emptiness is spelled
+    /// out unambiguously — both the "nothing tracked at all" case and the
+    /// "fewer sessions than requested" case carry a plain-language
+    /// instruction NOT to guess a cause (device settings, sync gaps), since a
+    /// real incident had Astra confabulating "check your watch settings"
+    /// instead of saying "nothing recorded, what happened?". Tracking here is
+    /// opt-in (the Home > Sleep Tracker card), so a short count is never
+    /// proof the user didn't sleep — only that a session wasn't tracked.
     private static func sleepSessionsPayload(nights: Int) -> [String: Any] {
         let sessions = SleepSessionStore.shared.sessions
         guard !sessions.isEmpty else {
-            return ["available": false, "reason": "no tracked sessions"]
+            return ["available": false,
+                    "count": 0,
+                    "nights": [[String: Any]](),
+                    "reason": "No sleep sessions recorded in this range. Do not speculate why (device settings, tracking gaps) — ask the user what happened, or point them to the Home > Sleep Tracker card to start tracking."]
         }
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd"
@@ -410,6 +419,7 @@ public final class ChatViewModel: ObservableObject {
         let items: [[String: Any]] = sessions.prefix(nights).map { s in
             [
                 "date": f.string(from: s.startedAt),
+                "recorded": true,
                 "duration_h": hours(s.totalDurationSeconds),
                 "onset": Int(s.onsetLatencySeconds / 60),
                 "restlessness_pct": s.restlessnessScore,
@@ -422,7 +432,11 @@ public final class ChatViewModel: ObservableObject {
                 ]
             ]
         }
-        return ["available": true, "count": items.count, "nights": items]
+        var payload: [String: Any] = ["available": true, "count": items.count, "nights": items]
+        if items.count < nights {
+            payload["note"] = "Only \(items.count) of the last \(nights) requested night(s) have a tracked session — tracking is opt-in (Sleep Tracker card), so the rest are simply untracked, not confirmed no-sleep. Don't say data is 'missing' or guess why; ask the user if it matters to the conversation."
+        }
+        return payload
     }
 
     /// Universal daily-history payload for `get_metric_history`. Clips the
@@ -581,7 +595,7 @@ public final class ChatViewModel: ObservableObject {
         guard pattern.hasEnoughHistory else {
             return [
                 "available": false,
-                "reason": "User has \(sessions.count) tracked night(s). Need ≥3 before a stable pattern emerges. Encourage them to use the Home > Sleep Tracker card before bed.",
+                "reason": "User has \(sessions.count) tracked night(s). Need ≥3 before a stable pattern emerges. Encourage them to use the Home > Sleep Tracker card before bed — tracking is opt-in, so a low count is not evidence of poor sleep or a device problem; never invent a cause.",
                 "session_count": sessions.count
             ]
         }
@@ -1311,6 +1325,12 @@ public final class ChatViewModel: ObservableObject {
                 type: .hydration, value: ml / 1000.0, start: sampleDate, end: sampleDate
             )
             return WriteToolOutcome(outcome.succeeded, error: outcome.failureReason)
+        case .logSleep(let start, let end):
+            if let dateError = Self.sleepLogError(start: start, end: end) {
+                return WriteToolOutcome(false, error: dateError)
+            }
+            let outcome = await HealthKitManager.shared.logSleep(start: start, end: end)
+            return WriteToolOutcome(outcome.succeeded, error: outcome.failureReason)
         case .addReminder(let title, let due, _):
             // due is optional (no-date reminders are valid) — validate only when set.
             if let due, let dateError = Self.plausibleScheduleError(due) { return WriteToolOutcome(false, error: dateError) }
@@ -1519,6 +1539,29 @@ public final class ChatViewModel: ObservableObject {
         if (earliest...latest).contains(date) { return nil }
         let f = DateFormatter(); f.dateFormat = "EEEE, d MMMM yyyy HH:mm"
         return "That date (\(f.string(from: date))) is outside the schedulable window. TODAY is \(todayLine()) — re-emit with a correct current-era date. Nothing was saved."
+    }
+
+    /// Plausibility backstop for `log_sleep`, same honest-rejection
+    /// philosophy as `plausibleScheduleError`: a user-reported sleep session
+    /// that fails one of these sanity checks gets an explicit error instead
+    /// of a silently-written garbage HealthKit sample the user would have to
+    /// notice and fix later.
+    static func sleepLogError(start: Date, end: Date) -> String? {
+        guard end > start else {
+            return "End time isn't after the start time — nothing was saved. Confirm the times with the user."
+        }
+        let hours = end.timeIntervalSince(start) / 3600
+        guard hours <= 16 else {
+            return "That's \(String(format: "%.1f", hours))h — longer than a plausible single sleep session (max 16h). Nothing was saved; confirm the times with the user."
+        }
+        let now = Date()
+        guard end <= now.addingTimeInterval(300) else { // small grace window for clock skew
+            return "End time is in the future. TODAY is \(todayLine()) — nothing was saved; confirm the times with the user."
+        }
+        guard let earliest = Calendar.current.date(byAdding: .day, value: -7, to: now), start >= earliest else {
+            return "Start time is more than 7 days ago — nothing was saved. Log recent sleep only, or double-check the date with the user."
+        }
+        return nil
     }
 
     /// "Tuesday, 21 July 2026" — the model has NO reliable sense of the
@@ -2082,8 +2125,9 @@ public final class ChatViewModel: ObservableObject {
         - update_notes : your legacy free-text cross-session memory blob. Superseded by the structured tools below — do NOT use it for new information; update_notes still exists only for continuity with notes saved before the migration.
         - remember_fact / forget_fact / update_profile / get_profile : structured long-term memory (successor to update_notes). remember_fact = one atomic lasting fact (goal/injury/preference/schedule/nutrition/context) per call. update_profile = rewrite a whole section (summary/goals/trainingContext/injuriesLimitations/preferences/nutritionNotes) — full replace, call get_profile first to see current content. forget_fact = remove a fact the user corrected or retracted. Skip trivia and one-off numbers HealthKit already tracks — durable personalization only. All four auto-execute silently, no confirm card. User can review, delete, or clear memory from Settings → Astra's profile of you.
         - Precedence: if structured memory (profile + facts) and the legacy notes ever disagree, structured memory wins.
-        - get_sleep_pattern : on-device sleep pattern + the last 5 tracked nights with per-night motion/snore detail. Call FIRST whenever the user asks anything about sleep — "how's my sleep", "am I getting enough", "why am I tired", "is my snoring getting worse". Cite the user's personal numbers (typical bedtime, restlessness baseline, consistency) instead of generic guidance. If the user has fewer than 3 tracked nights, gently encourage them to use the Home > Sleep Tracker card before bed.
-        - get_sleep_sessions : per-night detail for the last N tracked nights (1-14, default 7) — date, duration, onset latency, restlessness, snore episodes/minutes, stage hours. Call when the user asks about a specific night or wants night-by-night detail beyond the SLEEP PATTERN block / get_sleep_pattern aggregate.
+        - get_sleep_pattern : on-device sleep pattern + the last 5 tracked nights with per-night motion/snore detail. Call FIRST whenever the user asks anything about sleep — "how's my sleep", "am I getting enough", "why am I tired", "is my snoring getting worse". Cite the user's personal numbers (typical bedtime, restlessness baseline, consistency) instead of generic guidance. If the user has fewer than 3 tracked nights, gently encourage them to use the Home > Sleep Tracker card before bed — never guess a reason for the gap.
+        - get_sleep_sessions : per-night detail for the last N tracked nights (1-14, default 7) — date, duration, onset latency, restlessness, snore episodes/minutes, stage hours. Call when the user asks about a specific night or wants night-by-night detail beyond the SLEEP PATTERN block / get_sleep_pattern aggregate. Returns an honest `available:false` with a plain-language reason when nothing is tracked — relay that reason as-is; never substitute your own theory (device settings, sync gaps) for why it's empty.
+        - log_sleep : the user reports sleeping ("I slept 1:30 to 9", "napped 2h", "slept from 1:30 to now") and no matching tracked session exists — log it to Apple Health instead of explaining why it isn't showing up. Confirmation-gated. Convert relative times to ISO8601 in the user's TZ (same convention as add_reminder/add_calendar_event); omit `end` for "still asleep" / "until now" phrasing, it defaults to right now.
         - log_food : food photos or text. Fill ALL FOUR macros (calories, protein, carbs, fat) using your nutrition training data — never default to 0 unless the food genuinely has 0 of that macro (e.g. fat in a plain banana is ~0.4g, NOT 0). Fill tags / highlights / cautions. ALWAYS set is_estimate=true and pick a confidence level (low/medium/high) — only set is_estimate=false when the user supplied exact label nutrition. For ambiguous portions ASK rather than guess. For multi-item plates, emit ONE log_food per distinct item. Backdating: pass days_ago (0-7) when the user is logging something from a prior day ("had this yesterday", "forgot to log Tuesday's lunch") instead of silently logging it to today.
         - log_water : log a hydration amount (amount_ml) to Apple Health, confirmation-gated. Same days_ago backdating (0-7) as log_food. Use whenever the user asks to log water/hydration in chat.
         - set_date_of_birth : call whenever the user states their birth date (date as YYYY-MM-DD) — this is the ONLY path a conversational birthday reaches the structured store HR-zone math and Live Basics read, so a stated birthday you don't call this for leaves the user with two disagreeing ages. Confirmation-gated. If the summary in update_profile also mentions age, refresh it too so the two stay consistent.
@@ -2125,8 +2169,15 @@ public final class ChatViewModel: ObservableObject {
         NEVER FAKE WRITES (this is the most important rule in this section)
         - You can ONLY claim to have updated / logged / deleted / scheduled something if you actually invoked the matching tool in THIS turn and the tool's confirmation state was `.done`.
         - If the user asks to correct a meal and you haven't called list_food_log + update_food_log, do NOT say "I've updated it" or "Got it, updated". Say honestly that you'll update it, then call the tool.
-        - This applies to log_food, log_water, update_food_log, delete_food_log, add_reminder/update/delete, add_calendar_event/update/delete, set_date_of_birth, set_nutrition_targets. Hallucinating success on any of these breaks trust.
+        - This applies to log_food, log_water, log_sleep, update_food_log, delete_food_log, add_reminder/update/delete, add_calendar_event/update/delete, set_date_of_birth, set_nutrition_targets. Hallucinating success on any of these breaks trust.
         - WRITE FAILURES — report the REAL reason, never invent one: when a write tool's confirmation state comes back `.failed`, its functionResponse carries an `error` field with the exact cause (a HealthKit permission denial naming the Settings toggle to fix, or the underlying system error). Quote that string to the user plainly. Never say generic things like "there was a connection error" when a specific reason was provided — and never claim success when the state is `.failed`.
+
+        GROUNDING & MEMORY HYGIENE
+        - Never state a biographical/lifestyle claim about the user (job, shifts, schedule, family, diet philosophy) unless the user explicitly said it or it's in ASTRA'S MEMORY OF THIS USER above. If you're inferring it, say you're guessing and ask ONE short question before treating it as true.
+        - remember_fact / update_profile may ONLY store what the user explicitly stated or confirmed — never your own inferences, speculation, or explanations. Schedule/temporary facts must state their timeframe in the text itself (e.g. "nights through Thursday").
+        - Memory facts render with the date they were noted. Treat schedule-type facts older than 7 days as possibly stale — re-confirm with the user before building advice on them.
+        - When a data tool returns nothing for a period, say plainly that nothing was recorded and ask what happened. NEVER invent causes (device settings, tracking gaps, lifestyle explanations) for missing data.
+        - Every claim about the user's recorded data must come from an actual tool result in this conversation or the LIVE CONTEXT numbers below — if you didn't read it, don't claim it.
 
         SCOPE
         - You see and modify only items the app created — never the user's personal calendar / reminders. Don't claim you can.

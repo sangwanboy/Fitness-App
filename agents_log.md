@@ -3808,3 +3808,45 @@ toggle flip should round-trip (admin dashboard Users shows name/consent).
 Deployed + launched: **databaseSequenceNumber: 7084**.
 
 Latest deployed sequence: **7084**.
+
+---
+
+## Session 71 — 2026-07-21 (WP-G: anti-hallucination hardening — grounding + memory hygiene + log_sleep)
+
+Root cause of a real incident: Astra stored INFERRED facts ("Works night shifts… until Thursday",
+"Night shift hours 12:00 AM to 6:30 AM") that the user never stated — they rode in every system
+prompt and warped all coaching (sleep advice, "Work Nights" training plan). Separately, "I slept
+1:30-now" had no sleep-write tool, so Astra confabulated "data gap / check your watch settings".
+
+Fable design → Sonnet implement → Opus verify (verdict SHIP; cache-discipline + log_sleep auth
+both confirmed) → deploy. Files (6): ChatViewModel, AstraMemoryStore, GatewayChatClient, ToolCall,
+HealthKitManager, ToolCards.
+
+1. **GROUNDING & MEMORY HYGIENE** static system-prompt section (in the CACHED static run, above
+   LIVE CONTEXT, pure literal text — byte-stable): no biographical claims unless the user stated
+   them; remember_fact/update_profile store only explicit statements (never inferences); schedule
+   facts include their timeframe and are treated as stale after 7 days; missing data → "nothing
+   recorded, ask the user" (never invent causes); every data claim must trace to a tool result.
+2. **Fact provenance/age**: renderForSystemPrompt() renders each fact with its noted date
+   (`- [schedule, noted 14 Jul 25] …`) from the fact's fixed createdAt (cache-safe; POSIX locale
+   pinned per Opus finding #1). MemoryFact.createdAt already non-optional → no migration.
+3. **NEW confirmation-gated tool log_sleep** — the missing capability: "I slept 1:30-9" →
+   confirm card (start–end + duration) → HKCategorySample .sleepAnalysis/.asleepUnspecified via
+   HealthKitManager.logSleep. Plausibility guard (end≤start, >16h, future end, start >7d) returns
+   honest rejections. sleepAnalysis already in the write share set.
+4. **Explicit empty-data tool results**: get_sleep_sessions returns per-entry `recorded` flags +
+   a top-level "no sessions recorded — do not speculate, ask the user" when empty.
+
+Opus findings: #1 (formatter locale) APPLIED before ship; #2 (card accent .indigo) and #3 (info)
+left as cosmetic. Build gate green.
+
+NOTE (ops): Mac data volume hit 100% (blocked the build mid-session). A cleanup subagent reclaimed
+~2.45GB of regenerable Xcode caches (DerivedData + iOS DeviceSupport 2.2G) — build then succeeded.
+215GB of the 245GB disk is the user's own data; user must free more space soon (recurring risk).
+
+USER ACTION STILL NEEDED: swipe-delete the two stored "schedule" night-shift facts in Settings →
+Astra profile (this fix stops them re-forming but doesn't retroactively purge existing facts).
+
+Deployed + launched: **databaseSequenceNumber: 7092**.
+
+Latest deployed sequence: **7092**.

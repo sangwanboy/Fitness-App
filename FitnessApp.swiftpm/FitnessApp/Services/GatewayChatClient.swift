@@ -108,6 +108,18 @@ public actor GatewayChatClient {
                     ]
                 ],
                 [
+                    "name": "log_sleep",
+                    "description": "Log a sleep session the user reports in chat ('I slept 1:30 to 9', 'napped 2h', 'I slept from 1:30 to now') to Apple Health. The user must confirm before it writes. Use whenever the user states they slept and no matching tracked session exists (check get_sleep_sessions / get_sleep_pattern first if unsure) — do NOT lecture about device tracking or invent an explanation instead of just logging it. Rejected (honestly, no write) if the range is implausible: end not after start, longer than 16h, end in the future, or start more than 7 days ago.",
+                    "parameters": [
+                        "type": "object",
+                        "properties": [
+                            "start": ["type": "string", "description": "ISO8601 date-time (user's TZ) they fell asleep / went to bed — same conversion convention as add_reminder/add_calendar_event."],
+                            "end":   ["type": "string", "description": "ISO8601 date-time they woke up. Omit for 'still asleep' / 'until now' phrasing — defaults to right now."]
+                        ],
+                        "required": ["start"]
+                    ]
+                ],
+                [
                     "name": "add_reminder",
                     "description": "Create a Reminders.app reminder. The user must confirm before it writes.",
                     "parameters": [
@@ -385,7 +397,7 @@ public actor GatewayChatClient {
                 ],
                 [
                     "name": "remember_fact",
-                    "description": "Store a durable, atomic fact about the user in structured long-term memory: a goal, injury/limitation, preference, schedule habit, nutrition note, or other lasting context worth recalling in future sessions. Call it whenever the user shares something lasting or corrects a prior assumption. Do NOT use it for trivia or one-off numbers HealthKit already tracks (today's steps, a single workout, this meal) — those are live data, not memory. One idea per call. Auto-executes silently, no user confirmation. Response confirms what was saved and names any older fact evicted (hard cap of 60 facts, oldest dropped first).",
+                    "description": "Store a durable, atomic fact about the user in structured long-term memory: a goal, injury/limitation, preference, schedule habit, nutrition note, or other lasting context worth recalling in future sessions. Call it whenever the user shares something lasting or corrects a prior assumption. Do NOT use it for trivia or one-off numbers HealthKit already tracks (today's steps, a single workout, this meal) — those are live data, not memory. ONLY store what the user explicitly stated or confirmed — never your own inference, guess, or explanation for something you don't actually know. Schedule/temporary facts (shift patterns, travel, a short-term injury) MUST state their timeframe in the text itself, e.g. 'on night shift through Thursday' — the stored fact shows its own noted date, but not an end date, so the text has to carry that. One idea per call. Auto-executes silently, no user confirmation. Response confirms what was saved and names any older fact evicted (hard cap of 60 facts, oldest dropped first).",
                     "parameters": [
                         "type": "object",
                         "properties": [
@@ -408,7 +420,7 @@ public actor GatewayChatClient {
                 ],
                 [
                     "name": "update_profile",
-                    "description": "Rewrite one section of the user's long-term profile: summary | goals | trainingContext | injuriesLimitations | preferences | nutritionNotes. Replaces the FULL section content, not a diff — call get_profile first if you need to see what's already there before editing. Use this for durable, structured personalization; use remember_fact instead for a single standalone fact. Auto-executes silently, no user confirmation.",
+                    "description": "Rewrite one section of the user's long-term profile: summary | goals | trainingContext | injuriesLimitations | preferences | nutritionNotes. Replaces the FULL section content, not a diff — call get_profile first if you need to see what's already there before editing. Use this for durable, structured personalization; use remember_fact instead for a single standalone fact. ONLY include statements the user explicitly made or confirmed — never your own inferences or speculation dressed up as fact. Any schedule/temporary detail folded in here must state its own timeframe. Auto-executes silently, no user confirmation.",
                     "parameters": [
                         "type": "object",
                         "properties": [
