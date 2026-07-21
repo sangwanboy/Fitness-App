@@ -339,6 +339,19 @@ All keys use the standard app container (no app groups, no suite name). Sources 
 | `account_created_date` | Double | `0` | `timeIntervalSince1970` of first launch after onboarding |
 | `hk_requested_once` | Bool | `false` | Whether HealthKit permission has been requested this install |
 
+### Account & Gateway Profile Sync (WP-L)
+
+Written/read by `GatewayProfileSync` and the Sign in with Apple flow. The
+non-internal values here are the only identity fields synced off-device — to
+the Atlas AI Gateway's `/v1/me` account record (see §12 for the label mapping).
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `account_email` | String | `""` | Email address from Sign in with Apple (only populated when Apple discloses it — first authorization only — or backfilled from the gateway's `GET /v1/me`). Shown in Settings; `""` renders as "—". |
+| `marketing_opt_in` | Bool | `false` | User's opt-in to marketing/product-update emails. Explicit opt-in (defaults off); synced to the gateway as `marketingOptIn` only once the user has touched the toggle. |
+| `marketing_opt_in_touched` | Bool | `false` | Whether the user has changed the marketing toggle on this install. Gates whether local consent is sent to the gateway vs. hydrated from the server — prevents a reinstall's default-`false` from clobbering a server-side opt-in. |
+| `profile_sync_pending` | Bool | `false` | Internal retry flag (not user-facing). Set when a `POST /v1/me/profile` sync fails (e.g. offline, endpoint not yet deployed); a pending sync is retried on the next sign-in or app-foreground. |
+
 ### Athlete Profile
 
 | Key | Type | Default | Meaning |
@@ -641,9 +654,24 @@ the two must not contradict each other.
 | Data type | Collected? | Linked to user? | Used for tracking? | Purpose |
 |---|---|---|---|---|
 | User ID | Yes | Yes | No | App Functionality |
+| Name | Yes | Yes | No | App Functionality; Marketing (opted-in users only) |
+| Email Address | Yes | Yes | No | App Functionality; Marketing (opted-in users only) |
 | Other Usage Data (token/request metering) | Yes | Yes | No | App Functionality |
 | Health & Fitness | **No** (see reasoning below) | — | — | — |
 | Everything else (contacts, location, financial, browsing history, search history, identifiers beyond User ID, diagnostics, etc.) | No | — | — | — |
+
+**Name and Email Address (added in WP-L).** Both are captured via Sign in with
+Apple — Name only on the first authorization for the Apple ID (Apple discloses
+`fullName`/`email` once, or never if the user declined at that point), and Email
+may be an Apple private-relay address. Both are synced to and retained by the
+Atlas AI Gateway's per-user account record (`POST /v1/me/profile`), which is why
+they ARE declared as collected (unlike Health data, they are stored server-side —
+see §11 reasoning). "Marketing" is listed as a purpose ONLY for users who
+explicitly opt in (`marketing_opt_in`, default off, §7); for everyone else the
+sole purpose is App Functionality. Deletable via in-app account deletion
+(`DELETE /v1/account`). Keep this row consistent with the Sign in with Apple
+disclosure in `PRIVACY_POLICY.md` / `privacy.html` / `LegalTexts.swift` and the
+labels block in `APP_STORE_METADATA.md`.
 
 **"Data Used to Track You": None.** There is no ad SDK, no analytics/attribution
 framework, no data broker sharing, and no cross-app/cross-site linkage
