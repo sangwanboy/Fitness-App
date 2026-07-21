@@ -56,6 +56,37 @@ enum GatewayChatPayload {
     /// Assemble the full /v1/chat body. `model` is always the logical name
     /// ("chat") — the server maps it to a concrete Gemini model. `system`
     /// is omitted when empty; `tools` when nil/empty.
+    /// Extract the model's usable answer text from a NON-STREAMING /v1/chat
+    /// response body. Gemini 3.x with thinking enabled can emit thought parts
+    /// ("thought": true) or empty text parts carrying only a thoughtSignature
+    /// BEFORE the real answer — naive `parts.first` extraction grabs those
+    /// and downstream JSON parsing fails. Returns the LAST non-thought,
+    /// non-empty text part + usageMetadata.
+    static func responseText(fromBody data: Data) -> (text: String, usage: [String: Any]?)? {
+        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let candidates = obj["candidates"] as? [[String: Any]],
+              let content = candidates.first?["content"] as? [String: Any],
+              let parts = content["parts"] as? [[String: Any]] else { return nil }
+        let usable = parts.compactMap { part -> String? in
+            guard (part["thought"] as? Bool) != true,
+                  let t = part["text"] as? String,
+                  !t.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            return t
+        }
+        guard let text = usable.last else { return nil }
+        return (text, obj["usageMetadata"] as? [String: Any])
+    }
+
+    /// Best-effort cleanup for strict-JSON responses: models occasionally
+    /// wrap JSON in markdown fences despite responseMimeType.
+    static func strippedJSONText(_ text: String) -> String {
+        var t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard t.hasPrefix("```") else { return t }
+        t = t.replacingOccurrences(of: "```json", with: "")
+             .replacingOccurrences(of: "```", with: "")
+        return t.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     static func body(model: String = GatewayConfig.chatModel,
                      stream: Bool,
                      system: String,

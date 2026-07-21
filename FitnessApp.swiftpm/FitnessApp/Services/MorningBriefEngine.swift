@@ -256,8 +256,10 @@ public final class MorningBriefEngine: ObservableObject {
             guard !rendered.isEmpty else { return "" }
             return "\nWHAT YOU KNOW ABOUT THE USER (respect injuries/preferences; align the suggestion with their goals):\n\(rendered)\n"
         }()
+        let style = UserDefaults.standard.string(forKey: "coach_personality") ?? "Direct"
         return """
         You are Astra, the user's AI fitness coach inside Fitness Guru. Write their morning brief.
+        VOICE: \(style) — \(ChatViewModel.personalityDirective(style))
 
         TODAY'S REAL NUMBERS (ground truth — use ONLY these, never invent or estimate a number that isn't here):
         \(stats.map { "- \($0)" }.joined(separator: "\n"))
@@ -300,20 +302,15 @@ public final class MorningBriefEngine: ObservableObject {
         // fast-fail is already handled by ensureReachable's 2s probe.
         let raw = try await GatewayTransport.postJSON(path: "v1/chat", body: body, timeout: 90)
 
-        guard let obj = try? JSONSerialization.jsonObject(with: raw) as? [String: Any],
-              let candidates = obj["candidates"] as? [[String: Any]],
-              let first = candidates.first,
-              let content = first["content"] as? [String: Any],
-              let parts = content["parts"] as? [[String: Any]],
-              let text = parts.first?["text"] as? String else {
+        // Thought-part-safe extraction — see GatewayChatPayload.responseText.
+        guard let (text, usageMeta) = GatewayChatPayload.responseText(fromBody: raw) else {
             throw MorningBriefError.parseError
         }
-        if let usageMeta = obj["usageMetadata"] as? [String: Any],
-           let usage = TokenUsage(usageMetadata: usageMeta) {
+        if let usageMeta, let usage = TokenUsage(usageMetadata: usageMeta) {
             TokenMeter.shared.record(usage, source: .insights)
         }
 
-        guard let jsonData = text.trimmingCharacters(in: .whitespacesAndNewlines).data(using: .utf8),
+        guard let jsonData = GatewayChatPayload.strippedJSONText(text).data(using: .utf8),
               let parsed = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
               let narrative = (parsed["narrative"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
               let suggestion = (parsed["suggestion"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),

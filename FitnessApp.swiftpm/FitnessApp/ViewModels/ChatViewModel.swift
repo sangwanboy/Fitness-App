@@ -1444,7 +1444,7 @@ public final class ChatViewModel: ObservableObject {
             guard (10...240).contains(arg.durationMin) else {
                 return WriteToolOutcome(false, error: "Duration \(arg.durationMin) min for '\(arg.title)' is outside the sane 10-240 min range. Nothing was saved.")
             }
-            let detail = String(arg.detail.prefix(400))
+            let detail = String(arg.detail.prefix(700))
             parsedDays.append(TrainingPlanStore.PlannedDay(
                 date: dayStart, title: arg.title, detail: detail,
                 kind: kind, durationMin: arg.durationMin
@@ -1492,6 +1492,24 @@ public final class ChatViewModel: ObservableObject {
         let plan = TrainingPlanStore.TrainingPlan(weekStart: weekStart, days: parsedDays)
         TrainingPlanStore.shared.upsert(plan)
         return WriteToolOutcome(true, note: calendarNote)
+    }
+
+    /// Behavioral contract for the Profile → Coach personality picker. The
+    /// bare label ("Friendly") was too weak a signal against the strict
+    /// OUTPUT FORMAT rules — each style needs explicit directives. Static
+    /// prompt section: changes only when the user changes the picker (one
+    /// cache invalidation, then stable). Shared with MorningBriefEngine.
+    static func personalityDirective(_ style: String) -> String {
+        switch style {
+        case "Friendly":
+            return "warm and encouraging — open with genuine acknowledgment of effort, celebrate wins explicitly, frame pushes as invitations (\"let's try…\"). Warmth must never dilute honesty about the numbers."
+        case "Concise":
+            return "minimum words — numbers and instructions only, no filler sentences, single-line answers whenever the question allows. Brevity overrides the usual section formatting for simple asks."
+        case "Motivational":
+            return "high energy — tie every reply to the user's goals and momentum, end advisory replies with a challenge, conviction without fluff. Never manufacture hype the data doesn't support."
+        default: // "Direct"
+            return "no pleasantries, no cheerleading — lead with the number and the instruction, state trade-offs plainly, skip softening language."
+        }
     }
 
     /// Re-fire whichever request produced the most recent error bubble. If the
@@ -1984,7 +2002,7 @@ public final class ChatViewModel: ObservableObject {
         - Height: \(heightCmStr) cm / \(heightIn) in
         - Weight: \(weightKgStr) kg / \(weightLb) lb
         - Blood type: \(bloodLabel)
-        - Coach style: \(coachPer)
+        - Coach style: \(coachPer) — \(Self.personalityDirective(coachPer))
         - Training goals: \(goalsRaw.isEmpty ? "none set" : goalsRaw)
 
         MEDICAL PROFILE (from HealthKit clinical records when the user has linked a provider; otherwise empty. "None known" means we don't have a record — never confuse with "the user has none.")
@@ -2043,7 +2061,7 @@ public final class ChatViewModel: ObservableObject {
         - list_food_log / update_food_log / delete_food_log : READ + WRITE for today's logged meals. Use list_food_log FIRST when the user asks to fix, correct, rename, change, or delete a logged meal — you cannot guess the id. If list returns exactly ONE match for the user's description, proceed straight to update_/delete_ without asking. Pass `name` on deletes so the confirm card shows what's about to go.
         - create_widget / list_widgets / update_widget / delete_widget : ASTRA STUDIO — your creative canvas on the user's Home screen. See the WIDGET STUDIO block below for when and how to use it.
         - update_goal : change a user-configurable daily goal (steps, activeEnergy, sleep, distance, hydration, exerciseMinutes, standHours, mindfulMinutes, flightsClimbed). Confirmation-gated — the user approves before the write. Use it when the user agrees to adjust a goal, or asks to. Deterministic "Goal suggestion" lines appear inline in the PREDICTIONS block when 28-day attainment warrants a change — propose them ONLY when the user engages with goals; never apply unprompted.
-        - get_training_plan / set_training_plan / mark_workout_done : Astra-authored adaptive weekly training plan. get_training_plan (auto-executes) reads the active plan + per-day completed flags + adherence — the TRAINING PLAN block below already gives you a one-line snapshot, so call this when you need per-day detail. set_training_plan (confirmation-gated, user previews the whole week before it writes) PROPOSES and REPLACES the active plan — call it ONLY when the user asks for a plan, or accepts your offer during a weekly-review discussion; NEVER set one unprompted. Ground every proposal in the TRAINING LOAD block's periodization state, the user's goals/profile (e.g. chest hypertrophy primary, supporting endurance/flexibility/sleep), and recent adherence. Plan every day of the week explicitly, including rest days (kind='rest') — 1-14 days total, kind ∈ {strength, cardio, mobility, rest}, duration_min 10-240, detail ≤400 characters. Non-rest days get a Calendar event automatically; if the functionResponse carries a `note` field, calendar access was denied and events were skipped — relay that honestly, the plan itself still saved. On Sunday-review chats, proactively offer to adjust next week's plan using adherence + load. mark_workout_done (confirmation-gated) marks a planned day complete by date — also reachable from a button on the user's Progress-hub plan card.
+        - get_training_plan / set_training_plan / mark_workout_done : Astra-authored adaptive weekly training plan. get_training_plan (auto-executes) reads the active plan + per-day completed flags + adherence — the TRAINING PLAN block below already gives you a one-line snapshot, so call this when you need per-day detail. set_training_plan (confirmation-gated, user previews the whole week before it writes) PROPOSES and REPLACES the active plan — call it ONLY when the user asks for a plan, or accepts your offer during a weekly-review discussion; NEVER set one unprompted. Ground every proposal in the TRAINING LOAD block's periodization state, the user's goals/profile (e.g. chest hypertrophy primary, supporting endurance/flexibility/sleep), and recent adherence. Plan every day of the week explicitly, including rest days (kind='rest') — 1-14 days total, kind ∈ {strength, cardio, mobility, rest}, duration_min 10-240, detail ≤700 characters. Each day's `detail` is the full workout prescription the user trains from: strength/mobility days MUST list every exercise with sets×reps, semicolon-separated ('Incline DB press 3×8-10; Cable flyes 3×12; Push-ups 3×AMRAP; rest 90s'); cardio days state modality + zone + structure; rest days give the recovery focus. Never a vague one-liner — the day chips on the Progress card open this text as the workout sheet. Non-rest days get a Calendar event automatically; if the functionResponse carries a `note` field, calendar access was denied and events were skipped — relay that honestly, the plan itself still saved. On Sunday-review chats, proactively offer to adjust next week's plan using adherence + load. mark_workout_done (confirmation-gated) marks a planned day complete by date — also reachable from a button on the user's Progress-hub plan card.
 
         WIDGET STUDIO (6-slot canvas on the user's Home — make every card surprising and useful)
         - TWO AUTHORING MODES — pick one per widget:

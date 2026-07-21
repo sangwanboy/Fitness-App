@@ -505,6 +505,7 @@ public final class WeeklyReviewEngine: ObservableObject {
                     self.persistToDisk(weekKey: weekKey, data: data, narrative: result)
                 }
             } catch {
+                Self.writeDiag(stage: "request", detail: String(describing: error))
                 await MainActor.run {
                     guard self.currentWeekKey == weekKey else { return }
                     self.lastNarrativeFailureAt = Date()
@@ -585,27 +586,41 @@ public final class WeeklyReviewEngine: ObservableObject {
         // call; dead-gateway fast-fail is ensureReachable's 2s probe.
         let raw = try await GatewayTransport.postJSON(path: "v1/chat", body: body, timeout: 90)
 
-        guard let obj = try? JSONSerialization.jsonObject(with: raw) as? [String: Any],
-              let candidates = obj["candidates"] as? [[String: Any]],
-              let first = candidates.first,
-              let content = first["content"] as? [String: Any],
-              let parts = content["parts"] as? [[String: Any]],
-              let text = parts.first?["text"] as? String else {
+        // Thought-part-safe extraction (Gemini 3.x thinking emits thought/
+        // signature parts before the answer — parts.first grabbed those).
+        guard let (text, usageMeta) = GatewayChatPayload.responseText(fromBody: raw) else {
+            Self.writeDiag(stage: "extract", detail: String(decoding: raw.prefix(800), as: UTF8.self))
             throw WeeklyReviewNarrativeError.parseError
         }
-        if let usageMeta = obj["usageMetadata"] as? [String: Any],
-           let usage = TokenUsage(usageMetadata: usageMeta) {
+        if let usageMeta, let usage = TokenUsage(usageMetadata: usageMeta) {
             TokenMeter.shared.record(usage, source: .insights)
         }
 
-        guard let jsonData = text.trimmingCharacters(in: .whitespacesAndNewlines).data(using: .utf8),
+        let cleaned = GatewayChatPayload.strippedJSONText(text)
+        guard let jsonData = cleaned.data(using: .utf8),
               let parsed = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
               let summary = (parsed["summary"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
               let focus = (parsed["focus"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
               !summary.isEmpty, !focus.isEmpty else {
+            Self.writeDiag(stage: "json", detail: String(cleaned.prefix(800)))
             throw WeeklyReviewNarrativeError.parseError
         }
         return WeeklyReviewNarrative(summary: summary, focus: focus)
+    }
+
+    /// DEBUG-only failure forensics: the engine swallows errors into an
+    /// honest "unavailable" state, which made the live failure undiagnosable
+    /// remotely. Writes stage + detail (+ request errors) to
+    /// Documents/weekly_narrative_diag.json — pull with `devicectl device
+    /// copy` from a dev Mac.
+    static func writeDiag(stage: String, detail: String) {
+        #if DEBUG
+        let df = ISO8601DateFormatter()
+        let entry: [String: Any] = ["at": df.string(from: Date()), "stage": stage, "detail": detail]
+        guard let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first,
+              let data = try? JSONSerialization.data(withJSONObject: entry, options: [.prettyPrinted]) else { return }
+        try? data.write(to: docs.appendingPathComponent("weekly_narrative_diag.json"), options: .atomic)
+        #endif
     }
 
     private static func narrativePrompt(for data: WeeklyReviewData) -> String {

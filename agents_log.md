@@ -3517,3 +3517,36 @@ ensureReachable's 2s probe); narrative auto-retry now also triggers on .timedOut
 Deployed + launched: **databaseSequenceNumber: 6996**.
 
 Latest deployed sequence: **6996**.
+
+---
+
+## Session 63 — 2026-07-21 (Narrative root cause: thought-part extraction; exercises first-class; personality contracts)
+
+### Narrative — REAL root cause (after timeout fix, failure persisted <90s)
+All three one-shot JSON extractors (`WeeklyReviewEngine`, `MorningBriefEngine`,
+`PredictionAIService`) used `parts.first?["text"]` — with a thinking budget active, Gemini 3.x
+emits THOUGHT parts (`"thought": true`) or empty signature-carrying text parts BEFORE the answer,
+so parts.first grabbed those → JSON parse failed → parseError (no retry class). Chat was immune
+(streaming scanner handles parts properly) — matching "every other AI function works". Fix:
+`GatewayChatPayload.responseText(fromBody:)` (skip thought/empty parts, take LAST real text) +
+`strippedJSONText` (fence cleanup), used by all three. DEBUG forensics:
+`weekly_narrative_diag.json` (stage + detail on any failure; devicectl-pullable). SSH to prod VM
+denied (publickey — deploy session's key, not this Mac's), hence client-side diagnosis.
+
+### Training plan exercises first-class (user request)
+detail cap 400→700 chars; manifest + prompt REQUIRE per-exercise sets×reps semicolon-separated;
+day chips on TrainingPlanCard now open a workout sheet (full prescription as a bullet list,
+Mark done for today). Plan LIVE and verified on device: 7-day hypertrophy plan, calendar synced,
+adherence ring + marked-done all working (user screenshots).
+
+### Coach personalities enforced (were label-only)
+`ChatViewModel.personalityDirective`: explicit behavioral contracts for Direct/Friendly/Concise/
+Motivational in the static prompt + brief VOICE line.
+
+### HR Zones "No HR data found" (user question) — honest empty state, NOT a bug: zone analysis
+needs per-workout HR samples (Watch/strap); 0 workouts in 28d. Noted gap: mark_workout_done
+doesn't write an HKWorkout — plan completions invisible to workout count/rings. Follow-up idea.
+
+Deployed + launched: **databaseSequenceNumber: 7012**.
+
+Latest deployed sequence: **7012**.

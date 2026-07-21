@@ -516,7 +516,7 @@ public actor GatewayChatClient {
                                     "properties": [
                                         "date":         ["type": "string",  "description": "YYYY-MM-DD"],
                                         "title":        ["type": "string",  "description": "Short session title, e.g. 'Push — chest focus'"],
-                                        "detail":       ["type": "string",  "description": "Exercises / notes, plain text, max ~400 characters"],
+                                        "detail":       ["type": "string",  "description": "The session's full prescription, max ~700 characters. Strength/mobility days MUST list every exercise with sets×reps, semicolon-separated (e.g. 'Incline DB press 3×8-10; Cable flyes 3×12; Push-ups 3×AMRAP; rest 90s between sets'). Cardio: modality + zone/intensity + structure (e.g. 'Zone 2 cycling, 40 min steady, HR 120-135'). Rest days: recovery focus (sleep, hydration, protein). Never a vague summary — the user trains directly from this text."],
                                         "kind":         ["type": "string",  "description": "strength | cardio | mobility | rest"],
                                         "duration_min": ["type": "integer", "description": "10-240"]
                                     ],

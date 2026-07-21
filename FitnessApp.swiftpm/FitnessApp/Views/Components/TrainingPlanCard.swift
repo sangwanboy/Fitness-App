@@ -17,6 +17,9 @@ public struct TrainingPlanCard: View {
     private var isDark: Bool { themeMode == "dark" }
     private var accentColor: Color { ThemeHelper.color(from: accentColorHex) }
 
+    /// Day tapped in the week row — opens that session's full prescription.
+    @State private var selectedDay: TrainingPlanStore.PlannedDay?
+
     public init() {}
 
     public var body: some View {
@@ -38,6 +41,9 @@ public struct TrainingPlanCard: View {
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .glassCard()
+        .sheet(item: $selectedDay) { day in
+            workoutDetailSheet(day)
+        }
     }
 
     // MARK: - Header
@@ -113,7 +119,19 @@ public struct TrainingPlanCard: View {
 
     private func dayChip(date: Date, day: TrainingPlanStore.PlannedDay?, isToday: Bool) -> some View {
         let color = day.map { kindColor($0.kind) } ?? Color.gray
-        return VStack(spacing: 4) {
+        return Button {
+            if let day { selectedDay = day }
+        } label: {
+            dayChipLabel(day: day, isToday: isToday, color: color, date: date)
+        }
+        .buttonStyle(.plain)
+        .disabled(day == nil)
+        .accessibilityLabel(day.map { "\($0.title), \(Self.weekdayInitial(date))" } ?? "No session")
+        .accessibilityHint(day != nil ? "Shows the full workout" : "")
+    }
+
+    private func dayChipLabel(day: TrainingPlanStore.PlannedDay?, isToday: Bool, color: Color, date: Date) -> some View {
+        VStack(spacing: 4) {
             ZStack {
                 Circle()
                     .fill(day?.completed == true ? color : color.opacity(day == nil ? 0.08 : 0.15))
@@ -138,6 +156,80 @@ public struct TrainingPlanCard: View {
 
     private static func weekdayInitial(_ date: Date) -> String {
         let f = DateFormatter(); f.dateFormat = "EEEEE"; return f.string(from: date)
+    }
+
+    /// Full session prescription — the day's complete exercise list (the
+    /// `detail` text Astra authors with sets×reps), plus Mark done.
+    private func workoutDetailSheet(_ day: TrainingPlanStore.PlannedDay) -> some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack(spacing: 10) {
+                        Image(systemName: day.kind.icon)
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(kindColor(day.kind))
+                            .frame(width: 40, height: 40)
+                            .background(kindColor(day.kind).opacity(0.15), in: RoundedRectangle(cornerRadius: 10))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(day.title)
+                                .font(.system(size: 18, weight: .bold))
+                            Text("\(day.date.formatted(date: .abbreviated, time: .omitted)) · \(day.durationMin) min · \(day.kind.displayName)")
+                                .font(.system(size: 13))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    if day.detail.isEmpty {
+                        Text("No exercise details for this session — ask Astra to fill them in.")
+                            .font(.system(size: 14))
+                            .foregroundColor(.secondary)
+                    } else {
+                        // Semicolon-separated prescription renders as a list.
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(Array(day.detail.split(separator: ";").enumerated()), id: \.offset) { _, item in
+                                HStack(alignment: .top, spacing: 8) {
+                                    Circle()
+                                        .fill(kindColor(day.kind).opacity(0.7))
+                                        .frame(width: 5, height: 5)
+                                        .padding(.top, 7)
+                                    Text(item.trimmingCharacters(in: .whitespacesAndNewlines))
+                                        .font(.system(size: 15))
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                        }
+                    }
+
+                    if day.completed {
+                        Label("Completed", systemImage: "checkmark.circle.fill")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.green)
+                    } else if Calendar.current.isDateInToday(day.date) {
+                        Button {
+                            _ = store.markCompleted(date: day.date)
+                            selectedDay = nil
+                        } label: {
+                            Label("Mark done", systemImage: "checkmark")
+                                .font(.system(size: 15, weight: .semibold))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(kindColor(day.kind))
+                    }
+                }
+                .padding(20)
+            }
+            .navigationTitle("Workout")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { selectedDay = nil }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
 
     private func kindColor(_ kind: TrainingPlanStore.PlannedDay.Kind) -> Color {

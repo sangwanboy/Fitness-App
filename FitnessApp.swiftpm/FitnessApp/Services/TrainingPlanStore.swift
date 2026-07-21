@@ -49,7 +49,7 @@ public final class TrainingPlanStore: ObservableObject {
         public var id: UUID
         public var date: Date            // start-of-day, local calendar
         public var title: String         // e.g. "Push — chest focus"
-        public var detail: String        // free text, ≤400 chars — exercises / notes
+        public var detail: String        // free text, ≤700 chars — full prescription (exercises with sets×reps)
         public var kind: Kind
         public var durationMin: Int      // 10-240
         public var completed: Bool

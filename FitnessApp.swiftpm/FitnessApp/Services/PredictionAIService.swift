@@ -336,19 +336,16 @@ public actor PredictionAIService {
             throw AIError.gateway(gateway.userMessage)
         }
 
-        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let candidates = obj["candidates"] as? [[String: Any]],
-              let first = candidates.first,
-              let content = first["content"] as? [String: Any],
-              let parts = content["parts"] as? [[String: Any]],
-              let text = parts.first?["text"] as? String else {
+        // Thought-part-safe extraction — see GatewayChatPayload.responseText.
+        // (parts.first grabbed Gemini 3.x thought/signature parts whenever a
+        // thinking budget was active, breaking downstream JSON parsing.)
+        guard let (text, usageMeta) = GatewayChatPayload.responseText(fromBody: data) else {
             throw AIError.parseError
         }
-        if let usageMeta = obj["usageMetadata"] as? [String: Any],
-           let usage = TokenUsage(usageMetadata: usageMeta) {
+        if let usageMeta, let usage = TokenUsage(usageMetadata: usageMeta) {
             Task { @MainActor in TokenMeter.shared.record(usage, source: .insights) }
         }
-        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return GatewayChatPayload.strippedJSONText(text)
     }
 
     // MARK: - Helpers (nonisolated so they can be called from sync contexts)
