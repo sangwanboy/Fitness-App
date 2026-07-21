@@ -1,5 +1,7 @@
 import SwiftUI
 import HealthKit
+import AuthenticationServices
+import UserNotifications
 
 // MARK: - Shared building blocks
 
@@ -73,6 +75,12 @@ private struct OnboardingBackButton: View {
 struct WelcomeScreen: View {
     let onContinue: () -> Void
 
+    @AppStorage("accent_color") private var accentColorHex = "#30D158"
+    private var accentColor: Color { ThemeHelper.color(from: accentColorHex) }
+
+    @State private var showPrivacyPolicy = false
+    @State private var showTerms = false
+
     var body: some View {
         VStack(spacing: 0) {
             Spacer()
@@ -95,16 +103,225 @@ struct WelcomeScreen: View {
                 subtitle: "Your AI fitness coach. Personalized recovery, workouts, and nutrition guidance — powered by your real Apple Health data."
             )
 
+            Spacer().frame(height: 14)
+
+            // Honest one-line promise — no server-side storage claim beyond
+            // what's actually true (Services/Legal/LegalTexts.swift covers the
+            // full picture; this is the elevator-pitch version).
+            Text("Your health data, coached by AI — nothing stored server-side.")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(.white.opacity(0.5))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+
             Spacer()
 
             OnboardingPrimaryButton("Get Started", action: onContinue)
                 .padding(.horizontal, 24)
-                .padding(.bottom, 36)
+
+            // Visible Privacy Policy / Terms links (guideline 5.1.1(i)) —
+            // same sheets LoginView presents, reachable from the very first
+            // screen instead of only after Sign In.
+            HStack(spacing: 14) {
+                Button("Privacy Policy") {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    showPrivacyPolicy = true
+                }
+                Text("·").foregroundColor(.white.opacity(0.3))
+                Button("Terms of Service") {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    showTerms = true
+                }
+            }
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundColor(accentColor)
+            .padding(.top, 14)
+            .padding(.bottom, 36)
+        }
+        .sheet(isPresented: $showPrivacyPolicy) {
+            LegalDocumentSheet(title: "Privacy Policy", text: LegalTexts.privacyPolicy)
+        }
+        .sheet(isPresented: $showTerms) {
+            LegalDocumentSheet(title: "Terms of Service", text: LegalTexts.terms)
         }
     }
 }
 
-// MARK: - Screen 2: About You
+// MARK: - Screen 2: Sign In
+
+/// Real gateway sign-in, reusing the exact flow `LoginView` uses so there is
+/// only one Sign in with Apple implementation in the app. `AppleSignInCoordinator`
+/// and `GatewayAuth`/`GatewayConfig` are defined in Views/LoginView.swift and
+/// Services/Gateway/ respectively — this screen calls them, it doesn't
+/// reimplement them. LoginView itself still exists as a fallback (e.g. after
+/// a sign-out), but a fresh install now signs in here and never sees it.
+struct SignInScreen: View {
+    let onContinue: () -> Void
+    let onBack: () -> Void
+
+    @AppStorage("is_logged_in") private var isLoggedIn = false
+    @AppStorage("accent_color") private var accentColorHex = "#30D158"
+    private var accentColor: Color { ThemeHelper.color(from: accentColorHex) }
+
+    @State private var isSigningIn = false
+    @State private var signInError: String?
+    /// Retained for the duration of the SIWA flow (release builds) — same
+    /// pattern as LoginView's `@State private var appleSignIn`.
+    @State private var appleSignIn = AppleSignInCoordinator()
+    @State private var showPrivacyPolicy = false
+    @State private var showTerms = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            OnboardingBackButton(action: onBack)
+                .padding(.top, 4)
+
+            Spacer()
+
+            ZStack {
+                Circle()
+                    .fill(Color.white.opacity(0.08))
+                    .frame(width: 108, height: 108)
+                Image(systemName: "apple.logo")
+                    .font(.system(size: 46, weight: .semibold))
+                    .foregroundColor(.white)
+            }
+
+            Spacer().frame(height: 28)
+
+            OnboardingTitle(
+                title: "Sign In",
+                subtitle: "Create your Astra account with Apple — no email, no password to remember."
+            )
+
+            Spacer()
+
+            VStack(spacing: 12) {
+                // Continue with Apple → gateway session.
+                // DEBUG + local gateway: dev fake-auth. Otherwise: real Sign
+                // in with Apple, exactly mirroring LoginView.signInTapped.
+                Button(action: signInTapped) {
+                    HStack(spacing: 8) {
+                        if isSigningIn {
+                            ProgressView()
+                                .controlSize(.small)
+                                .tint(.black)
+                        } else {
+                            Image(systemName: "apple.logo")
+                                .font(.system(size: 18))
+                        }
+                        Text("Continue with Apple")
+                            .fontWeight(.semibold)
+                    }
+                    .foregroundColor(.black)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 54)
+                    .background(Color.white)
+                    .cornerRadius(16)
+                }
+                .disabled(isSigningIn)
+
+                // Sign-up copy (guideline 5.1.1(i)) — what the account is for,
+                // that Apple never shares an email, and the never-stored
+                // promise for chat/health context sent per-request.
+                Text("Your account is created through Apple — we never see your email. Chat messages and health context are sent to our AI gateway only to generate that one reply, and are never stored on our servers.")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.white.opacity(0.45))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 2)
+
+                if let signInError {
+                    Text(signInError)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.red)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                // Honest escape hatch — mirrors LoginView's skip path exactly:
+                // sets the same `is_logged_in` flag without a gateway session.
+                // HealthKit features still work; only Astra needs the session.
+                Button(action: continueWithoutAI) {
+                    Text("Continue without AI coach")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.7))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 44)
+                        .glassEffect(.regular.interactive(), in: .capsule)
+                }
+                .disabled(isSigningIn)
+
+                HStack(spacing: 14) {
+                    Button("Privacy Policy") {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        showPrivacyPolicy = true
+                    }
+                    Text("·").foregroundColor(.white.opacity(0.3))
+                    Button("Terms of Service") {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        showTerms = true
+                    }
+                }
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(accentColor)
+                .padding(.top, 4)
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 36)
+        }
+        .sheet(isPresented: $showPrivacyPolicy) {
+            LegalDocumentSheet(title: "Privacy Policy", text: LegalTexts.privacyPolicy)
+        }
+        .sheet(isPresented: $showTerms) {
+            LegalDocumentSheet(title: "Terms of Service", text: LegalTexts.terms)
+        }
+    }
+
+    /// Identical branch structure to LoginView.signInTapped: dev fake-auth
+    /// only compiles in when both DEBUG and the local/LAN gateway are active;
+    /// every other configuration (release builds, or DEBUG against the prod
+    /// gateway) goes through real Sign in with Apple.
+    private func signInTapped() {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        signInError = nil
+        isSigningIn = true
+        Task {
+            do {
+                #if DEBUG
+                if GatewayConfig.isLocalGateway {
+                    try await GatewayAuth.shared.signInDev()
+                } else {
+                    let identityToken = try await appleSignIn.requestIdentityToken()
+                    try await GatewayAuth.shared.signIn(appleIdentityToken: identityToken)
+                }
+                #else
+                let identityToken = try await appleSignIn.requestIdentityToken()
+                try await GatewayAuth.shared.signIn(appleIdentityToken: identityToken)
+                #endif
+                isSigningIn = false
+                isLoggedIn = true
+                onContinue()
+            } catch let error as ASAuthorizationError where error.code == .canceled {
+                // User dismissed the Apple sheet — stay on this screen, no error text.
+                isSigningIn = false
+            } catch {
+                signInError = (error as? GatewayError)?.userMessage
+                    ?? "Couldn't sign in: \(error.localizedDescription)"
+                isSigningIn = false
+            }
+        }
+    }
+
+    private func continueWithoutAI() {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        isLoggedIn = true
+        onContinue()
+    }
+}
+
+// MARK: - Screen 3: About You
 
 struct AboutYouScreen: View {
     let onContinue: () -> Void
@@ -123,6 +340,12 @@ struct AboutYouScreen: View {
     @State private var sex = ""
     @State private var heightCm: Double = 170
     @State private var weightKg: Double = 70
+    // Save-guard (same pattern as EditProfileSheet in ProfileSheets.swift):
+    // only persist the wheel's value if the user actually touched it, or a
+    // real DOB already existed. Saving the untouched -25y default as if it
+    // were a real answer is the same class of bug as the "born today" one —
+    // an honest empty state (unset athlete_dob) beats a fabricated one.
+    @State private var dobTouched = false
 
     private let sexOptions = ["Female", "Male", "Other", "Prefer not to say"]
 
@@ -161,6 +384,7 @@ struct AboutYouScreen: View {
                             DatePicker("", selection: $dob, in: ...Date(), displayedComponents: .date)
                                 .labelsHidden()
                                 .colorScheme(.dark)
+                                .onChange(of: dob) { _, _ in dobTouched = true }
                         }
 
                         formField("Sex") {
@@ -181,6 +405,15 @@ struct AboutYouScreen: View {
                         }
                     }
                     .padding(.horizontal, 20)
+
+                    // Why this data helps — one honest line, not a wall of legal text.
+                    Text("This powers your heart-rate zones and Live Basics recovery score — it's never sent anywhere except to generate an Astra reply.")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.white.opacity(0.45))
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 32)
+                        .padding(.top, 4)
                 }
                 .padding(.bottom, 100)
             }
@@ -194,7 +427,10 @@ struct AboutYouScreen: View {
         }
         .onAppear {
             name = athleteName
-            if athleteDOBInterval > 0 { dob = Date(timeIntervalSince1970: athleteDOBInterval) }
+            if athleteDOBInterval > 0 {
+                dob = Date(timeIntervalSince1970: athleteDOBInterval)
+                dobTouched = true
+            }
             sex = athleteSex
             if athleteHeightCm > 0 { heightCm = athleteHeightCm }
             if athleteWeightKg > 0 { weightKg = athleteWeightKg }
@@ -242,7 +478,10 @@ struct AboutYouScreen: View {
 
     private func save() {
         athleteName = name.trimmingCharacters(in: .whitespaces)
-        athleteDOBInterval = dob.timeIntervalSince1970
+        // Only persist if the user actually touched the wheel (or a real DOB
+        // was already on file) — an untouched wheel must never stamp the
+        // -25y placeholder into athlete_dob as if it were a real answer.
+        if dobTouched { athleteDOBInterval = dob.timeIntervalSince1970 }
         athleteSex = sex
         athleteHeightCm = heightCm
         athleteWeightKg = weightKg
@@ -253,7 +492,7 @@ struct AboutYouScreen: View {
     }
 }
 
-// MARK: - Screen 3: Connect & Permissions
+// MARK: - Screen 4: Connect & Permissions
 
 struct ConnectScreen: View {
     let onContinue: () -> Void
@@ -316,6 +555,18 @@ struct ConnectScreen: View {
                     ) {
                         syncMedicalId()
                     }
+
+                    // Honest scoping line — clinical records (FHIR: allergies,
+                    // conditions, medications, labs) are a materially bigger
+                    // ask than the summaries above, so they stay a distinct,
+                    // separate opt-in later rather than bundled into onboarding.
+                    Text("Clinical records — allergies, conditions, medications, lab results — are a separate opt-in. Turn them on later in Profile → Health Records.")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.white.opacity(0.45))
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 12)
+                        .padding(.top, 4)
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, 100)
@@ -406,14 +657,17 @@ struct ConnectScreen: View {
     }
 }
 
-// MARK: - Screen 4: Goals
+// MARK: - Screen 5: Goals & Coach
 
 struct GoalsScreen: View {
     let onContinue: () -> Void
     let onBack: () -> Void
 
     @AppStorage("training_goals") private var trainingGoals: String = ""
+    @AppStorage("coach_personality") private var coachPersonality: String = "Direct"
     @State private var selected: Set<String> = []
+    @State private var showDailyGoals = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let options: [(String, String)] = [
         ("Endurance", "figure.run"),
@@ -424,6 +678,16 @@ struct GoalsScreen: View {
         ("Flexibility", "figure.cooldown")
     ]
 
+    // One-line descriptions kept in sync with the behavioral contracts in
+    // ChatViewModel.personalityDirective(_:) — same four options Settings'
+    // Coach personality picker offers, so onboarding never invents a fifth.
+    private let personalities: [(name: String, icon: String, description: String)] = [
+        ("Direct", "bolt.fill", "No pleasantries — the number, then the instruction."),
+        ("Friendly", "face.smiling.fill", "Warm and encouraging, celebrates every win."),
+        ("Concise", "text.alignleft", "Minimum words — just the numbers."),
+        ("Motivational", "flame.fill", "High energy, ties every reply to your goals.")
+    ]
+
     private var canContinue: Bool { !selected.isEmpty }
 
     var body: some View {
@@ -431,27 +695,73 @@ struct GoalsScreen: View {
             OnboardingBackButton(action: onBack)
                 .padding(.top, 4)
 
-            VStack(spacing: 20) {
-                OnboardingTitle(
-                    title: "Pick Your Goals",
-                    subtitle: "Choose one or more. Your coach focuses recommendations on what matters to you."
-                )
-                .padding(.top, 12)
+            ScrollView {
+                VStack(spacing: 28) {
+                    VStack(spacing: 20) {
+                        OnboardingTitle(
+                            title: "Pick Your Goals",
+                            subtitle: "Choose one or more. Your coach focuses recommendations on what matters to you."
+                        )
+                        .padding(.top, 12)
 
-                let columns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
-                LazyVGrid(columns: columns, spacing: 12) {
-                    ForEach(options, id: \.0) { (label, icon) in
+                        let columns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
+                        LazyVGrid(columns: columns, spacing: 12) {
+                            ForEach(options, id: \.0) { (label, icon) in
+                                Button {
+                                    if selected.contains(label) { selected.remove(label) } else { selected.insert(label) }
+                                } label: {
+                                    goalTile(label: label, icon: icon, picked: selected.contains(label))
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                            }
+                        }
+                        .padding(.horizontal, 20)
+
                         Button {
-                            if selected.contains(label) { selected.remove(label) } else { selected.insert(label) }
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            showDailyGoals = true
                         } label: {
-                            goalTile(label: label, icon: icon, picked: selected.contains(label))
+                            HStack(spacing: 10) {
+                                Image(systemName: "target")
+                                    .foregroundColor(accentColor)
+                                Text("Customize daily goals — steps, sleep, hydration & more")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundColor(.white)
+                                    .multilineTextAlignment(.leading)
+                                Spacer(minLength: 8)
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundColor(.white.opacity(0.4))
+                            }
+                            .padding(14)
+                            .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 14))
                         }
                         .buttonStyle(PlainButtonStyle())
+                        .padding(.horizontal, 20)
+                    }
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("COACH PERSONALITY")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(.white.opacity(0.5))
+                            .tracking(0.8)
+                            .padding(.horizontal, 20)
+
+                        VStack(spacing: 10) {
+                            ForEach(personalities, id: \.name) { option in
+                                Button {
+                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                    coachPersonality = option.name
+                                } label: {
+                                    personalityRow(option: option, picked: coachPersonality == option.name)
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                            }
+                        }
+                        .padding(.horizontal, 20)
                     }
                 }
-                .padding(.horizontal, 20)
-
-                Spacer()
+                .padding(.bottom, 120)
             }
 
             OnboardingPrimaryButton("Continue", enabled: canContinue) {
@@ -467,10 +777,48 @@ struct GoalsScreen: View {
                 .map { $0.trimmingCharacters(in: .whitespaces) }
                 .filter { !$0.isEmpty })
         }
+        .sheet(isPresented: $showDailyGoals) {
+            GoalsEditorSheet()
+        }
     }
 
     @AppStorage("accent_color") private var accentColorHex = "#30D158"
     private var accentColor: Color { ThemeHelper.color(from: accentColorHex) }
+
+    private func personalityRow(option: (name: String, icon: String, description: String), picked: Bool) -> some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill((picked ? accentColor : Color.white).opacity(0.18))
+                    .frame(width: 36, height: 36)
+                Image(systemName: option.icon)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(picked ? accentColor : .white.opacity(0.75))
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(option.name)
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(.white)
+                Text(option.description)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.white.opacity(0.55))
+                    .lineLimit(2)
+            }
+            Spacer(minLength: 8)
+            if picked {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 18))
+                    .foregroundColor(accentColor)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 14))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(picked ? accentColor : Color.clear, lineWidth: 1.5)
+        )
+    }
 
     private func goalTile(label: String, icon: String, picked: Bool) -> some View {
         VStack(spacing: 10) {
@@ -492,48 +840,284 @@ struct GoalsScreen: View {
         // Visible bounce so the tap registers immediately, even before the
         // green border animates in. Pairs with a selection-class haptic so
         // the user feels the toggle on physical devices.
-        .scaleEffect(picked ? 1.02 : 1.0)
-        .animation(.spring(response: 0.22, dampingFraction: 0.65), value: picked)
+        .scaleEffect(reduceMotion ? 1.0 : (picked ? 1.02 : 1.0))
+        .animation(reduceMotion ? nil : .spring(response: 0.22, dampingFraction: 0.65), value: picked)
         .sensoryFeedback(.selection, trigger: picked)
     }
 }
 
-// MARK: - Screen 5: Meet Astra
+// MARK: - Screen 6: Notifications
 
-struct MeetAstraScreen: View {
-    let onFinish: () -> Void
+/// Proactive-notification opt-in. Never fires the system permission sheet on
+/// appear — only `requestThenContinue()`, wired to the "Enable Notifications"
+/// tap, calls `NotificationManager.shared.requestPermissionIfNeeded()`. The
+/// morning-brief time picker writes straight to the same `notif_morning_time`
+/// UserDefaults key `NotificationManager.rescheduleMorningBrief()` reads
+/// (default 480 = 8:00 AM, matching that default exactly — same as
+/// Views/Components/NotificationSettingsSection.swift's Settings row).
+struct NotificationsScreen: View {
+    let onContinue: () -> Void
     let onBack: () -> Void
+
+    // Same AppStorage key + default (8:00 AM) NotificationManager.rescheduleMorningBrief()
+    // falls back to, and the same key Settings' NotificationTimeRow writes —
+    // one source of truth, read/written directly rather than mirrored.
+    @AppStorage("notif_morning_time") private var morningMinutes: Int = 8 * 60
+
+    @State private var authStatus: UNAuthorizationStatus = .notDetermined
+    @State private var isRequesting = false
+
+    private var isAuthorized: Bool {
+        authStatus == .authorized || authStatus == .provisional || authStatus == .ephemeral
+    }
+
+    /// Date-picker view onto the minutes-from-midnight AppStorage value — same
+    /// conversion NotificationSettingsSection's private `NotificationTimeRow`
+    /// uses. Writes immediately as the wheel moves; no separate "touched"
+    /// save-guard is needed here since 8:00 AM is a real, honest default,
+    /// not a placeholder like AboutYouScreen's -25y DOB.
+    private var morningTimeBinding: Binding<Date> {
+        Binding(
+            get: {
+                var comps = DateComponents()
+                comps.hour = morningMinutes / 60
+                comps.minute = morningMinutes % 60
+                return Calendar.current.date(from: comps) ?? Date()
+            },
+            set: { newDate in
+                let c = Calendar.current.dateComponents([.hour, .minute], from: newDate)
+                morningMinutes = (c.hour ?? 8) * 60 + (c.minute ?? 0)
+            }
+        )
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             OnboardingBackButton(action: onBack)
                 .padding(.top, 4)
 
-            Spacer()
+            ScrollView {
+                VStack(spacing: 20) {
+                    OnboardingTitle(
+                        title: "Stay in the Loop",
+                        subtitle: "A daily morning brief, plus honest nudges built from your real data."
+                    )
+                    .padding(.top, 12)
 
-            ZStack {
-                Circle()
-                    .fill(AngularGradient(colors: [.indigo, .purple, .pink, .indigo], center: .center))
-                    .frame(width: 130, height: 130)
-                    .blur(radius: 1)
-                    .shadow(color: .purple.opacity(0.5), radius: 30, y: 10)
-                Image(systemName: "sparkles")
-                    .font(.system(size: 56, weight: .bold))
-                    .foregroundColor(.white)
+                    kindsCard
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("MORNING BRIEF TIME")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(.white.opacity(0.5))
+                            .tracking(0.8)
+                        HStack {
+                            DatePicker("", selection: morningTimeBinding, displayedComponents: .hourAndMinute)
+                                .labelsHidden()
+                                .colorScheme(.dark)
+                            Spacer()
+                        }
+                        .padding(.horizontal, 14)
+                        .frame(minHeight: 48)
+                        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 14))
+                    }
+                    .padding(.horizontal, 20)
+
+                    Text("Illness early warning, streak saves, and your weekly review all come from your real HealthKit data — every one of them is toggleable later in Profile → Notifications.")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.white.opacity(0.45))
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 24)
+                }
+                .padding(.bottom, 120)
             }
 
-            Spacer().frame(height: 32)
+            VStack(spacing: 12) {
+                if isAuthorized {
+                    OnboardingPrimaryButton("Continue", action: onContinue)
+                } else {
+                    OnboardingPrimaryButton(isRequesting ? "Requesting…" : "Enable Notifications",
+                                            enabled: !isRequesting,
+                                            action: requestThenContinue)
+                    Button(action: {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        onContinue()
+                    }) {
+                        Text("Not now")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.white.opacity(0.6))
+                    }
+                }
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 24)
+        }
+        .task {
+            // Read-only status check — never requests. If the OS permission
+            // was already granted (or denied) from a prior install/restore,
+            // this reflects that honestly instead of showing a stale ask.
+            authStatus = await NotificationManager.shared.currentAuthorizationStatus()
+        }
+    }
 
-            OnboardingTitle(
-                title: "Meet Astra",
-                subtitle: "Your AI fitness coach. Ask anything — log meals, plan workouts, get recovery advice, all grounded in your real data."
-            )
+    private var kindsCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            kindRow(icon: "sun.max.fill", color: .orange, title: "Morning brief",
+                    description: "Recovery, sleep, and training load — every day.")
+            kindRow(icon: "cross.case.fill", color: .red, title: "Illness early warning",
+                    description: "A heads-up when resting HR, HRV, and sleep drift together.")
+            kindRow(icon: "flame.fill", color: .orange, title: "Streak saves",
+                    description: "An evening nudge if today hasn't kept your streak alive yet.")
+            kindRow(icon: "calendar.badge.clock", color: .blue, title: "Weekly review",
+                    description: "A weekly recap of your training and recovery trends.")
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 16))
+        .padding(.horizontal, 20)
+    }
 
-            Spacer()
+    private func kindRow(icon: String, color: Color, title: String, description: String) -> some View {
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(color.opacity(0.18))
+                    .frame(width: 32, height: 32)
+                Image(systemName: icon)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(color)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.white)
+                Text(description)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.white.opacity(0.55))
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    /// Only place in this screen that calls `requestPermissionIfNeeded()` —
+    /// gated entirely behind the user's own tap, never `.onAppear`/`.task`.
+    private func requestThenContinue() {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        isRequesting = true
+        Task {
+            await NotificationManager.shared.requestPermissionIfNeeded()
+            authStatus = await NotificationManager.shared.currentAuthorizationStatus()
+            isRequesting = false
+            if isAuthorized {
+                // Arm the morning brief + event nudges immediately instead of
+                // waiting for the next foreground/HK refresh — same pattern
+                // NotificationPermissionRow uses in Settings.
+                NotificationManager.shared.rescheduleMorningBrief()
+                NotificationManager.shared.evaluateProactiveNudges()
+            }
+            onContinue()
+        }
+    }
+}
+
+// MARK: - Screen 7: Meet Astra
+
+struct MeetAstraScreen: View {
+    let onFinish: () -> Void
+    let onBack: () -> Void
+
+    @AppStorage("accent_color") private var accentColorHex = "#30D158"
+    private var accentColor: Color { ThemeHelper.color(from: accentColorHex) }
+
+    // Deep-links into Coach via ChatPrefillBus — ContentView already switches
+    // to the Coach tab the moment a prompt is queued (see its
+    // `onChange(of: prefillBus.pendingPrompt)` handler), so tapping one of
+    // these both finishes onboarding AND lands the user on Coach with the
+    // question already sent.
+    private let starterPrompts: [(text: String, icon: String)] = [
+        ("What should I eat today?", "fork.knife"),
+        ("Build me a training plan for this week", "figure.strengthtraining.traditional"),
+        ("How did I sleep last night?", "moon.zzz.fill")
+    ]
+
+    var body: some View {
+        VStack(spacing: 0) {
+            OnboardingBackButton(action: onBack)
+                .padding(.top, 4)
+
+            ScrollView {
+                VStack(spacing: 0) {
+                    Spacer().frame(height: 12)
+
+                    ZStack {
+                        Circle()
+                            .fill(AngularGradient(colors: [.indigo, .purple, .pink, .indigo], center: .center))
+                            .frame(width: 130, height: 130)
+                            .blur(radius: 1)
+                            .shadow(color: .purple.opacity(0.5), radius: 30, y: 10)
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 56, weight: .bold))
+                            .foregroundColor(.white)
+                    }
+
+                    Spacer().frame(height: 32)
+
+                    OnboardingTitle(
+                        title: "Meet Astra",
+                        subtitle: "Your AI coach remembers you — goals, history, and patterns, all kept in your profile. Astra builds training plans, logs meals from a photo, and writes your morning brief, grounded in your real data."
+                    )
+
+                    Spacer().frame(height: 28)
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("TRY ASKING")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(.white.opacity(0.5))
+                            .tracking(0.8)
+
+                        ForEach(starterPrompts, id: \.text) { prompt in
+                            Button {
+                                startChat(with: prompt.text)
+                            } label: {
+                                HStack(spacing: 10) {
+                                    Image(systemName: prompt.icon)
+                                        .font(.system(size: 15, weight: .semibold))
+                                        .foregroundColor(accentColor)
+                                        .frame(width: 22)
+                                    Text(prompt.text)
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundColor(.white)
+                                        .multilineTextAlignment(.leading)
+                                    Spacer(minLength: 8)
+                                    Image(systemName: "arrow.up.right")
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundColor(.white.opacity(0.4))
+                                }
+                                .padding(14)
+                                .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 14))
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                        }
+                    }
+                    .padding(.horizontal, 24)
+                }
+                .padding(.bottom, 24)
+            }
 
             OnboardingPrimaryButton("Get Started", action: onFinish)
                 .padding(.horizontal, 24)
                 .padding(.bottom, 36)
         }
+    }
+
+    /// Queue the starter prompt BEFORE finishing — `finish()` flips
+    /// `is_onboarded`, and ContentView's bus observer switches to the Coach
+    /// tab as soon as `pendingPrompt` changes regardless of which branch of
+    /// its body is currently on screen.
+    private func startChat(with prompt: String) {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        ChatPrefillBus.shared.queue(prompt)
+        onFinish()
     }
 }

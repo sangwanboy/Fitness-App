@@ -3567,3 +3567,33 @@ why-sheets floor the picker budget at 256 + 512 headroom; diag no longer clobber
 Deployed + launched: **databaseSequenceNumber: 7020**.
 
 Latest deployed sequence: **7020**.
+
+---
+
+## Session 64 — 2026-07-21 (Onboarding 2.0 + App Store checklist sweep)
+
+### Onboarding (WP-O, Sonnet + orchestrator verification)
+5 screens → 7-step flow, evolved IN the two existing files (no pbxproj changes):
+Welcome (promise + policy sheets) → Sign In (real SIWA, mirrors LoginView; honest skip) →
+About You (DOB save-guard — untouched wheel writes nothing) → Connect Health → Goals & Coach
+(+personality picker w/ directive descriptions) → Notifications (permission on tap only, brief
+time) → Meet Astra (starter chips via ChatPrefillBus; sets is_onboarded). Agent caught a spec
+error (brief default 480 not 450) by verifying against code.
+Fresh-install smoke test (simulator screenshot) caught: **Focus permission dialog ambushed the
+Welcome screen** — SleepFocusDetector.start() ran on first .active. Gated on is_onboarded
+(FitnessApp) + started on onboarding completion (ContentView onChange).
+Settings → AI Coach → **Replay onboarding** row (non-destructive) for on-device walkthroughs.
+
+### App Store checklist executed
+- ITSAppUsesNonExemptEncryption=false (plist + project.yml).
+- docs/APP_STORE_METADATA.md: paste-ready ASC pack (record fields, description, keywords,
+  age-rating + privacy-label answers, submission sequence).
+- **Public legal/support site LIVE** via GitHub Pages from THIS repo's docs/ (user's call — repo
+  already public; no new repo): https://sangwanboy.github.io/Fitness-App/ (+privacy.html,
+  terms.html; styled, dark-mode). All 200-verified.
+Remaining (user-only): ASC record + agreements, privacy labels (script ready), screenshots
+(large-size set), upload. Estimate: ~1 focused hour of user time to "Submitted".
+
+Deployed + launched: **databaseSequenceNumber: 7044**.
+
+Latest deployed sequence: **7044**.

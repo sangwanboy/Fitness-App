@@ -38,7 +38,13 @@ struct FitnessApp: App {
         .onChange(of: scenePhase) { _, newPhase in
             switch newPhase {
             case .active:
-                SleepFocusDetector.shared.start()
+                // Not before onboarding completes: starting the Focus poll on
+                // a fresh install fires the system Focus-sharing permission
+                // dialog OVER the Welcome screen (seen in the fresh-install
+                // smoke test). ContentView starts it when onboarding ends.
+                if UserDefaults.standard.bool(forKey: "is_onboarded") {
+                    SleepFocusDetector.shared.start()
+                }
             case .background:
                 SleepFocusDetector.shared.stop()
             default:

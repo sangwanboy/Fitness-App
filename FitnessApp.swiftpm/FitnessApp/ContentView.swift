@@ -179,5 +179,12 @@ public struct ContentView: View {
             guard phase == .active, isOnboarded, isLoggedIn, didFinishInitialLoad else { return }
             Task { await healthKitManager.fetchTodayData() }
         }
+        // Start the Sleep Focus poll once onboarding completes — FitnessApp's
+        // scenePhase handler deliberately skips it pre-onboarding so the
+        // system Focus dialog can't ambush the Welcome screen, and the app
+        // is already .active when the flag flips, so this is the handoff.
+        .onChange(of: isOnboarded) { _, done in
+            if done { SleepFocusDetector.shared.start() }
+        }
     }
 }
