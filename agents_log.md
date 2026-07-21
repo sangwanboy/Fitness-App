@@ -3367,5 +3367,23 @@ Known cosmetic: tool-triggered writes (update_goal/remember_fact) don't refresh 
 pinned system prompt — self-heals next user message; model sees its write in the transcript.
 
 ### Deploy
-Simulator build green. Device deploy PENDING — iPhone showed `unavailable` (locked/asleep);
-seq recorded on deploy.
+Simulator build green. Device was briefly `unavailable`; deployed + launched once it
+reconnected: **databaseSequenceNumber: 6868**.
+
+Latest deployed sequence: **6868**.
+
+---
+
+## Session 59b — 2026-07-21 (Fix: no sign-in control in Settings against prod)
+
+User screenshots: signed out, effective URL correctly Azure, but the "Astra AI backend"
+section had NO sign-in affordance — the cutover hid "Sign in (dev)" against prod and the
+welcome-screen hint was `#if !DEBUG`, while existing installs (migrated past the login gate)
+never see LoginView. Fix: real **"Sign in with Apple"** button in the gateway section whenever
+signed out and the gateway isn't local (`signInWithApple()` mirrors LoginView's flow via
+`AppleSignInCoordinator`); dev button unchanged for local gateways; obsolete release-only hint
+removed; stale LAN-IP TextField placeholder → "Blank = production (Azure)".
+
+Deployed + launched: **databaseSequenceNumber: 6876**.
+
+Latest deployed sequence: **6876**.

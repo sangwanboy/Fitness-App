@@ -1,4 +1,5 @@
 import SwiftUI
+import AuthenticationServices
 
 public struct SettingsView: View {
     @ObservedObject private var healthKitManager = HealthKitManager.shared
@@ -37,6 +38,7 @@ public struct SettingsView: View {
     /// on appear and after every sign-in/out so the UI shows the real state.
     @State private var gatewaySessionUserId: String?
     @State private var isGatewayAuthWorking = false
+    @State private var appleSignIn = AppleSignInCoordinator()
     @State private var gatewayAuthError: String?
     @State private var gatewayTest: GatewayTestState = .idle
     @State private var showFeedbackSheet = false
@@ -396,6 +398,26 @@ public struct SettingsView: View {
         isDeletingAccount = false
     }
 
+    /// Real Sign in with Apple from Settings — the only sign-in surface for
+    /// installs that skip LoginView (existing users migrated past the gate).
+    /// Mirrors LoginView.signInTapped's production flow.
+    private func signInWithApple() async {
+        isGatewayAuthWorking = true
+        gatewayAuthError = nil
+        do {
+            let identityToken = try await appleSignIn.requestIdentityToken()
+            try await GatewayAuth.shared.signIn(appleIdentityToken: identityToken)
+            withAnimation { isLoggedIn = true }
+        } catch let error as ASAuthorizationError where error.code == .canceled {
+            // User dismissed the Apple sheet — not an error worth shouting about.
+        } catch {
+            gatewayAuthError = (error as? GatewayError)?.userMessage
+                ?? "Couldn't sign in: \(error.localizedDescription)"
+        }
+        gatewaySessionUserId = await GatewayAuth.shared.currentUserId
+        isGatewayAuthWorking = false
+    }
+
     // MARK: - Health Records (clinical) opt-in
     private var healthRecordsSection: some View {
         ProfileListGroup(header: "Health Records") {
@@ -469,12 +491,10 @@ public struct SettingsView: View {
                         }
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(.red)
-                    } else {
-                        #if DEBUG
+                    } else if GatewayConfig.isLocalGateway {
                         // Fake dev-auth only exists on a local gateway started
-                        // with ALLOW_FAKE_APPLE — against prod it can only 401,
-                        // so hide it there (LoginView does real SIWA instead).
-                        if GatewayConfig.isLocalGateway {
+                        // with ALLOW_FAKE_APPLE — against prod it can only 401.
+                        #if DEBUG
                         Button("Sign in (dev)") {
                             Task {
                                 isGatewayAuthWorking = true
@@ -491,8 +511,16 @@ public struct SettingsView: View {
                         }
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(accentColor)
-                        }
                         #endif
+                    } else {
+                        // Production gateway: the real thing. This is the only
+                        // sign-in surface for existing installs that never see
+                        // LoginView, so it must always exist when signed out.
+                        Button("Sign in with Apple") {
+                            Task { await signInWithApple() }
+                        }
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(accentColor)
                     }
                 }
 
@@ -502,15 +530,6 @@ public struct SettingsView: View {
                         .foregroundColor(.red)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-
-                #if !DEBUG
-                if gatewaySessionUserId == nil {
-                    Text("Sign in with Apple from the welcome screen (Account → Sign out brings you there).")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(isDark ? .white.opacity(0.55) : .black.opacity(0.55))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                #endif
 
                 Rectangle()
                     .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.06))
@@ -522,7 +541,7 @@ public struct SettingsView: View {
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundColor(isDark ? .white.opacity(0.85) : .black.opacity(0.85))
 
-                    TextField("http://10.130.154.45:8787", text: $gatewayBaseURLOverride)
+                    TextField("Blank = production (Azure)", text: $gatewayBaseURLOverride)
                         .font(.system(size: 12, design: .monospaced))
                         .keyboardType(.URL)
                         .textInputAutocapitalization(.never)
