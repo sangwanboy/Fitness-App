@@ -3645,3 +3645,65 @@ use this pattern from now on, it's in this entry as the reference).
 Deployed + launched (REAL fixed binary): **databaseSequenceNumber: 7060**.
 
 Latest deployed sequence: **7060**.
+
+---
+
+## Session 67 — 2026-07-21 — HANDOFF (user compacting chat; read this first next session)
+
+### Where things stand (all pushed through `60bede6`; device on seq **7060**)
+Production day 1 with a REAL user (first SIWA account, ~$6 spend, all features exercised live).
+Shipped today: App Store readiness (SIWA, privacy manifest, deletion, legal pages LIVE at
+https://sangwanboy.github.io/Fitness-App/), Azure prod cutover + prompt caching (~10k-token
+cached prefix, verified via Cached-input meter), proactive notifications (morning brief PROVEN
+delivered 07:30), Astra memory/profile + chat selector, training plans w/ calendar + exercises
++ workout sheets, Morning Brief 2.0, weekly review (narrative WORKING after 4-layer fix:
+timeouts→bursts→thought-parts→thinking-budget starvation), 7-step onboarding (+Replay row in
+Settings), camera audio-session deadlock fix, Astra now told TODAY'S DATE (2025-plan bug) +
+plan-window validation, honest plan-card states.
+
+### IN-FLIGHT — two background agents were running at handoff
+1. **WP-S chat polish (Sonnet)**: NEW `Services/ChatSuggestionEngine.swift` (on-device
+   predictive suggestion chips from predictions/plan/nutrition/streak/profile — user demand:
+   no more hardcoded chips) + ChatView composer spacing + keyboard-dismiss chevron.
+   On landing: register new file (`register_pbx.py` at
+   `/private/tmp/claude-503/-Users-tushar-projects-Fitness-App/b5b83655-2754-4392-a4d5-604d6484f3ee/scratchpad/register_pbx.py`,
+   recreate from Session-55 pattern if gone), BUILD-GATED deploy, commit+push.
+2. **Opus systemic audit** (read-only): cross-feature interaction hunt over today's ~20 commits
+   (audio-session-class collisions, other model-date gaps, cache-prefix integrity, honest-state
+   violations, token-starvation class, streaming-vs-absorbed-429 timeouts). Triage its report,
+   fix top findings. Outputs land in the session tasks dir (`.../tasks/<id>.output`).
+
+### ⚠️ Process rule (born from a live incident — commit 125f06a shipped broken + stale binary)
+NEVER gate deploys on `grep -E "BUILD|error:"` — it matches FAILURES too. Pattern:
+`xcodebuild … 2>&1 | tee /tmp/build.log`; proceed only if `grep -q "BUILD SUCCEEDED" /tmp/build.log`.
+
+### User actions pending (told, not yet confirmed done)
+1. Ask Astra "rebuild my training week" (current stored plan is dated JULY 2025; rebuild also
+   replaces the 2025 calendar events by stored ids). 2. Reboot iPhone if camera still black
+   (wedged mediaserverd from the day's hung sessions; code fix is live). 3. ASC: app record +
+   privacy labels + screenshots + upload — everything paste-ready in docs/APP_STORE_METADATA.md.
+   4. Optional/deferred: GCP key rotation (user approval required), admin-secret rotation
+   (gateway repo Session 5 note), ASC API key for CLI uploads.
+
+### Verification tricks that earned their keep (reuse these)
+- Pull on-device state: `xcrun devicectl device copy from --domain-type appDataContainer
+  --domain-identifier com.tushar.fitnessapp --source <path>` — used for
+  Documents/notification_audit.json (DEBUG tripwire, 20s cadence),
+  Documents/weekly_narrative_diag.json (narrative forensics), Library/Application
+  Support/TrainingPlan/active_plan.json (caught the 2025 dates), WeeklyReview week cache.
+- Prod truth: admin API (secret at ~/.atlas/admin-secret.txt) — /admin/api/health shows
+  upstream429s ("absorbed" = gateway retries internally; clients see LATENCY not 429s — size
+  client timeouts accordingly). SSH to the VM is NOT authorized from this Mac (publickey).
+
+### Open questions / queued next
+- User asked "does it support embedding?" — never answered (API hiccup): gateway exposes
+  /v1/chat + /v1/images only, no embeddings endpoint; adding one = gateway repo work
+  (capability + model map + endpoint). Worth answering next session.
+- Morning brief 2026-07-22 07:30 = first ASTRA-WRITTEN brief (engine fallback if BG denied) —
+  verify with the user.
+- WP-B2 nit deferred: MorningBriefCard possible phantom top gap on Home (visual check).
+- mark_workout_done → HKWorkout write (plan completions invisible to workout count/rings/HR
+  zones — user hit this as "0 workouts").
+- TestFlight once ASC record exists; screenshots session (large-size set).
+
+Latest deployed sequence: **7060**.
