@@ -340,6 +340,9 @@ struct AboutYouScreen: View {
     @State private var sex = ""
     @State private var heightCm: Double = 170
     @State private var weightKg: Double = 70
+    // Same honesty rule as dobTouched: untouched slider defaults (170/70)
+    // are placeholders, not facts — never persisted, never written to Health.
+    @State private var bodyTouched = false
     // Save-guard (same pattern as EditProfileSheet in ProfileSheets.swift):
     // only persist the wheel's value if the user actually touched it, or a
     // real DOB already existed. Saving the untouched -25y default as if it
@@ -399,10 +402,12 @@ struct AboutYouScreen: View {
                         sliderField("Height", value: $heightCm, range: 120...220, step: 1, suffix: "cm") {
                             "\(Int(heightCm)) cm"
                         }
+                        .onChange(of: heightCm) { _, _ in bodyTouched = true }
 
                         sliderField("Weight", value: $weightKg, range: 30...200, step: 0.5, suffix: "kg") {
                             String(format: "%.1f kg", weightKg)
                         }
+                        .onChange(of: weightKg) { _, _ in bodyTouched = true }
                     }
                     .padding(.horizontal, 20)
 
@@ -483,11 +488,16 @@ struct AboutYouScreen: View {
         // -25y placeholder into athlete_dob as if it were a real answer.
         if dobTouched { athleteDOBInterval = dob.timeIntervalSince1970 }
         athleteSex = sex
-        athleteHeightCm = heightCm
-        athleteWeightKg = weightKg
-        Task {
-            _ = await HealthKitManager.shared.logBodyMass(kilograms: weightKg)
-            _ = await HealthKitManager.shared.logHeight(centimeters: heightCm)
+        // Untouched sliders must not stamp 170cm/70kg into the profile (and
+        // definitely not into Apple Health) as if the user said so — same
+        // fabricated-data class as the DOB "born today" bug.
+        if bodyTouched || athleteHeightCm > 0 || athleteWeightKg > 0 {
+            athleteHeightCm = heightCm
+            athleteWeightKg = weightKg
+            Task {
+                _ = await HealthKitManager.shared.logBodyMass(kilograms: weightKg)
+                _ = await HealthKitManager.shared.logHeight(centimeters: heightCm)
+            }
         }
     }
 }

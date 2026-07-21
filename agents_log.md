@@ -3707,3 +3707,43 @@ NEVER gate deploys on `grep -E "BUILD|error:"` — it matches FAILURES too. Patt
 - TestFlight once ASC record exists; screenshots session (large-size set).
 
 Latest deployed sequence: **7060**.
+
+---
+
+## Session 68 — 2026-07-21 (Audit-class sweep + predictive chips + chat polish — all shipped)
+
+### Opus systemic audit verdict (user: "fixing one breaks another — check every log")
+"Fixes were applied per-file, not per-bug-class; each class had one straggler." All fixed:
+1. **FoodVisionService carried BOTH already-fixed classes** (thought-unsafe `parts.first(where:)`
+   extraction ×2 + picker-coupled thinking budget ×2 + 20s timeout) — meal scans failed on
+   Minimal thinking / intermittently otherwise. Now: responseText()+strippedJSONText, fixed
+   512+1024 budget, 45s timeout.
+2. **Plan card "All done" lie**: fired on session EXISTENCE not completion (missed week showed
+   "all done" + 0% ring). Now allSatisfy(completed), else honest "N sessions missed".
+3. **Wrong-year backstop** extended to add_reminder/add_calendar_event
+   (`plausibleScheduleError`: 1h ago…1y out, error names today's date; due==nil valid).
+4. Chat streaming idleTimeout 60→90s (bounds first byte; absorbed-429 latency class) + stale
+   "120s watchdog" comment corrected (no such watchdog exists).
+5. Onboarding fabricated-body fix: untouched 170cm/70kg sliders no longer persist or write to
+   Health (bodyTouched guard, same class as dobTouched).
+Audit cleared: camera fix, toolbar fix, brief card states, notification section, onboarding
+escape hatches, UserDefaults collisions, ChatPrefillBus. Deferred (low): sign-in self-heal
+volley unstaggered; age reads Date() in static prompt run (day-stable, cache-OK).
+
+### WP-S chat polish (user requests)
+NEW `Services/ChatSuggestionEngine.swift`: on-device deterministic predictive chips (9 scored
+rules: illness, sedentary, streak-evening, sleep-debt/wind-down, recovery-push, plan-today/
+build-week, nutrition log/protein-pace, weekly-review, profile-goal filler; honest hardcoded
+floor). ChatView: chips from engine; REAL spacing root cause fixed (chip row was never gated on
+isInputFocused so keyboard-up clearance math was wrong — gated + padding 110/170);
+`.scrollDismissesKeyboard(.interactively)` + chevron-down dismiss button while focused.
+Plus: plan card "Next:" row now tappable ("tap for exercises" hint + chevron) → workout sheet
+(user: "why is it not showing exercises"; data verified present on-device via plan.json).
+
+### Process
+Build gate CAUGHT a real compile error this time (optional Date? in addReminder validation) —
+stale-binary incident class is dead. One combined gated deploy.
+
+Deployed + launched: **databaseSequenceNumber: 7068**.
+
+Latest deployed sequence: **7068**.

@@ -5,6 +5,7 @@ import PhotosUI
 public struct ChatView: View {
     @StateObject private var viewModel = ChatViewModel()
     @ObservedObject private var prefillBus = ChatPrefillBus.shared
+    @ObservedObject private var suggestionEngine = ChatSuggestionEngine.shared
     @Environment(\.scenePhase) private var scenePhase
     @State private var inputText: String = ""
     @State private var showClearAlert = false
@@ -27,14 +28,7 @@ public struct ChatView: View {
     
     private var isDark: Bool { themeMode == "dark" }
     private var accentColor: Color { ThemeHelper.color(from: accentColorHex) }
-    
-    private let suggestionChips = [
-        "How was my sleep?",
-        "Plan tomorrow",
-        "Why am I tired?",
-        "Suggest a workout"
-    ]
-    
+
     public init() {}
     
     public var body: some View {
@@ -64,21 +58,30 @@ public struct ChatView: View {
                     }
                     .padding(.horizontal, 20)
                     .animation(.spring(response: 0.4, dampingFraction: 0.75), value: viewModel.messages.count)
-                    // Clearance for the floating overlay. When the keyboard is
-                    // up, only the composer (~90pt) sits above it. When unfocused
-                    // both the suggestion chips bar AND the composer overlay the
-                    // scroll — combined ~160pt. Earlier 100pt was occluding the
-                    // tail of every model reply after a tool confirm.
-                    .padding(.bottom, isInputFocused ? 90 : 160)
+                    // Clearance for the floating overlay, plus a comfortable
+                    // breathing-room cushion beyond the exact measured height
+                    // (~20pt) so the last bubble never sits flush against the
+                    // chrome above it. When focused, the chips row is hidden
+                    // (see below) and replaced by the small keyboard-dismiss
+                    // chevron row — composer (~58pt) + chevron row (~40pt) +
+                    // cushion ≈ 110pt. When unfocused, chips bar + composer
+                    // overlay the scroll — combined ≈ 150pt + cushion ≈ 170pt.
+                    // Earlier fixed 90/160pt values assumed chips were already
+                    // hidden while focused, but the row wasn't actually gated
+                    // on focus — that mismatch is what let the composer/chips
+                    // overlap the last bubble with the keyboard up.
+                    .padding(.bottom, isInputFocused ? 110 : 170)
                 }
                 .scrollContentBackground(.hidden)
                 .background(AdaptiveBackground())
+                .scrollDismissesKeyboard(.interactively)
                 .onChange(of: viewModel.messages.count) { scrollToBottom(proxy: proxy) }
                 .onChange(of: viewModel.isGenerating) { scrollToBottom(proxy: proxy) }
                 .onAppear {
                     scrollToBottom(proxy: proxy)
                     consumePrefillIfAny()
                     consumeComposerSeedIfAny()
+                    suggestionEngine.refresh()
                 }
                 .onChange(of: prefillBus.pendingPrompt) {
                     consumePrefillIfAny()
@@ -92,12 +95,16 @@ public struct ChatView: View {
                 Spacer()
 
                 VStack(spacing: 10) {
-                    if !viewModel.isGenerating {
+                    // Predictive suggestion chips — hidden while the composer
+                    // is focused (nothing to suggest once the user's already
+                    // typing; also frees the space the chevron row below
+                    // uses to offer a keyboard-dismiss affordance instead).
+                    if !viewModel.isGenerating && !isInputFocused {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
-                                ForEach(suggestionChips, id: \.self) { chip in
-                                    Button(action: { sendPrompt(chip) }) {
-                                        Text(chip)
+                                ForEach(suggestionEngine.chips) { chip in
+                                    Button(action: { sendPrompt(chip.prompt) }) {
+                                        Text(chip.label)
                                             .font(.system(size: 13, weight: .semibold, design: .rounded))
                                             .foregroundColor(isDark ? .white : .black)
                                             .padding(.horizontal, 14)
@@ -111,6 +118,26 @@ public struct ChatView: View {
                         }
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: viewModel.isGenerating)
+                    }
+
+                    // Keyboard-dismiss affordance — a small glass chevron near
+                    // the composer's trailing edge, visible only while typing.
+                    // Native "back button" alternative to swipe-to-dismiss.
+                    if isInputFocused {
+                        HStack {
+                            Spacer()
+                            Button(action: { isInputFocused = false }) {
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundColor(isDark ? .white : .black)
+                                    .frame(width: 30, height: 30)
+                                    .glassEffect(.regular.interactive(), in: .circle)
+                            }
+                            .accessibilityLabel("Dismiss keyboard")
+                            .padding(.trailing, 20)
+                        }
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isInputFocused)
                     }
 
                     // Composer — native TextField wrapped in Apple Liquid Glass.

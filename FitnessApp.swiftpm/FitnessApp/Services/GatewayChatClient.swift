@@ -628,11 +628,15 @@ public actor GatewayChatClient {
             ]
         )
 
-        // Idle timeout of 60s mid-stream (URLSession aborts a silent
-        // connection); the 120s wall-clock watchdog is enforced by the caller.
+        // Idle timeout 90s (was 60): this also bounds the wait for the FIRST
+        // byte, and the gateway absorbs upstream Vertex 429s by retrying
+        // internally — first-token latency can legitimately reach 45-90s
+        // during a quota burst (same class as the one-shot timeout fixes).
+        // There is NO separate wall-clock watchdog in the caller (an older
+        // comment here claimed one); this idle timeout is the only bound.
         // Each yielded element is one Vertex-shaped JSON chunk — the SSE
         // framing is handled inside GatewayTransport.
-        let events = try await GatewayTransport.streamChat(body: body, idleTimeout: 60)
+        let events = try await GatewayTransport.streamChat(body: body, idleTimeout: 90)
         for try await eventData in events {
             if Task.isCancelled {
                 continuation.finish()

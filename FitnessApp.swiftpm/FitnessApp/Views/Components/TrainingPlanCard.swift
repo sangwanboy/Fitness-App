@@ -262,22 +262,33 @@ public struct TrainingPlanCard: View {
     @ViewBuilder
     private var nextSessionRow: some View {
         if let next = nextPlannedSession {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: next.kind.icon)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(kindColor(next.kind))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Next: \(next.title)")
+            // Tappable: the day's full exercise prescription lives in the
+            // workout sheet, and nothing advertised that (user: "why is it
+            // not showing exercises to do"). Row + chevron + hint fix the
+            // discoverability; day chips open the same sheet per day.
+            Button { selectedDay = next } label: {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: next.kind.icon)
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(isDark ? .white : .black)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.85)
-                    Text("\(Self.dayLabel(next.date)) \u{00B7} \(next.durationMin) min")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(isDark ? .white.opacity(0.5) : .black.opacity(0.5))
+                        .foregroundColor(kindColor(next.kind))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Next: \(next.title)")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(isDark ? .white : .black)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
+                        Text("\(Self.dayLabel(next.date)) \u{00B7} \(next.durationMin) min \u{00B7} tap for exercises")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(isDark ? .white.opacity(0.5) : .black.opacity(0.5))
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(isDark ? .white.opacity(0.35) : .black.opacity(0.35))
                 }
-                Spacer()
             }
+            .buttonStyle(.plain)
+            .accessibilityHint("Shows the full workout")
         } else if store.activePlan != nil, store.currentWeekDays.isEmpty {
             // Plan exists but none of its days fall in the current week —
             // seen live when a plan landed on 2025 dates. "All done" here
@@ -288,12 +299,27 @@ public struct TrainingPlanCard: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(isDark ? .white.opacity(0.8) : .black.opacity(0.8))
             }
-        } else if !store.currentWeekDays.filter({ $0.kind != .rest }).isEmpty {
-            HStack(spacing: 8) {
-                Image(systemName: "checkmark.seal.fill").foregroundColor(.green)
-                Text("All planned sessions are done")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(isDark ? .white.opacity(0.8) : .black.opacity(0.8))
+        } else {
+            // No upcoming session left this week. "All done" is only true if
+            // every non-rest day was actually completed (audit finding: the
+            // old check fired on EXISTENCE of sessions, so a fully-missed
+            // week read as "all done" beside a 0% ring).
+            let sessions = store.currentWeekDays.filter { $0.kind != .rest }
+            if !sessions.isEmpty, sessions.allSatisfy({ $0.completed }) {
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.seal.fill").foregroundColor(.green)
+                    Text("All planned sessions are done")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(isDark ? .white.opacity(0.8) : .black.opacity(0.8))
+                }
+            } else if !sessions.isEmpty {
+                let missed = sessions.filter { !$0.completed }.count
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.circle.fill").foregroundColor(.orange)
+                    Text("\(missed) session\(missed == 1 ? "" : "s") missed this week — ask Astra to adjust next week")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(isDark ? .white.opacity(0.8) : .black.opacity(0.8))
+                }
             }
         }
     }

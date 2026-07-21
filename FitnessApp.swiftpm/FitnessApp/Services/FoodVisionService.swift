@@ -16,7 +16,11 @@ public actor FoodVisionService {
     public static let shared = FoodVisionService()
     private init() {}
 
-    private let timeout: TimeInterval = 20
+    // 45s (was 20): the gateway absorbs upstream Vertex 429s by retrying
+    // internally, so slow-but-succeeding calls can exceed 30s. Same class
+    // as the enrichment timeout fix; dead gateway still fast-fails via the
+    // transport's 2s health probe.
+    private let timeout: TimeInterval = 45
 
     /// Resize to ≤1024px (Gemini tiles at 768px; larger adds tokens, not
     /// accuracy), JPEG q=0.7, then POST to the gateway's non-streaming
@@ -35,7 +39,10 @@ public actor FoodVisionService {
         }
 
         // 2. Build the gateway body (structured JSON output via responseSchema)
-        let thinkingBudget = GatewayChatClient.thinkingBudgetTokens()
+        // Fixed budget + headroom — decoupled from the chat Thinking Level
+        // picker (audit finding: this was the fourth one-shot caller still
+        // carrying the budget-0 starvation the engines were cured of).
+        let thinkingBudget = 512
         let body = GatewayChatPayload.body(
             stream: false,
             system: Self.systemInstruction,
@@ -47,7 +54,7 @@ public actor FoodVisionService {
                 "responseMimeType": "application/json",
                 "responseSchema": Self.responseSchema,
                 "temperature": 0.2,
-                "maxOutputTokens": 1024 + thinkingBudget,
+                "maxOutputTokens": 1024 + thinkingBudget + 1024,
                 "thinkingConfig": ["thinkingBudget": thinkingBudget]
             ]
         )
@@ -71,13 +78,10 @@ public actor FoodVisionService {
         }
 
         // 5. Extract candidates[0].content.parts[*].text (first part carrying text)
-        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let candidates = obj["candidates"] as? [[String: Any]],
-              let first = candidates.first,
-              let content = first["content"] as? [String: Any],
-              let parts = content["parts"] as? [[String: Any]],
-              let jsonText = parts.first(where: { $0["text"] is String })?["text"] as? String,
-              let jsonData = jsonText.data(using: .utf8)
+        // Thought-part-safe extraction (audit finding: .first(where:) grabbed
+        // Gemini 3.x thought parts — they carry a text string too).
+        guard let (rawText, _) = GatewayChatPayload.responseText(fromBody: data),
+              let jsonData = GatewayChatPayload.strippedJSONText(rawText).data(using: .utf8)
         else { throw FoodVisionError.parseError }
 
         // 6. Decode into FoodRecognitionResult. Explicit snake_case CodingKeys
@@ -125,7 +129,10 @@ public actor FoodVisionService {
         you changed. Return JSON conforming exactly to the schema. No other output.
         """
 
-        let thinkingBudget = GatewayChatClient.thinkingBudgetTokens()
+        // Fixed budget + headroom — decoupled from the chat Thinking Level
+        // picker (audit finding: this was the fourth one-shot caller still
+        // carrying the budget-0 starvation the engines were cured of).
+        let thinkingBudget = 512
         let body = GatewayChatPayload.body(
             stream: false,
             system: Self.systemInstruction,
@@ -137,7 +144,7 @@ public actor FoodVisionService {
                 "responseMimeType": "application/json",
                 "responseSchema": Self.responseSchema,
                 "temperature": 0.2,
-                "maxOutputTokens": 1024 + thinkingBudget,
+                "maxOutputTokens": 1024 + thinkingBudget + 1024,
                 "thinkingConfig": ["thinkingBudget": thinkingBudget]
             ]
         )
@@ -156,13 +163,10 @@ public actor FoodVisionService {
             Task { @MainActor in TokenMeter.shared.record(usage, source: .foodVision) }
         }
 
-        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let candidates = obj["candidates"] as? [[String: Any]],
-              let first = candidates.first,
-              let content = first["content"] as? [String: Any],
-              let parts = content["parts"] as? [[String: Any]],
-              let jsonText = parts.first(where: { $0["text"] is String })?["text"] as? String,
-              let jsonData = jsonText.data(using: .utf8)
+        // Thought-part-safe extraction (audit finding: .first(where:) grabbed
+        // Gemini 3.x thought parts — they carry a text string too).
+        guard let (rawText, _) = GatewayChatPayload.responseText(fromBody: data),
+              let jsonData = GatewayChatPayload.strippedJSONText(rawText).data(using: .utf8)
         else { throw FoodVisionError.parseError }
 
         guard let result = try? JSONDecoder().decode(FoodRecognitionResult.self, from: jsonData) else {

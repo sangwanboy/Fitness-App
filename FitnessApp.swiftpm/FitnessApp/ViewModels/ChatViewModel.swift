@@ -1312,8 +1312,11 @@ public final class ChatViewModel: ObservableObject {
             )
             return WriteToolOutcome(outcome.succeeded, error: outcome.failureReason)
         case .addReminder(let title, let due, _):
+            // due is optional (no-date reminders are valid) — validate only when set.
+            if let due, let dateError = Self.plausibleScheduleError(due) { return WriteToolOutcome(false, error: dateError) }
             return WriteToolOutcome(EventKitManager.shared.addReminder(title: title, dueDate: due))
         case .addCalendarEvent(let title, let start, let end, let notes):
+            if let dateError = Self.plausibleScheduleError(start) { return WriteToolOutcome(false, error: dateError) }
             return WriteToolOutcome(EventKitManager.shared.addEvent(title: title, startDate: start, endDate: end, notes: notes))
         case .updateReminder(let id, let title, let due, let notes):
             return WriteToolOutcome(await EventKitManager.shared.updateAppReminder(id: id, title: title, dueDate: due, notes: notes))
@@ -1502,6 +1505,20 @@ public final class ChatViewModel: ObservableObject {
         let plan = TrainingPlanStore.TrainingPlan(weekStart: weekStart, days: parsedDays)
         TrainingPlanStore.shared.upsert(plan)
         return WriteToolOutcome(true, note: calendarNote)
+    }
+
+    /// Era/range backstop for model-emitted schedule dates (audit: the
+    /// wrong-year guard existed only on set_training_plan while a live plan
+    /// landed in 2025; reminders/events are the likeliest siblings). Window:
+    /// 1h ago … 1 year out. Returns an honest error naming today's date so
+    /// the model self-corrects on the retry.
+    static func plausibleScheduleError(_ date: Date) -> String? {
+        let now = Date()
+        guard let earliest = Calendar.current.date(byAdding: .hour, value: -1, to: now),
+              let latest = Calendar.current.date(byAdding: .year, value: 1, to: now) else { return nil }
+        if (earliest...latest).contains(date) { return nil }
+        let f = DateFormatter(); f.dateFormat = "EEEE, d MMMM yyyy HH:mm"
+        return "That date (\(f.string(from: date))) is outside the schedulable window. TODAY is \(todayLine()) — re-emit with a correct current-era date. Nothing was saved."
     }
 
     /// "Tuesday, 21 July 2026" — the model has NO reliable sense of the

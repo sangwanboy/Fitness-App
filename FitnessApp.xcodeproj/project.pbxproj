@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		511411B980E341A8843D696B /* ChatSuggestionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B245EF4DFE2C47CCBF39C842 /* ChatSuggestionEngine.swift */; };
 		22754683D3FA494AB342CC37 /* TrainingPlanCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 595BB7631AC0415A819084C9 /* TrainingPlanCard.swift */; };
 		C01E99C4F76946A38FCE62BB /* TrainingPlanStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48882C1E348D44A597BF529A /* TrainingPlanStore.swift */; };
 		45AB142656B0461E99C5BE6F /* MorningBriefCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD10C629EFE244A393174AC4 /* MorningBriefCard.swift */; };
@@ -114,6 +115,7 @@
 		/* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		B245EF4DFE2C47CCBF39C842 /* ChatSuggestionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatSuggestionEngine.swift; sourceTree = "<group>"; };
 		595BB7631AC0415A819084C9 /* TrainingPlanCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrainingPlanCard.swift; sourceTree = "<group>"; };
 		48882C1E348D44A597BF529A /* TrainingPlanStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrainingPlanStore.swift; sourceTree = "<group>"; };
 		AD10C629EFE244A393174AC4 /* MorningBriefCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MorningBriefCard.swift; sourceTree = "<group>"; };
@@ -379,6 +381,7 @@
 				CD8EFA02B6D94C92992A4691 /* NutritionTargets.swift */,
 				2D78209137464E348CB22E86 /* MorningBriefEngine.swift */,
 				48882C1E348D44A597BF529A /* TrainingPlanStore.swift */,
+				B245EF4DFE2C47CCBF39C842 /* ChatSuggestionEngine.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -517,6 +520,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				511411B980E341A8843D696B /* ChatSuggestionEngine.swift in Sources */,
 				22754683D3FA494AB342CC37 /* TrainingPlanCard.swift in Sources */,
 				C01E99C4F76946A38FCE62BB /* TrainingPlanStore.swift in Sources */,
 				45AB142656B0461E99C5BE6F /* MorningBriefCard.swift in Sources */,
