@@ -20,6 +20,11 @@ struct FitnessApp: App {
         UNUserNotificationCenter.current().delegate = NotificationManager.shared
         Task { await NotificationManager.shared.requestPermissionIfNeeded() }
 
+        // Touch the singleton early so its .gatewaySessionEstablished /
+        // didBecomeActive retry observers are registered from launch, not
+        // just whenever something else happens to first reference it.
+        _ = GatewayProfileSync.shared
+
         Self.registerBackgroundRefresh()
 
         #if DEBUG

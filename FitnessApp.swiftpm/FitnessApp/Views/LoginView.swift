@@ -5,6 +5,9 @@ public struct LoginView: View {
     @AppStorage("is_logged_in") private var isLoggedIn = false
     @AppStorage("accent_color") private var accentColorHex = "#30D158"
     @AppStorage("theme_mode") private var themeMode = "dark"
+    // Explicit opt-in (App Store/GDPR requirement) — default OFF everywhere
+    // this key is read.
+    @AppStorage("marketing_opt_in") private var marketingOptIn = false
     @State private var appeared = false
     @State private var ringProgress: Double = 0
 
@@ -139,6 +142,22 @@ public struct LoginView: View {
                     .disabled(isSigningIn)
                     .padding(.horizontal, 24)
 
+                    // Compact marketing consent row — explicit opt-in only,
+                    // never defaulted on.
+                    Toggle(isOn: $marketingOptIn) {
+                        Text("Email me tips & product updates")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(isDark ? .white.opacity(0.6) : .black.opacity(0.6))
+                    }
+                    .tint(accentColor)
+                    .onChange(of: marketingOptIn) { _, _ in
+                        UserDefaults.standard.set(true, forKey: "marketing_opt_in_touched")
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 14))
+                    .padding(.horizontal, 24)
+
                     // Sign-up copy (guideline 5.1.1(i)) — explains what the
                     // account is for and the never-stored-server-side promise.
                     Text("Signing in creates your AI coach account through Apple — no email required. Your chat messages and health context are sent to our AI gateway only to generate that reply, and are never stored on our servers.")
@@ -236,12 +255,14 @@ public struct LoginView: View {
                 if GatewayConfig.isLocalGateway {
                     try await GatewayAuth.shared.signInDev()
                 } else {
-                    let identityToken = try await appleSignIn.requestIdentityToken()
-                    try await GatewayAuth.shared.signIn(appleIdentityToken: identityToken)
+                    let result = try await appleSignIn.requestSignIn()
+                    try await GatewayAuth.shared.signIn(appleIdentityToken: result.identityToken)
+                    persistAppleSignInResult(result)
                 }
                 #else
-                let identityToken = try await appleSignIn.requestIdentityToken()
-                try await GatewayAuth.shared.signIn(appleIdentityToken: identityToken)
+                let result = try await appleSignIn.requestSignIn()
+                try await GatewayAuth.shared.signIn(appleIdentityToken: result.identityToken)
+                persistAppleSignInResult(result)
                 #endif
                 withAnimation { isLoggedIn = true }
             } catch let error as ASAuthorizationError where error.code == .canceled {
@@ -257,25 +278,39 @@ public struct LoginView: View {
 
 // MARK: - Sign in with Apple coordinator
 
-/// Wraps ASAuthorizationController in an async call that returns the raw
-/// Apple identity token (JWT) for the gateway's /v1/auth/apple exchange.
-/// NOTE: requires the Sign in with Apple entitlement
-/// (`com.apple.developer.applesignin`, paid team RM42FV53FU) — that
-/// entitlement is now present in FitnessApp.entitlements. If provisioning
-/// ever drops the capability the request fails and LoginView surfaces the
-/// error honestly.
+/// Result of a completed Sign in with Apple authorization: the identity
+/// token for the gateway's /v1/auth/apple exchange, plus whatever profile
+/// info Apple disclosed on THIS authorization. `fullName`/`email` are
+/// non-nil only on the very first authorization for a given Apple ID —
+/// every later authorization returns nil for both by design. Callers must
+/// handle that nil silently (no fallback prompt asking the user to re-enter
+/// what Apple already decided not to share again).
+struct AppleSignInResult {
+    let identityToken: String
+    let fullName: PersonNameComponents?
+    let email: String?
+}
+
+/// Wraps ASAuthorizationController in an async call that returns the Apple
+/// identity token (JWT) for the gateway's /v1/auth/apple exchange, plus any
+/// name/email Apple discloses. NOTE: requires the Sign in with Apple
+/// entitlement (`com.apple.developer.applesignin`, paid team RM42FV53FU) —
+/// that entitlement is now present in FitnessApp.entitlements. If
+/// provisioning ever drops the capability the request fails and LoginView
+/// surfaces the error honestly.
 @MainActor
 final class AppleSignInCoordinator: NSObject, ASAuthorizationControllerDelegate,
                                     ASAuthorizationControllerPresentationContextProviding {
-    private var continuation: CheckedContinuation<String, Error>?
+    private var continuation: CheckedContinuation<AppleSignInResult, Error>?
 
-    func requestIdentityToken() async throws -> String {
+    func requestSignIn() async throws -> AppleSignInResult {
         try await withCheckedThrowingContinuation { continuation in
             self.continuation = continuation
             let request = ASAuthorizationAppleIDProvider().createRequest()
-            // Identity token only — no name/email scopes needed; the gateway
-            // keys the account off the token's stable `sub`.
-            request.requestedScopes = []
+            // Full name + email so the account this creates can carry a
+            // human profile — the gateway still keys the account off the
+            // token's stable `sub`; this is purely profile capture.
+            request.requestedScopes = [.fullName, .email]
             let controller = ASAuthorizationController(authorizationRequests: [request])
             controller.delegate = self
             controller.presentationContextProvider = self
@@ -292,7 +327,9 @@ final class AppleSignInCoordinator: NSObject, ASAuthorizationControllerDelegate,
             continuation = nil
             return
         }
-        continuation?.resume(returning: token)
+        continuation?.resume(returning: AppleSignInResult(identityToken: token,
+                                                            fullName: credential.fullName,
+                                                            email: credential.email))
         continuation = nil
     }
 
@@ -307,4 +344,28 @@ final class AppleSignInCoordinator: NSObject, ASAuthorizationControllerDelegate,
             .compactMap { ($0 as? UIWindowScene)?.keyWindow }
             .first ?? ASPresentationAnchor()
     }
+}
+
+/// Persist whatever Apple gave us on a completed authorization, then kick a
+/// fire-and-forget gateway profile sync. Shared by every Sign in with Apple
+/// call site (LoginView, onboarding SignInScreen, SettingsView) since they
+/// all funnel through the same `AppleSignInCoordinator`.
+@MainActor
+func persistAppleSignInResult(_ result: AppleSignInResult) {
+    if let fullName = result.fullName {
+        let formatter = PersonNameComponentsFormatter()
+        formatter.style = .default
+        let formatted = formatter.string(from: fullName).trimmingCharacters(in: .whitespacesAndNewlines)
+        if !formatted.isEmpty {
+            let ud = UserDefaults.standard
+            let existingName = ud.string(forKey: "athlete_name") ?? ""
+            if existingName.isEmpty || existingName == "Alex Rivera" {
+                ud.set(formatted, forKey: "athlete_name")
+            }
+        }
+    }
+    if let email = result.email, !email.isEmpty {
+        UserDefaults.standard.set(email, forKey: "account_email")
+    }
+    Task { await GatewayProfileSync.shared.syncNow() }
 }

@@ -13,6 +13,12 @@ public struct SettingsView: View {
     @AppStorage("athlete_name") private var athleteName = "Alex Rivera"
     @AppStorage("glass_tint_color") private var glassTintColorHex = "#FFFFFF"
     @AppStorage("glass_tint_strength") private var glassTintStrength = 0.0
+    // Explicit opt-in (App Store/GDPR requirement) — same key LoginView and
+    // the onboarding sign-in screen bind to.
+    @AppStorage("marketing_opt_in") private var marketingOptIn = false
+    // Populated from Sign in with Apple (first authorization only) or backfilled
+    // from the gateway's /v1/me/profile response — honest "—" when we have neither.
+    @AppStorage("account_email") private var accountEmail = ""
 
     @State private var showSignOutConfirm = false
     @State private var showDeleteAccountConfirm = false
@@ -333,6 +339,10 @@ public struct SettingsView: View {
             ProfileListRow(icon: "person.fill", iconColor: .blue, title: "Personal details",
                            action: { showEditProfile = true })
             ProfileListDivider()
+            emailRow
+            ProfileListDivider()
+            marketingOptInRow
+            ProfileListDivider()
             ProfileListRow(icon: "bell.fill", iconColor: .orange, title: "Notifications",
                            action: { ExternalLink.openAppSettings() })
             ProfileListDivider()
@@ -384,6 +394,49 @@ public struct SettingsView: View {
         }
     }
 
+    /// Honest "—" fallback — an account can lack an email either because
+    /// Apple never disclosed one (only shared on the first-ever authorization
+    /// for this Apple ID) or because sync hasn't reached the gateway yet.
+    private var emailRow: some View {
+        LabeledContent {
+            Text(accountEmail.isEmpty ? "—" : accountEmail)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(isDark ? .white.opacity(0.55) : .black.opacity(0.55))
+        } label: {
+            Text("Email")
+                .font(.system(size: 15, weight: .medium))
+                .foregroundColor(isDark ? .white : .black)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+    }
+
+    private var marketingOptInRow: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.pink.opacity(0.18))
+                    .frame(width: 30, height: 30)
+                Image(systemName: "envelope.badge.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.pink)
+            }
+            Text("Marketing updates")
+                .font(.system(size: 15, weight: .medium))
+                .foregroundColor(isDark ? .white : .black)
+            Spacer()
+            Toggle("", isOn: $marketingOptIn)
+                .labelsHidden()
+                .tint(accentColor)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .onChange(of: marketingOptIn) { _, _ in
+            UserDefaults.standard.set(true, forKey: "marketing_opt_in_touched")
+            Task { await GatewayProfileSync.shared.syncNow() }
+        }
+    }
+
     /// Deletes the gateway account (`GatewayAuth.deleteAccount()`), then
     /// clears local account state and flips the login gate so the user lands
     /// back on LoginView. On failure (e.g. the endpoint isn't deployed yet)
@@ -418,8 +471,9 @@ public struct SettingsView: View {
         isGatewayAuthWorking = true
         gatewayAuthError = nil
         do {
-            let identityToken = try await appleSignIn.requestIdentityToken()
-            try await GatewayAuth.shared.signIn(appleIdentityToken: identityToken)
+            let result = try await appleSignIn.requestSignIn()
+            try await GatewayAuth.shared.signIn(appleIdentityToken: result.identityToken)
+            persistAppleSignInResult(result)
             withAnimation { isLoggedIn = true }
         } catch let error as ASAuthorizationError where error.code == .canceled {
             // User dismissed the Apple sheet — not an error worth shouting about.

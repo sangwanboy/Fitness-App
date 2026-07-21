@@ -51,9 +51,11 @@ Fitness Guru is not a medical device and does not provide medical advice.
 - → Expected rating: **12+** (medical/treatment info) — accept whatever ASC computes.
 
 ## App Privacy labels (from docs/DATA_AND_PRIVACY.md §12)
-Data collected (linked to you, NOT used for tracking, purpose App Functionality):
+Data collected (linked to you, NOT used for tracking, purpose App Functionality unless noted):
 1. **Identifiers → User ID** (gateway account from Sign in with Apple `sub`)
-2. **Usage Data → Product Interaction** (request/token metering, metadata only)
+2. **Contact Info → Name** (from Sign in with Apple, only when Apple discloses it) — App Functionality + Marketing (only for users who explicitly opt in)
+3. **Contact Info → Email Address** (from Sign in with Apple, only when Apple discloses it) — App Functionality + Marketing (only for users who explicitly opt in)
+4. **Usage Data → Product Interaction** (request/token metering, metadata only)
 Do NOT declare Health & Fitness as "collected": health data is transmitted per-request and never retained (Apple's definition of collect = retained). Fallback if review pushes back: add Health & Fitness / linked / App Functionality.
 - "Data is encrypted in transit": yes (TLS). · "You can request deletion": yes (in-app).
 

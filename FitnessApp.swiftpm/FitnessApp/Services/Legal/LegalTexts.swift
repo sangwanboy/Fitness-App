@@ -14,7 +14,7 @@ public enum LegalTexts {
     PRIVACY POLICY
 
     Fitness Guru
-    Last updated: July 17, 2026
+    Last updated: July 21, 2026
     Contact: team@atlasjob.tech
 
     Fitness Guru is a personal fitness app built by an independent developer. This policy explains what Fitness Guru reads from your device, what it sends off your device (and why), what it stores, and what it never does.
@@ -47,7 +47,7 @@ public enum LegalTexts {
 
     SIGN IN WITH APPLE
 
-    Fitness Guru uses Sign in with Apple to create and secure your account. We do not request your name or email address — Apple gives us only a private, anonymous identifier tied to your Apple ID. Your account record on our server stores that identifier, account timestamps, and usage counters (like how many AI tokens you've used). It does not store your name, your email, or any Health data.
+    Fitness Guru uses Sign in with Apple to create and secure your account. On your first sign-in, Apple may share your name and email address with us (you can choose to hide your real email behind Apple's private relay instead) — we ask for these so your account has a name and a way to reach you. We separately ask for your explicit opt-in before using either for marketing communications; that choice defaults to off and you can change it any time in Settings. Your account record on our server stores Apple's private identifier for you, your name and email address (only if Apple disclosed them), your marketing-communications choice, lightweight device metadata (locale, app version), account timestamps, and usage counters (like how many AI tokens you've used). It does not store any Health data. We never sell, rent, or share your name or email with advertisers or data brokers, and we only send marketing communications if you've explicitly opted in.
 
     WHAT STAYS ON YOUR DEVICE
 
@@ -59,7 +59,7 @@ public enum LegalTexts {
 
     ACCOUNT DELETION
 
-    You can delete your account at any time from Settings. This immediately and permanently deletes your account record, sessions, and usage history from our systems, including our record of your Sign in with Apple identifier. (You can additionally remove Fitness Guru from your Apple ID's Sign in with Apple list in iOS Settings.) Deleting the app from your device separately removes everything stored locally — chat history, preferences, and cached summaries. Your Apple Health data is unaffected either way; you manage that directly in the Health app.
+    You can delete your account at any time from Settings. This immediately and permanently deletes your account record, sessions, and usage history from our systems — including any name, email address, and marketing preference we stored, and our record of your Sign in with Apple identifier. (You can additionally remove Fitness Guru from your Apple ID's Sign in with Apple list in iOS Settings.) Deleting the app from your device separately removes everything stored locally — chat history, preferences, and cached summaries. Your Apple Health data is unaffected either way; you manage that directly in the Health app.
 
     NO ADS, NO TRACKING, NO SALE OF DATA
 

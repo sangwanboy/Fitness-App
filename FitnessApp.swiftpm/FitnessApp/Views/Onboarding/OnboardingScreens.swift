@@ -161,6 +161,9 @@ struct SignInScreen: View {
 
     @AppStorage("is_logged_in") private var isLoggedIn = false
     @AppStorage("accent_color") private var accentColorHex = "#30D158"
+    // Explicit opt-in (App Store/GDPR requirement) — default OFF everywhere
+    // this key is read; same key LoginView and SettingsView bind to.
+    @AppStorage("marketing_opt_in") private var marketingOptIn = false
     private var accentColor: Color { ThemeHelper.color(from: accentColorHex) }
 
     @State private var isSigningIn = false
@@ -220,6 +223,21 @@ struct SignInScreen: View {
                     .cornerRadius(16)
                 }
                 .disabled(isSigningIn)
+
+                // Compact marketing consent row — same key + explicit
+                // opt-in-only default as LoginView's toggle.
+                Toggle(isOn: $marketingOptIn) {
+                    Text("Email me tips & product updates")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.white.opacity(0.6))
+                }
+                .tint(accentColor)
+                .onChange(of: marketingOptIn) { _, _ in
+                    UserDefaults.standard.set(true, forKey: "marketing_opt_in_touched")
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 14))
 
                 // Sign-up copy (guideline 5.1.1(i)) — what the account is for,
                 // that Apple never shares an email, and the never-stored
@@ -293,12 +311,14 @@ struct SignInScreen: View {
                 if GatewayConfig.isLocalGateway {
                     try await GatewayAuth.shared.signInDev()
                 } else {
-                    let identityToken = try await appleSignIn.requestIdentityToken()
-                    try await GatewayAuth.shared.signIn(appleIdentityToken: identityToken)
+                    let result = try await appleSignIn.requestSignIn()
+                    try await GatewayAuth.shared.signIn(appleIdentityToken: result.identityToken)
+                    persistAppleSignInResult(result)
                 }
                 #else
-                let identityToken = try await appleSignIn.requestIdentityToken()
-                try await GatewayAuth.shared.signIn(appleIdentityToken: identityToken)
+                let result = try await appleSignIn.requestSignIn()
+                try await GatewayAuth.shared.signIn(appleIdentityToken: result.identityToken)
+                persistAppleSignInResult(result)
                 #endif
                 isSigningIn = false
                 isLoggedIn = true

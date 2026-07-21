@@ -3761,3 +3761,50 @@ padding-guess bug class (3 incidents today) is dead, not patched. Scroll cushion
 Deployed + launched: **databaseSequenceNumber: 7076**.
 
 Latest deployed sequence: **7076**.
+
+---
+
+## Session 70 — 2026-07-21 (WP-M Meal Ideas section; WP-L login data capture + gateway profile sync)
+
+Orchestrated (Fable design, Sonnet implement ×3, Opus review ×2 — both verdicts SHIP).
+
+### WP-M: Meal Ideas & Recipes (commit babf338)
+NEW `Services/MealIdeasEngine.swift` (MorningBriefEngine-pattern one-shot: profile + Astra
+targets + today's intake/logged-meal names in prompt, healthy-first directive that never
+lectures, strict-JSON 2–4 recipes, fixed 512 thinking budget + 2400-token answer headroom,
+90s timeout, thought-safe extraction, Application Support/MealIdeas cache) and NEW
+`Views/Meals/MealIdeasView.swift` (ask bar + quick chips, honest idle/loading/failed states,
+recipe sheet with ingredients/steps + estimate-flagged "Log this meal" → logFoodDetailed).
+Entry points: sparkles button on Home MealsCard; mealIdeasSection in NutritionDashboardView.
+Opus findings applied: dimmed prior results `.allowsHitTesting(false)`; maxTokens 1600→2400.
+
+### WP-L: login page + name/email/marketing sync to gateway
+App: SIWA scopes []→[.fullName,.email]; AppleSignInCoordinator returns AppleSignInResult
+(token+name+email) across ALL THREE call sites (LoginView, onboarding SignInScreen,
+SettingsView — third site found by the implementer, spec missed it). persistAppleSignInResult:
+name only overwrites empty/"Alex Rivera" default; email → account_email. NEW
+`Services/Gateway/GatewayProfileSync.swift` (POST v1/me/profile: name/locale/appVersion +
+marketingOptIn ONLY when marketing_opt_in_touched — Opus MEDIUM fix: untouched installs
+hydrate consent FROM the server instead, so reinstall default-false can never clobber a
+server opt-in; silent-fail + profile_sync_pending retry on session-established/foreground).
+GatewayTransport gained getJSON (mirror of postJSON, 401→refresh→retry). Consent toggles
+(default OFF) on LoginView + onboarding + Settings; Settings Email row ("—" honest fallback).
+Privacy disclosures updated: PRIVACY_POLICY.md, privacy.html, LegalTexts.swift,
+APP_STORE_METADATA.md labels (Name + Email collected, linked, App Functionality + opt-in
+Marketing).
+
+Gateway repo (~/Multi App Ai Backend, commit ac18c0f, pushed this session): GET /v1/me +
+POST /v1/me/profile on authed chain; UserRecord +5 optional fields (schemaless, no
+migration); marketingOptInAt stamped server-side only on real change; admin dashboard shows
+new fields, footnote rewritten; ADR-009 + CLAUDE.md rule-3 amendment; me.test.ts 9/9,
+suite 81/81. Deferred (low, from review): test locking fresh-user {marketingOptIn:false};
+continuation-overwrite hardening in AppleSignInCoordinator (guarded by isSigningIn).
+
+### Verify after gateway CI/CD (≤15 min from push)
+`curl -s -o /dev/null -w "%{http_code}" https://atlas-gw-tushar.denmarkeast.cloudapp.azure.com/v1/me`
+→ expect 401 (route live, auth required), not 404. Then on-device: Settings → Marketing
+toggle flip should round-trip (admin dashboard Users shows name/consent).
+
+Deployed + launched: **databaseSequenceNumber: 7084**.
+
+Latest deployed sequence: **7084**.

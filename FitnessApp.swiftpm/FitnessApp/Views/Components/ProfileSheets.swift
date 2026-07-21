@@ -91,6 +91,9 @@ struct EditProfileSheet: View {
     private func save() async {
         saving = true
         athleteName = name.trimmingCharacters(in: .whitespaces)
+        // Fire-and-forget — a changed name is worth syncing to the gateway,
+        // but never worth blocking this sheet's save/dismiss on.
+        Task { await GatewayProfileSync.shared.syncNow() }
         if dobTouched { athleteDOBInterval = dob.timeIntervalSince1970 }
         athleteHeightCm = heightCm
         athleteWeightKg = weightKg

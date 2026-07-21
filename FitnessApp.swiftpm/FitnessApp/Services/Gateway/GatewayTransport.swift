@@ -82,6 +82,51 @@ enum GatewayTransport {
         return data
     }
 
+    // MARK: - One-shot JSON GET
+
+    /// GET an authenticated gateway path (e.g. "v1/me"). Same 401-refresh-
+    /// retry-once shape as `postJSON`, just without a request body.
+    static func getJSON(path: String, timeout: TimeInterval = 30) async throws -> Data {
+        return try await sendGet(path: path, timeout: timeout, allowAuthRetry: true)
+    }
+
+    private static func sendGet(path: String,
+                                timeout: TimeInterval,
+                                allowAuthRetry: Bool) async throws -> Data {
+        let request = try await makeGetRequest(path: path, timeout: timeout)
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            throw GatewayError.network(underlying: error)
+        }
+        guard let http = response as? HTTPURLResponse else {
+            throw GatewayError.http(0, "No HTTP response from gateway.")
+        }
+        if http.statusCode == 401, allowAuthRetry {
+            _ = try await GatewayAuth.shared.refresh()
+            return try await sendGet(path: path, timeout: timeout, allowAuthRetry: false)
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            throw GatewayError(status: http.statusCode, data: data)
+        }
+        lastSuccessfulRequestAt = Date()
+        return data
+    }
+
+    private static func makeGetRequest(path: String, timeout: TimeInterval) async throws -> URLRequest {
+        guard let url = GatewayConfig.url(for: path) else {
+            throw GatewayError.notConfigured
+        }
+        let token = try await GatewayAuth.shared.validAccessToken()
+        var request = URLRequest(url: url, timeoutInterval: timeout)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        return request
+    }
+
     // MARK: - Streaming chat (SSE)
 
     /// POST /v1/chat with `"stream": true` in the body and parse the

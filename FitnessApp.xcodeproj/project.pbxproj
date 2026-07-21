@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		FEC0227DE9C24A89ABAF9657 /* GatewayProfileSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = C54D46CA60814B3D99640617 /* GatewayProfileSync.swift */; };
 		7D8F4C3F607C41AFA14B892D /* MealIdeasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DA3893D939348A996EFEE4B /* MealIdeasView.swift */; };
 		B2E6EC5C45294044879883AA /* MealIdeasEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C2A112492E24AB294E73CC0 /* MealIdeasEngine.swift */; };
 		511411B980E341A8843D696B /* ChatSuggestionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B245EF4DFE2C47CCBF39C842 /* ChatSuggestionEngine.swift */; };
@@ -117,6 +118,7 @@
 		/* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		C54D46CA60814B3D99640617 /* GatewayProfileSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GatewayProfileSync.swift; sourceTree = "<group>"; };
 		9DA3893D939348A996EFEE4B /* MealIdeasView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MealIdeasView.swift; sourceTree = "<group>"; };
 		3C2A112492E24AB294E73CC0 /* MealIdeasEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MealIdeasEngine.swift; sourceTree = "<group>"; };
 		B245EF4DFE2C47CCBF39C842 /* ChatSuggestionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatSuggestionEngine.swift; sourceTree = "<group>"; };
@@ -457,6 +459,7 @@
 				2F98C2CD13427F48DA33A4CF /* GatewayTransport.swift */,
 				41CB6371ED359C5411AFE32F /* GatewayChatPayload.swift */,
 				DBEBE8C0184DA2CDF29CADAD /* FeedbackService.swift */,
+				C54D46CA60814B3D99640617 /* GatewayProfileSync.swift */,
 			);
 			path = Gateway;
 			sourceTree = "<group>";
@@ -534,6 +537,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				FEC0227DE9C24A89ABAF9657 /* GatewayProfileSync.swift in Sources */,
 				7D8F4C3F607C41AFA14B892D /* MealIdeasView.swift in Sources */,
 				B2E6EC5C45294044879883AA /* MealIdeasEngine.swift in Sources */,
 				511411B980E341A8843D696B /* ChatSuggestionEngine.swift in Sources */,
