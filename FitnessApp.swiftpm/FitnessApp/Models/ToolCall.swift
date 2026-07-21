@@ -256,6 +256,26 @@ public enum ToolCall: Codable, Equatable {
         }
     }
 
+    /// Every tool name `fromFunctionCall` knows how to decode. Lets the
+    /// stream layer (GatewayChatClient) tell "the model called a KNOWN tool
+    /// but its args didn't parse" apart from "unrecognized tool name" when
+    /// `fromFunctionCall` returns nil — the former should surface an honest,
+    /// retryable message instead of silently vanishing. Kept in sync with the
+    /// switch below by hand; there's no CaseIterable shortcut for an enum
+    /// with associated values.
+    public static let recognizedNames: Set<String> = [
+        "log_food", "log_water", "log_sleep", "add_reminder", "add_calendar_event",
+        "show_metric_chart", "show_comparison_chart", "render_card",
+        "list_reminders", "list_calendar_events", "update_reminder", "update_calendar_event",
+        "delete_reminder", "delete_calendar_event", "get_predictions",
+        "list_food_log", "update_food_log", "delete_food_log",
+        "create_widget", "list_widgets", "update_widget", "delete_widget",
+        "update_notes", "remember_fact", "forget_fact", "update_profile", "get_profile",
+        "get_sleep_pattern", "get_metric_history", "get_sleep_sessions",
+        "update_goal", "set_date_of_birth", "set_nutrition_targets",
+        "get_training_plan", "set_training_plan", "mark_workout_done"
+    ]
+
     /// Decodes from Gemini's loose JSON args dict.
     public static func fromFunctionCall(name: String, args: [String: Any]) -> ToolCall? {
         switch name {
@@ -485,11 +505,29 @@ public enum ToolCall: Codable, Equatable {
     }
 
     private static func parseISO8601(_ s: String) -> Date? {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let d = f.date(from: s) { return d }
-        f.formatOptions = [.withInternetDateTime]
-        return f.date(from: s)
+        // Strict, timezone-QUALIFIED ISO8601 first — when the model does
+        // supply an offset it must always win over a local-time guess.
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = iso.date(from: s) { return d }
+        iso.formatOptions = [.withInternetDateTime]
+        if let d = iso.date(from: s) { return d }
+
+        // FALLBACK: Gemini sometimes emits a timezone-NAIVE datetime (e.g.
+        // "2026-07-21T13:15:00" for "1:15pm") even when asked for an offset.
+        // `ISO8601DateFormatter` rejects those outright, which used to make
+        // `fromFunctionCall` return nil and the whole turn vanish — an
+        // invisible bubble with tokens spent and nothing shown (the log_sleep
+        // bug). Interpret a naive datetime as device-local time instead of
+        // discarding it. Covers add_reminder/add_calendar_event the same way.
+        let naive = DateFormatter()
+        naive.calendar = Calendar(identifier: .gregorian)
+        naive.locale = Locale(identifier: "en_US_POSIX")
+        naive.timeZone = .current
+        naive.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+        if let d = naive.date(from: s) { return d }
+        naive.dateFormat = "yyyy-MM-dd'T'HH:mm"
+        return naive.date(from: s)
     }
 
     /// Parses a plain "YYYY-MM-DD" date (no time component) for
@@ -675,12 +713,19 @@ public enum ToolCall: Codable, Equatable {
 
 /// Streaming chunk type — text deltas and tool calls are interleaved.
 /// A final `.usage` chunk lands at the end of every Vertex stream once
-/// `usageMetadata` is available. A `.thoughtSignature` chunk lands
-/// adjacent to a tool call when Gemini 3.x attaches a signature blob to
-/// that part (required for the followup turn).
+/// `usageMetadata` is available.
+///
+/// `thoughtSignature` (Gemini 3.x's part-level sibling of `functionCall`,
+/// required to round-trip on the followup turn) rides bundled ON the
+/// `.toolCall` case itself rather than as its own separately-interleaved
+/// chunk. Bundling at the source is what lets `ChatViewModel` stamp each
+/// call's signature onto that exact call's message — with a standalone
+/// `.thoughtSignature` chunk, a turn with two functionCall parts streamed
+/// `sig1, call1, sig2, call2` and there was no way to tell which call a
+/// given signature belonged to except "whatever arrived most recently",
+/// so `sig2` clobbered `sig1` before `call2` ever got its own message.
 public enum ChatChunk {
     case text(String)
-    case toolCall(ToolCall)
+    case toolCall(ToolCall, thoughtSignature: String?)
     case usage(TokenUsage)
-    case thoughtSignature(String)
 }

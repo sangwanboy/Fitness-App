@@ -54,7 +54,7 @@ Do this for each codebase change (in order):
 - **Install + launch:**
   `xcrun devicectl device install app --device "6EBFD630-1768-512E-95E3-EC7D76AA8CDD" "<DerivedData>/Build/Products/Debug-iphoneos/FitnessApp.app"`
   then `xcrun devicectl device process launch --device "6EBFD630-1768-512E-95E3-EC7D76AA8CDD" com.tushar.fitnessapp`.
-- **Fast compile check** (no signing/device): add `-destination "platform=iOS Simulator,id=FF8921FE-10E6-4CAE-8722-D4BBD505DA98"`.
+- **Fast compile check** (no signing/device): add `-destination "platform=iOS Simulator,id=6C6A4B8D-D292-4B89-9E01-0266C4AE1A71"`.
 - If the device build errors with "iPhone may need to be unlocked," unlock the phone and retry.
 
 ## Conventions (firm — the user has rejected violations repeatedly)

@@ -58,7 +58,56 @@ public final class ChatViewModel: ObservableObject {
         }
         return lastFlush
     }
-    
+
+    /// Attaches a `.toolCall` stream chunk that landed for `anchorId`'s turn.
+    /// The FIRST tool call in a turn lands on the existing placeholder bubble
+    /// (`anchorId`) so single-tool-call turns behave exactly as before. Every
+    /// ADDITIONAL tool call in the SAME turn — e.g. two `log_sleep` sessions
+    /// reported in one message — gets its own fresh bubble/card appended
+    /// right after, so each renders and confirms independently instead of
+    /// being silently discarded (the old code `return`ed after the first
+    /// call and dropped the rest of the stream outright).
+    ///
+    /// `thoughtSignature` is THIS call's own signature (bundled onto the
+    /// `.toolCall` chunk by `GatewayChatClient.emitChunks` — see `ChatChunk`)
+    /// and is stamped onto whichever message this call lands on: the
+    /// placeholder for the first call, the freshly-appended message for
+    /// every one after. That keeps a two-call turn's signatures paired with
+    /// the right card (sig1→card1, sig2→card2) instead of both landing on
+    /// the placeholder and the second one being lost.
+    ///
+    /// Returns `true` when the caller should stop draining the stream: a
+    /// payload-producing (auto-execute) tool immediately chains a brand-new
+    /// follow-up request via `autoExecuteReadTool`, so continuing to read the
+    /// original stream alongside that new one would race. Confirmation-gated
+    /// tools return `false` so the loop keeps running and can pick up any
+    /// further tool calls / trailing usage chunk in the same turn.
+    private func attachToolCall(_ call: ToolCall, thoughtSignature: String?, anchorId: UUID) async -> Bool {
+        guard let anchorIdx = messages.firstIndex(where: { $0.id == anchorId }) else { return true }
+        let targetId: UUID
+        if messages[anchorIdx].toolCall == nil {
+            messages[anchorIdx].toolCall = call
+            messages[anchorIdx].toolStatus = call.needsConfirmation ? .pending : .autoExecuted
+            messages[anchorIdx].thoughtSignature = thoughtSignature
+            targetId = anchorId
+        } else {
+            let extraId = UUID()
+            messages.append(ChatMessage(
+                id: extraId, role: .model, text: "",
+                toolCall: call,
+                toolStatus: call.needsConfirmation ? .pending : .autoExecuted,
+                thoughtSignature: thoughtSignature
+            ))
+            persistLiveSnapshot()
+            targetId = extraId
+        }
+        if call.producesPayload {
+            await autoExecuteReadTool(messageId: targetId)
+            return true
+        }
+        return false
+    }
+
     /// Send a prompt queued from elsewhere (currently: Predictions card action
     /// chips). Skips the "two-character minimum" guard since these are always
     /// well-formed sentences from the AI. No-op if a stream is already running.
@@ -131,22 +180,19 @@ public final class ChatViewModel: ObservableObject {
                 case .text(let delta):
                     currentStreamingText += delta
                     lastFlush = flushStreamingText(into: idx, lastFlush: lastFlush, force: false)
-                case .toolCall(let call):
+                case .toolCall(let call, let sig):
                     // Force the partial text out before the tool takes over.
                     _ = flushStreamingText(into: idx, lastFlush: lastFlush, force: true)
-                    messages[idx].toolCall = call
-                    messages[idx].toolStatus = call.needsConfirmation ? .pending : .autoExecuted
-                    // Stop streaming the current model turn; the tool now drives the flow.
-                    // List/read tools auto-execute and trigger their own follow-up so the
-                    // model can speak about the results.
-                    if call.producesPayload {
-                        await autoExecuteReadTool(messageId: modelId)
-                    }
-                    return
+                    // A payload-producing tool chains its own follow-up request and
+                    // needs the caller to stop draining this stream; a
+                    // confirmation-gated tool just gets its card and the loop keeps
+                    // running so a SECOND tool call in the same turn (e.g. two
+                    // log_sleep sessions in one message) isn't silently dropped.
+                    // `sig` is bundled with THIS call (see ChatChunk) so it lands
+                    // on this call's own message, not a shared/clobbered one.
+                    if await attachToolCall(call, thoughtSignature: sig, anchorId: modelId) { return }
                 case .usage(let usage):
                     messages[idx].tokenUsage = usage
-                case .thoughtSignature(let sig):
-                    messages[idx].thoughtSignature = sig
                 }
             }
             // Stream ended cleanly — make sure the final accumulated text lands.
@@ -1208,24 +1254,21 @@ public final class ChatViewModel: ObservableObject {
                 case .text(let delta):
                     currentStreamingText += delta
                     lastFlush = flushStreamingText(into: idx, lastFlush: lastFlush, force: false)
-                case .toolCall(let call):
+                case .toolCall(let call, let sig):
                     // Force the partial text out before the tool takes over.
                     _ = flushStreamingText(into: idx, lastFlush: lastFlush, force: true)
                     // A follow-up that itself chains a tool — re-enter the same
                     // pending/confirmation loop. ChatView's card UI handles this
                     // identically to the original toolCall. Read tools that
                     // produce a payload auto-execute here too, so chains like
-                    // get_predictions → list_reminders keep flowing.
-                    messages[idx].toolCall = call
-                    messages[idx].toolStatus = call.needsConfirmation ? .pending : .autoExecuted
-                    if call.producesPayload {
-                        await autoExecuteReadTool(messageId: modelId)
-                    }
-                    return
+                    // get_predictions → list_reminders keep flowing. A SECOND
+                    // (confirmation-gated) tool call in the same follow-up turn
+                    // gets its own card instead of being dropped — see
+                    // attachToolCall. `sig` is bundled with THIS call, so it
+                    // lands on this call's own message.
+                    if await attachToolCall(call, thoughtSignature: sig, anchorId: modelId) { return }
                 case .usage(let usage):
                     messages[idx].tokenUsage = usage
-                case .thoughtSignature(let sig):
-                    messages[idx].thoughtSignature = sig
                 }
             }
             // Stream ended cleanly — make sure the final accumulated text lands.
@@ -1665,19 +1708,15 @@ public final class ChatViewModel: ObservableObject {
                 case .text(let delta):
                     currentStreamingText += delta
                     lastFlush = flushStreamingText(into: idx, lastFlush: lastFlush, force: false)
-                case .toolCall(let call):
+                case .toolCall(let call, let sig):
                     // Force the partial text out before the tool takes over.
                     _ = flushStreamingText(into: idx, lastFlush: lastFlush, force: true)
-                    messages[idx].toolCall = call
-                    messages[idx].toolStatus = call.needsConfirmation ? .pending : .autoExecuted
-                    if call.producesPayload {
-                        await autoExecuteReadTool(messageId: modelId)
-                    }
-                    return
+                    // Same multi-tool-call handling as sendMessage/sendFollowup —
+                    // see attachToolCall. `sig` is bundled with THIS call, so it
+                    // lands on this call's own message.
+                    if await attachToolCall(call, thoughtSignature: sig, anchorId: modelId) { return }
                 case .usage(let usage):
                     messages[idx].tokenUsage = usage
-                case .thoughtSignature(let sig):
-                    messages[idx].thoughtSignature = sig
                 }
             }
             // Stream ended cleanly — make sure the final accumulated text lands.

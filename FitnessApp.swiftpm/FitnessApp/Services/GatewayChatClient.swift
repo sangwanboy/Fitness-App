@@ -113,8 +113,8 @@ public actor GatewayChatClient {
                     "parameters": [
                         "type": "object",
                         "properties": [
-                            "start": ["type": "string", "description": "ISO8601 date-time (user's TZ) they fell asleep / went to bed — same conversion convention as add_reminder/add_calendar_event."],
-                            "end":   ["type": "string", "description": "ISO8601 date-time they woke up. Omit for 'still asleep' / 'until now' phrasing — defaults to right now."]
+                            "start": ["type": "string", "description": "ISO8601 date-time WITH a timezone offset (e.g. 2026-07-21T13:15:00-07:00, or a trailing Z for UTC) for when they fell asleep / went to bed — same conversion convention as add_reminder/add_calendar_event. Always include the offset; never emit a bare date-time with no timezone."],
+                            "end":   ["type": "string", "description": "ISO8601 date-time WITH a timezone offset they woke up. Omit for 'still asleep' / 'until now' phrasing — defaults to right now."]
                         ],
                         "required": ["start"]
                     ]
@@ -690,16 +690,41 @@ public actor GatewayChatClient {
                     if let fc = part["functionCall"] as? [String: Any],
                        let name = fc["name"] as? String {
                         let args = (fc["args"] as? [String: Any]) ?? [:]
-                        // Capture the sibling `thoughtSignature` — Gemini 3.x
-                        // requires it round-trips on every followup that
+                        // `thoughtSignature` is a part-level SIBLING of
+                        // `functionCall` within this same `part` dict — Gemini
+                        // 3.x requires it round-trips on every followup that
                         // references this functionCall, else Vertex returns
-                        // 400 INVALID_ARGUMENT.
-                        if let sig = part["thoughtSignature"] as? String, !sig.isEmpty {
-                            continuation.yield(.thoughtSignature(sig))
-                        }
+                        // 400 INVALID_ARGUMENT. Read it as a local here (scoped
+                        // to this one part) and bundle it directly onto the
+                        // `.toolCall` chunk below instead of yielding it as a
+                        // separate interleaved chunk — with two functionCall
+                        // parts in one turn (e.g. two log_sleep calls) a
+                        // standalone `.thoughtSignature` chunk gave the
+                        // consumer no way to tell which call it paired with,
+                        // so the second call's signature could silently
+                        // clobber the first's. Bundling at the source removes
+                        // that ambiguity entirely.
+                        let sig = (part["thoughtSignature"] as? String).flatMap { $0.isEmpty ? nil : $0 }
                         if let call = ToolCall.fromFunctionCall(name: name, args: args) {
-                            continuation.yield(.toolCall(call))
+                            continuation.yield(.toolCall(call, thoughtSignature: sig))
+                        } else if ToolCall.recognizedNames.contains(name) {
+                            // The model called a KNOWN tool (e.g. log_sleep) but its args
+                            // didn't parse — most commonly a date-time the parser still
+                            // couldn't read. Previously this fell through silently: the
+                            // turn ended with empty text + nil toolCall + usage tokens
+                            // spent, i.e. an invisible bubble. Surface it as ordinary
+                            // assistant text instead of fabricating a tool result, using
+                            // the same `.text` chunk the model's own prose streams
+                            // through — no new stream-contract case needed. Any
+                            // `sig` captured above is simply dropped here — no
+                            // toolCall chunk is yielded for this part, so there is
+                            // no message for a stale signature to leak onto.
+                            continuation.yield(.text(
+                                "I couldn't read the details for that action — could you rephrase it (e.g. include the time)?"
+                            ))
                         }
+                        // else: an unrecognized tool name — leave as-is (ignored),
+                        // same as before this fix.
                     }
                 }
             }

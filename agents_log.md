@@ -3894,3 +3894,42 @@ make email verification/reset actually deliver. (2) Prior: still purge the 2 nig
 Deployed + launched: **databaseSequenceNumber: 7100**.
 
 Latest deployed sequence: **7100**.
+
+---
+
+## Session 73 — 2026-07-21 (WP-H: fix log_sleep empty-bubble + multi-tool-call chat bug)
+
+User hit invisible assistant bubbles: "Log my sleep 1:15pm-5:40pm and 7:30pm-10:00pm" produced
+token-meter pills but no bubble/card, and follow-ups also rendered empty. Read-only device
+diagnosis (decoded chat_live_session_v1) → root cause → Sonnet fix → Opus verify (found a HIGH
+regression) → Sonnet fix → Opus re-verify SHIP.
+
+ROOT CAUSE: log_sleep's `parseISO8601` (ToolCall.swift) only accepted timezone-qualified ISO8601;
+Gemini emits tz-naive local time from "1:15pm" → parse nil → ToolCall.fromFunctionCall nil →
+GatewayChatClient silently swallowed it → message = empty text + nil toolCall + tokenUsage =
+invisible bubble.
+
+Fixes:
+1. parseISO8601: strict offset/fractional path FIRST (offsets honored), then fallback DateFormatter
+   (en_US_POSIX, .current tz) for `yyyy-MM-dd'T'HH:mm(:ss)` naive datetimes. Additive — also helps
+   add_reminder/add_calendar_event. log_sleep tool desc tightened to request an offset (defense).
+2. Recognized-but-unparseable tool → yields honest `.text` ("I couldn't read the details… rephrase")
+   instead of a blank turn (new ToolCall.recognizedNames set, 36/36 verified in sync). Unrecognized
+   names still fall through.
+3. MULTIPLE tool calls per turn now supported (the two-sessions case): each call gets its own card
+   (first on the placeholder, rest appended). Fixed at all THREE stream loops (sendMessage,
+   sendFollowup, retryLast). Opus caught a HIGH thoughtSignature-routing regression in the initial
+   impl (interleaved sigs clobbered the placeholder + left card2 nil → 400 on confirm); fixed via
+   Option A — bundle the sig onto the `.toolCall` chunk at the source (ChatChunk enum:
+   `.toolCall(ToolCall, thoughtSignature: String?)`), so each card carries its own sig. Single-call
+   path byte-identical (Opus-confirmed).
+4. (reverted) ChatHistoryStore guard change — it created empty-gap turns on restore without
+   persisting the card; reverted to baseline.
+Plus: CLAUDE.md fast-compile sim UDID FF8921FE→6C6A4B8D (old sim deleted in disk cleanup).
+
+USER NOTE: the sleep the user tried to log was never written to Health (card never appeared). Old
+broken chat thread stays blank (unrecoverable) but no new chat needed — just re-ask Astra to log it.
+
+Deployed + launched: **databaseSequenceNumber: 7108**.
+
+Latest deployed sequence: **7108**.
