@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		7D8F4C3F607C41AFA14B892D /* MealIdeasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DA3893D939348A996EFEE4B /* MealIdeasView.swift */; };
+		B2E6EC5C45294044879883AA /* MealIdeasEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C2A112492E24AB294E73CC0 /* MealIdeasEngine.swift */; };
 		511411B980E341A8843D696B /* ChatSuggestionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B245EF4DFE2C47CCBF39C842 /* ChatSuggestionEngine.swift */; };
 		22754683D3FA494AB342CC37 /* TrainingPlanCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 595BB7631AC0415A819084C9 /* TrainingPlanCard.swift */; };
 		C01E99C4F76946A38FCE62BB /* TrainingPlanStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48882C1E348D44A597BF529A /* TrainingPlanStore.swift */; };
@@ -115,6 +117,8 @@
 		/* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		9DA3893D939348A996EFEE4B /* MealIdeasView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MealIdeasView.swift; sourceTree = "<group>"; };
+		3C2A112492E24AB294E73CC0 /* MealIdeasEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MealIdeasEngine.swift; sourceTree = "<group>"; };
 		B245EF4DFE2C47CCBF39C842 /* ChatSuggestionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatSuggestionEngine.swift; sourceTree = "<group>"; };
 		595BB7631AC0415A819084C9 /* TrainingPlanCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrainingPlanCard.swift; sourceTree = "<group>"; };
 		48882C1E348D44A597BF529A /* TrainingPlanStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrainingPlanStore.swift; sourceTree = "<group>"; };
@@ -238,6 +242,14 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		D528D9A6A006431F93DB068E /* Meals */ = {
+			isa = PBXGroup;
+			children = (
+				9DA3893D939348A996EFEE4B /* MealIdeasView.swift */,
+			);
+			path = Meals;
+			sourceTree = "<group>";
+		};
 		AA1DED72C1464435AE7BA4E1 /* Legal */ = {
 			isa = PBXGroup;
 			children = (
@@ -281,6 +293,7 @@
 				63276806301D09016BEA0BED /* Components */,
 				8A99EEA92948AE3D64A88C06 /* Onboarding */,
 				3E7E4F03E437415AB0BFCF94 /* LegalDocumentSheet.swift */,
+				D528D9A6A006431F93DB068E /* Meals */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -382,6 +395,7 @@
 				2D78209137464E348CB22E86 /* MorningBriefEngine.swift */,
 				48882C1E348D44A597BF529A /* TrainingPlanStore.swift */,
 				B245EF4DFE2C47CCBF39C842 /* ChatSuggestionEngine.swift */,
+				3C2A112492E24AB294E73CC0 /* MealIdeasEngine.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -520,6 +534,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7D8F4C3F607C41AFA14B892D /* MealIdeasView.swift in Sources */,
+				B2E6EC5C45294044879883AA /* MealIdeasEngine.swift in Sources */,
 				511411B980E341A8843D696B /* ChatSuggestionEngine.swift in Sources */,
 				22754683D3FA494AB342CC37 /* TrainingPlanCard.swift in Sources */,
 				C01E99C4F76946A38FCE62BB /* TrainingPlanStore.swift in Sources */,

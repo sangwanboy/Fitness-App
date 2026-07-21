@@ -8,6 +8,7 @@ public struct NutritionDashboardView: View {
     @ObservedObject private var hk  = HealthKitManager.shared
     @ObservedObject private var nut = NutritionService.shared
     @ObservedObject private var targets = NutritionTargets.shared
+    @ObservedObject private var mealIdeas = MealIdeasEngine.shared
 
     @AppStorage("theme_mode") private var themeMode = "dark"
     @AppStorage("accent_color") private var accentColorHex = "#30D158"
@@ -18,6 +19,7 @@ public struct NutritionDashboardView: View {
     @State private var showFoodPhotoFlow = false
     @State private var scanTapped = false
     @State private var logTapped  = false
+    @State private var showMealIdeas = false
 
     private var isDark: Bool { themeMode == "dark" }
     private var accentColor: Color { ThemeHelper.color(from: accentColorHex) }
@@ -44,6 +46,7 @@ public struct NutritionDashboardView: View {
                     astraTargetsSection
                     weekTrendSection
                     mealsSection
+                    mealIdeasSection
                     micronutrientsSection
                     // bottom padding so sticky bar doesn't overlap last content
                     Color.clear.frame(height: 88)
@@ -62,6 +65,7 @@ public struct NutritionDashboardView: View {
         .sheet(item: $detailSummary) { summary in
             DetailedMetricView(summary: summary)
         }
+        .sheet(isPresented: $showMealIdeas) { MealIdeasView() }
         .task {
             await nut.refreshToday()
         }
@@ -308,6 +312,89 @@ public struct NutritionDashboardView: View {
         hk.todayFoodLog.filter { entry in
             let hour = Calendar.current.component(.hour, from: entry.loggedAt)
             return bucket.hourRange.contains(hour)
+        }
+    }
+
+    // MARK: - Meal Ideas Section
+    // Astra-generated meal suggestions (MealIdeasEngine) — a compact preview
+    // of the latest ask's ideas plus an "ask for more" affordance. Observes
+    // the engine directly so this updates live whether the set was generated
+    // from here or from the full MealIdeasView sheet.
+
+    private var mealIdeasSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionLabel(icon: "sparkles", title: "Meal Ideas", color: accentColor)
+
+            if let latest = mealIdeas.latest, !latest.ideas.isEmpty {
+                VStack(spacing: 0) {
+                    ForEach(Array(latest.ideas.prefix(3).enumerated()), id: \.element.id) { idx, idea in
+                        if idx > 0 {
+                            Divider()
+                                .background(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.08))
+                        }
+                        Button {
+                            showMealIdeas = true
+                        } label: {
+                            HStack(spacing: 10) {
+                                Text(idea.name)
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(isDark ? .white : .black)
+                                    .lineLimit(1)
+                                Spacer(minLength: 8)
+                                Text("~\(Int(idea.kcal.rounded())) kcal")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundColor(.orange)
+                                    .lineLimit(1)
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundColor(isDark ? .white.opacity(0.3) : .black.opacity(0.3))
+                            }
+                            .padding(.vertical, 10)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    Button {
+                        showMealIdeas = true
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text("Ask Astra for more")
+                                .font(.system(size: 13, weight: .semibold))
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 11, weight: .semibold))
+                        }
+                        .foregroundColor(accentColor)
+                        .padding(.top, 6)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 4)
+                .glassCard()
+            } else {
+                HStack(spacing: 10) {
+                    Text("Ask Astra for meal ideas tailored to your targets")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(isDark ? .white.opacity(0.6) : .black.opacity(0.6))
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 8)
+                    Button {
+                        showMealIdeas = true
+                    } label: {
+                        Text("Ask")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .glassEffect(.regular.tint(accentColor.opacity(0.4)).interactive(), in: .capsule)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity)
+                .glassCard()
+            }
         }
     }
 

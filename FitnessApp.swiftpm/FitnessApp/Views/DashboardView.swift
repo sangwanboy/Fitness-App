@@ -25,6 +25,7 @@ public struct DashboardView: View {
     @State private var showMoreMetrics = false
     @State private var showBreathing = false
     @State private var showNutritionDashboard = false
+    @State private var showMealIdeas = false
     /// startOfDay for each day in last 7 that had a HK workout (drives the
     /// Workouts This Week checkmark row).
     @State private var workoutDates: Set<Date> = []
@@ -320,6 +321,7 @@ public struct DashboardView: View {
         }
         .sheet(isPresented: $showSearchSheet) { HomeSearchSheet() }
         .sheet(isPresented: $showNutritionDashboard) { NutritionDashboardView() }
+        .sheet(isPresented: $showMealIdeas) { MealIdeasView() }
         .fullScreenCover(isPresented: $showFoodPhotoFlow) { FoodScanView() }
         .onAppear {
             animateWidgets = true
@@ -425,7 +427,8 @@ public struct DashboardView: View {
             MealsCard(
                 entries: healthKitManager.todayFoodLog,
                 onAddMeal: { showFoodPhotoFlow = true },
-                onViewDetails: { showNutritionDashboard = true }
+                onViewDetails: { showNutritionDashboard = true },
+                onMealIdeas: { showMealIdeas = true }
             )
         case "widgets":
             WidgetsCard(onAskAstra: { switchToTab("chat") })
