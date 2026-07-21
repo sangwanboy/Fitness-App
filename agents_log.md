@@ -3634,6 +3634,14 @@ explicit never-guess-the-year instruction; (2) executeSetTrainingPlan rejects we
 rebuild it"; "all done" only with real completed sessions.
 User must ask Astra to rebuild the week once (replaces 2025 calendar events by stored ids).
 
-Deployed + launched: **databaseSequenceNumber: 7052**.
+**Process incident (the user's "fixing one thing breaks another" point, proven):** commit
+`125f06a` DID NOT COMPILE (`df` used before declaration) — the deploy pipeline's grep matched
+"BUILD" on the FAILURE line, `&&` kept going, reinstalled the STALE binary as seq 7052, and the
+broken code was committed+pushed. Root process hole: build gating by grep-match instead of a
+hard "BUILD SUCCEEDED" check. Fixed both: the code (`161-line` var ordering, commit below) and
+the pipeline (tee to log + `grep -q "BUILD SUCCEEDED"` gate before any install/commit step —
+use this pattern from now on, it's in this entry as the reference).
 
-Latest deployed sequence: **7052**.
+Deployed + launched (REAL fixed binary): **databaseSequenceNumber: 7060**.
+
+Latest deployed sequence: **7060**.

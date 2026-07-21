@@ -1434,8 +1434,8 @@ public final class ChatViewModel: ObservableObject {
         if let earliest = cal.date(byAdding: .day, value: -7, to: today),
            let latest = cal.date(byAdding: .day, value: 21, to: today),
            !(earliest...latest).contains(weekStart) {
-            let df2 = DateFormatter(); df2.dateFormat = "EEEE, d MMMM yyyy"
-            return WriteToolOutcome(false, error: "week_start \(df.string(from: weekStart)) is outside the plannable window. TODAY is \(df2.string(from: Date())) — re-emit the plan with dates in the current week/year. Nothing was saved.")
+            let full = DateFormatter(); full.dateFormat = "EEEE, d MMMM yyyy"
+            return WriteToolOutcome(false, error: "week_start \(full.string(from: weekStart)) is outside the plannable window. TODAY is \(full.string(from: Date())) — re-emit the plan with dates in the current week/year. Nothing was saved.")
         }
         guard let windowEnd = cal.date(byAdding: .day, value: 13, to: weekStart) else {
             return WriteToolOutcome(false, error: "Could not resolve the plan's date window. Nothing was saved.")
