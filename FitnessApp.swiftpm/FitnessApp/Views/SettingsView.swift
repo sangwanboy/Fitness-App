@@ -218,9 +218,12 @@ public struct SettingsView: View {
     private var statRow: some View {
         HStack(spacing: 10) {
             ProfileStatTile(value: "\(healthKitManager.dayStreak())", label: "Daily step streak", color: .orange)
+            // Honest sources: these tiles previously showed LIVE heart rate
+            // labeled "Resting HR" and raw HRV (ms) labeled "Recovery" —
+            // contradicting every other surface in the app.
             ProfileStatTile(
                 value: {
-                    let v = healthKitManager.metricSummaries[.heartRate]?.currentValue ?? 0
+                    let v = healthKitManager.metricSummaries[.restingHeartRate]?.currentValue ?? 0
                     return v > 0 ? String(format: "%.0f", v) : "—"
                 }(),
                 label: "Resting HR",
@@ -228,8 +231,10 @@ public struct SettingsView: View {
             )
             ProfileStatTile(
                 value: {
-                    let v = healthKitManager.metricSummaries[.hrv]?.currentValue ?? 0
-                    return v > 0 ? String(format: "%.0f", v) : "—"
+                    if let score = healthKitManager.predictions?.recovery?.score {
+                        return "\(score)"
+                    }
+                    return "—"
                 }(),
                 label: "Recovery",
                 color: accentColor

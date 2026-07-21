@@ -3413,3 +3413,25 @@ repo, commit 51d1db1, live ~3 min later via CI/CD).
 Deployed + launched: **databaseSequenceNumber: 6884**.
 
 Latest deployed sequence: **6884**.
+
+---
+
+## Session 61 — 2026-07-21 (Live-usage fix wave: tiles, narrative 429 auto-retry, DOB reconciliation)
+
+Rapid-response fixes from the user's first real production session (all screenshots):
+1. **Profile stat tiles were dishonest** (seq 6900): "Resting HR" showed LIVE heart rate
+   (.heartRate → 75), "Recovery" showed raw HRV ms (53). Now .restingHeartRate + real
+   predictions.recovery.score.
+2. **Weekly narrative "unavailable"** — root cause found server-side: 3 upstream Vertex 429s
+   (gateway health: 23 req, 0 gateway errors). Engine now takes ONE automatic retry after
+   retryAfterMs (min 30 s) on rate_limited/quota_exceeded; flag resets only on success.
+3. **Age mismatch (Live Basics 25 vs Astra summary 24)**: two sources of truth — Apple Health
+   DOB (→25) vs user-stated Feb 15 2002 (→24, in profile text only). athlete_dob purge migration
+   + save-guard shipped seq 6892. set_date_of_birth tool (Astra→structured store sync) folded
+   into the WP-N spec.
+4. **Water log "Failed"** (Astra tool → HealthKit write): error swallowed into bare bool;
+   backdating unsupported. Both routed into WP-N (error surfacing + date param).
+
+Deployed: **databaseSequenceNumber: 6908**.
+
+Latest deployed sequence: **6908**.

@@ -484,6 +484,7 @@ public final class WeeklyReviewEngine: ObservableObject {
                     self.narrative = result
                     self.narrativeState = .ready
                     self.lastNarrativeFailureAt = nil
+                    self.narrativeAutoRetryScheduled = false
                     self.persistToDisk(weekKey: weekKey, data: data, narrative: result)
                 }
             } catch {
@@ -491,8 +492,33 @@ public final class WeeklyReviewEngine: ObservableObject {
                     guard self.currentWeekKey == weekKey else { return }
                     self.lastNarrativeFailureAt = Date()
                     self.narrativeState = .unavailable
+                    // Upstream rate-limits are transient (seen live: Vertex
+                    // 429s on the shared project) — take ONE quiet automatic
+                    // retry instead of stranding "unavailable" behind the
+                    // 5-min backoff and a manual tap.
+                    switch error as? GatewayError {
+                    case .rateLimited(let ms), .quotaExceeded(let ms):
+                        self.scheduleNarrativeAutoRetry(afterMs: ms, for: data, weekKey: weekKey)
+                    default:
+                        break
+                    }
                 }
             }
+        }
+    }
+
+    /// One automatic retry per failure episode; the flag only resets on
+    /// success (or week rollover), so repeated 429s fall back to the normal
+    /// backoff + manual retry rather than hammering the gateway.
+    private var narrativeAutoRetryScheduled = false
+    private func scheduleNarrativeAutoRetry(afterMs: Int?, for data: WeeklyReviewData, weekKey: String) {
+        guard !narrativeAutoRetryScheduled else { return }
+        narrativeAutoRetryScheduled = true
+        let delay = max(Double(afterMs ?? 30_000) / 1000.0, 30)
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard let self, self.currentWeekKey == weekKey, self.narrative == nil else { return }
+            self.startNarrativeTask(for: data, weekKey: weekKey, bypassBackoff: true)
         }
     }
 
