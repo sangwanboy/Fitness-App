@@ -1427,6 +1427,16 @@ public final class ChatViewModel: ObservableObject {
         guard !daysArgs.isEmpty, daysArgs.count <= 14 else {
             return WriteToolOutcome(false, error: "A training plan must cover 1-14 days — got \(daysArgs.count). Nothing was saved.")
         }
+        // Reject plans anchored in the wrong year/era — a live plan landed on
+        // July 2025 because the model guessed the year. Window: last week
+        // through three weeks out.
+        let today = cal.startOfDay(for: Date())
+        if let earliest = cal.date(byAdding: .day, value: -7, to: today),
+           let latest = cal.date(byAdding: .day, value: 21, to: today),
+           !(earliest...latest).contains(weekStart) {
+            let df2 = DateFormatter(); df2.dateFormat = "EEEE, d MMMM yyyy"
+            return WriteToolOutcome(false, error: "week_start \(df.string(from: weekStart)) is outside the plannable window. TODAY is \(df2.string(from: Date())) — re-emit the plan with dates in the current week/year. Nothing was saved.")
+        }
         guard let windowEnd = cal.date(byAdding: .day, value: 13, to: weekStart) else {
             return WriteToolOutcome(false, error: "Could not resolve the plan's date window. Nothing was saved.")
         }
@@ -1492,6 +1502,16 @@ public final class ChatViewModel: ObservableObject {
         let plan = TrainingPlanStore.TrainingPlan(weekStart: weekStart, days: parsedDays)
         TrainingPlanStore.shared.upsert(plan)
         return WriteToolOutcome(true, note: calendarNote)
+    }
+
+    /// "Tuesday, 21 July 2026" — the model has NO reliable sense of the
+    /// current date (a live plan landed on July 2025 because nothing in the
+    /// prompt said the year). Lives in LIVE CONTEXT: changes daily, so it
+    /// must not sit in the cached static head.
+    static func todayLine() -> String {
+        let f = DateFormatter()
+        f.dateFormat = "EEEE, d MMMM yyyy"
+        return f.string(from: Date())
     }
 
     /// Behavioral contract for the Profile → Coach personality picker. The
@@ -2135,6 +2155,8 @@ public final class ChatViewModel: ObservableObject {
         > Next: ride this evening, log it in the app.
 
         LIVE CONTEXT (refreshed each message — everything below this line can change turn to turn; everything above it is stable for the length of this session and safe to cache)
+
+        TODAY IS \(Self.todayLine()) — use THIS date (and year!) for every date you emit: training-plan days, reminders, calendar events, backdated logs. Never guess the year from intuition.
 
         TODAY'S METRICS (live from HealthKit)
         - Steps: \(Int(steps)) / \(Int(stepsGoal)) (\(pct(steps, stepsGoal))%)

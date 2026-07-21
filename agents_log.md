@@ -3617,3 +3617,23 @@ reporting .ready on faith. Session-64 seq typo (7044→7028) corrected in this c
 Deployed + launched: **databaseSequenceNumber: 7044**.
 
 Latest deployed sequence: **7044**.
+
+---
+
+## Session 66 — 2026-07-21 (Astra doesn't know the date — 2025 training plan; honest plan-card states)
+
+User's replanned week landed on **July 2025** (device plan.json pulled: weekStart Mon 2025-07-21,
+createdAt 2026-07-21 11:09): the prompt never states TODAY'S DATE, so the model guessed the year
+(training-era intuition; Jul 21 IS a Monday in 2025 — right math, wrong year). Card then showed
+an empty week + "All planned sessions are done" (banner fired on empty list); calendar events
+went to 2025 ("trainings not syncing").
+Fixes: (1) `TODAY IS <Tuesday, 21 July 2026>` line in LIVE CONTEXT (volatile — cache-safe) with
+explicit never-guess-the-year instruction; (2) executeSetTrainingPlan rejects weekStart outside
+[today−7d, today+21d] with an honest error that STATES today's date (self-correcting loop);
+(3) plan card: empty current week now says "Plan dates don't match this week — ask Astra to
+rebuild it"; "all done" only with real completed sessions.
+User must ask Astra to rebuild the week once (replaces 2025 calendar events by stored ids).
+
+Deployed + launched: **databaseSequenceNumber: 7052**.
+
+Latest deployed sequence: **7052**.

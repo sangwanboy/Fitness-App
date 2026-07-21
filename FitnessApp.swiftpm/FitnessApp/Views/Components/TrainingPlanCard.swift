@@ -278,7 +278,17 @@ public struct TrainingPlanCard: View {
                 }
                 Spacer()
             }
-        } else if let plan = store.activePlan, !plan.days.filter({ $0.kind != .rest }).isEmpty {
+        } else if store.activePlan != nil, store.currentWeekDays.isEmpty {
+            // Plan exists but none of its days fall in the current week —
+            // seen live when a plan landed on 2025 dates. "All done" here
+            // would be a lie; say what's actually wrong.
+            HStack(spacing: 8) {
+                Image(systemName: "calendar.badge.exclamationmark").foregroundColor(.orange)
+                Text("Plan dates don't match this week — ask Astra to rebuild it")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(isDark ? .white.opacity(0.8) : .black.opacity(0.8))
+            }
+        } else if !store.currentWeekDays.filter({ $0.kind != .rest }).isEmpty {
             HStack(spacing: 8) {
                 Image(systemName: "checkmark.seal.fill").foregroundColor(.green)
                 Text("All planned sessions are done")
