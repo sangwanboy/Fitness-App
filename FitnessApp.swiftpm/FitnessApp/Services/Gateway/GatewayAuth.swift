@@ -122,6 +122,7 @@ public actor GatewayAuth {
         let auth = try await Self.postAuth(path: "v1/auth/apple",
                                            body: ["fake": ["sub": sub, "bundleId": bundleId]])
         store(auth)
+        await Self.postSessionEstablished()
     }
     #endif
 
@@ -131,6 +132,16 @@ public actor GatewayAuth {
         let auth = try await Self.postAuth(path: "v1/auth/apple",
                                            body: ["identityToken": appleIdentityToken])
         store(auth)
+        await Self.postSessionEstablished()
+    }
+
+    /// AI features that failed while signed out (weekly narrative, prediction
+    /// enrichment) listen for this and retry immediately instead of sitting
+    /// in their failure backoffs until a manual tap.
+    private static func postSessionEstablished() async {
+        await MainActor.run {
+            NotificationCenter.default.post(name: .gatewaySessionEstablished, object: nil)
+        }
     }
 
     /// Drop the session locally (Keychain + memory).
@@ -248,4 +259,10 @@ public actor GatewayAuth {
             throw GatewayError.http(http.statusCode, "Could not decode auth response.")
         }
     }
+}
+
+public extension Notification.Name {
+    /// Posted (on the main queue) after a gateway session is successfully
+    /// established — real Sign in with Apple or the dev fake-auth flow.
+    static let gatewaySessionEstablished = Notification.Name("gatewaySessionEstablished")
 }

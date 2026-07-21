@@ -3387,3 +3387,29 @@ removed; stale LAN-IP TextField placeholder → "Blank = production (Azure)".
 Deployed + launched: **databaseSequenceNumber: 6876**.
 
 Latest deployed sequence: **6876**.
+
+---
+
+## Session 60 — 2026-07-21 (First real prod user 🎉 + 3 fixes: self-heal, hidden toolbar, Age-0)
+
+**Milestone verified via prod admin API: first real SIWA user (`u_aefc3ca31891`) signed in and
+chatted — 6 requests, 33k tokens, $0.09, gemini-3.5-flash.** Sign-in worked after the gateway's
+Session-6 registry bootstrap fix (empty prod Cosmos → 401 unknown-audience; fixed in the gateway
+repo, commit 51d1db1, live ~3 min later via CI/CD).
+
+### Fixes (from user screenshots)
+1. **Self-heal on sign-in**: weekly-review narrative + prediction enrichment that failed while
+   signed out stayed stuck behind their backoffs. `GatewayAuth` now posts
+   `.gatewaySessionEstablished` (both real SIWA + dev auth); `WeeklyReviewEngine` retries a
+   missing narrative, `HealthKitManager` retries enrichment ONLY from `.failed` (never re-spends
+   on complete/cached).
+2. **Chat history selector invisible**: history + new-chat buttons sat in `topBarLeading`, which
+   `.toolbarTitleDisplayMode(.inlineLarge)` never renders on iOS 26. Moved to the trailing
+   group (clock, compose, brain-menu); "Clear chat" moved inside the brain menu.
+3. **"Age 0 (DOB May 2026)"**: `AstraMemoryStore.liveBasics()` trusted a bogus stored DOB
+   (picker default saved as ~today). Age outside 5–120 → omitted entirely (honesty rule);
+   user should correct DOB in Profile → Personal details.
+
+Deployed + launched: **databaseSequenceNumber: 6884**.
+
+Latest deployed sequence: **6884**.

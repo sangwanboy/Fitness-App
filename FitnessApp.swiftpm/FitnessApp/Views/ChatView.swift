@@ -214,7 +214,11 @@ public struct ChatView: View {
         .navigationSubtitle("AI · Always learning your body")
         .toolbarTitleDisplayMode(.inlineLarge)
         .toolbar {
-            ToolbarItemGroup(placement: .topBarLeading) {
+            // Everything lives in the TRAILING group: with
+            // .toolbarTitleDisplayMode(.inlineLarge) the large title owns the
+            // leading edge on iOS 26 and topBarLeading items never render
+            // (the history/new-chat buttons were invisible there).
+            ToolbarItemGroup(placement: .topBarTrailing) {
                 Button(action: { showHistorySheet = true }) {
                     Image(systemName: "clock.arrow.circlepath")
                         .foregroundStyle(accentColor)
@@ -230,9 +234,7 @@ public struct ChatView: View {
                 .opacity(viewModel.isGenerating ? 0.4 : 1)
                 .accessibilityLabel("New chat")
                 .accessibilityHint("Archive this conversation and start fresh")
-            }
 
-            ToolbarItemGroup(placement: .topBarTrailing) {
                 Menu {
                     Picker("Thinking Level", selection: $thinkingLevel) {
                         Text("Minimal").tag("minimal")
@@ -240,16 +242,14 @@ public struct ChatView: View {
                         Text("Medium").tag("medium")
                         Text("High").tag("high")
                     }
+                    Button(role: .destructive, action: { showClearAlert = true }) {
+                        Label("Clear chat", systemImage: "trash")
+                    }
                 } label: {
                     Image(systemName: "brain")
                         .foregroundStyle(accentColor)
                 }
-                .accessibilityLabel("Thinking level")
-
-                Button(action: { showClearAlert = true }) {
-                    Image(systemName: "trash")
-                }
-                .accessibilityLabel("Clear chat")
+                .accessibilityLabel("Thinking level and chat options")
             }
         }
         .sheet(isPresented: $showHistorySheet) {

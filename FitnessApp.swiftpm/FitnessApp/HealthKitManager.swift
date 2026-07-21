@@ -60,6 +60,19 @@ public final class HealthKitManager: ObservableObject {
 
     private init() {
         seedEmptySummaries()
+        // Self-heal: prediction enrichment that failed while signed out
+        // shouldn't wait out its 10-min backoff (or a manual "Retry insights"
+        // tap) once a gateway session exists. Only fires on .failed — never
+        // re-spends on complete/cached enrichment.
+        NotificationCenter.default.addObserver(
+            forName: .gatewaySessionEstablished, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self,
+                      self.predictions?.aiEnrichmentStatus == .failed else { return }
+                self.retryAIEnrichment()
+            }
+        }
     }
 
     /// Initialize summaries with zero values + empty history so the UI has

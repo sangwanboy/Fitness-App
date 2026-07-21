@@ -240,7 +240,14 @@ public final class AstraMemoryStore: ObservableObject {
         let dobInterval = ud.double(forKey: "athlete_dob")
         let (hkDob, _, _) = hk.readMedicalIdCharacteristics()
         let dobDate: Date? = dobInterval > 0 ? Date(timeIntervalSince1970: dobInterval) : hkDob
-        let age = dobDate.map { Calendar.current.dateComponents([.year], from: $0, to: Date()).year ?? 0 }
+        // Implausible DOB (future, or age < 5 — e.g. a date picker that
+        // defaulted to "today" and got saved) is bad data, not a fact.
+        // Presenting "Age 0" as truth broke the honesty rule on-device;
+        // omit age entirely instead so Astra never sees it.
+        let age: Int? = dobDate.flatMap {
+            let years = Calendar.current.dateComponents([.year], from: $0, to: Date()).year ?? 0
+            return (5...120).contains(years) ? years : nil
+        }
 
         let storedHeight = ud.double(forKey: "athlete_height_cm")
         let heightCm: Double? = storedHeight > 0 ? storedHeight : nil

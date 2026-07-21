@@ -177,6 +177,19 @@ public final class WeeklyReviewEngine: ObservableObject {
     private let narrativeFailureBackoff: TimeInterval = 300
 
     private init() {
+        // Self-heal: a narrative that failed while signed out (401) shouldn't
+        // sit behind its backoff waiting for a manual Retry once the user
+        // signs in.
+        NotificationCenter.default.addObserver(
+            forName: .gatewaySessionEstablished, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.data != nil, self.narrative == nil,
+                      self.insufficientDataDays == nil else { return }
+                self.retryNarrative()
+            }
+        }
+
         let key = Self.isoWeekKey(for: Date())
         guard let cached = loadFromDisk(weekKey: key) else { return }
         currentWeekKey = key
