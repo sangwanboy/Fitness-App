@@ -3933,3 +3933,34 @@ broken chat thread stays blank (unrecoverable) but no new chat needed — just r
 Deployed + launched: **databaseSequenceNumber: 7108**.
 
 Latest deployed sequence: **7108**.
+
+---
+
+## Session 74 — 2026-07-22 (WP-I: render block markdown / blockquotes in Coach chat)
+
+Fable-designed → Sonnet-implemented → Opus-verified (FIX FIRST → 1-line fix → SHIP) → deploy.
+Symptom: after the user switched the gateway model to gemini-3.6-flash, Astra replies showed raw
+`>` blockquotes and `### ` headers as literal text.
+
+ROOT CAUSE (found by the Fable design pass): (1) the existing chat renderer
+`Views/Components/StructuredMarkdownText.swift` had NO blockquote branch — `>`-prefixed lines fell
+through to raw paragraphs, and a `>` prefix also defeated the heading/bullet classifiers, so a
+fully-`>`-wrapped reply degraded entirely; (2) the system prompt's EXAMPLE SHAPE was itself written
+using `> ` prefixes, which gemini-3.6-flash imitated literally.
+
+Fixes (StructuredMarkdownText.swift): new `Block.quote([Block])` (no `indirect`); full-wrap unwrap
+pre-pass (when every non-empty line is quoted, strip one level — a stylistic wrapper the glass
+bubble already frames); quote-run branch (guarded `!inCode` per Opus so a `>` inside a code fence
+stays code) recursing parseBlocks and rendering `.quote` as inner blocks + a leading accent rule
+(AnyView for the recursive view, overlay to size the rule); depth-3 clamp; bonus: flush an
+unterminated code fence at stream end (mid-stream fenced code was invisible); accept `+ ` bullets.
+ChatView.swift: deleted dead `renderedAttributedText`. ChatViewModel.swift: de-quoted EXAMPLE SHAPE
++ added "Never wrap your reply in blockquotes" to OUTPUT FORMAT (both above the LIVE CONTEXT divider,
+static cache stays byte-stable). Non-quoted text unchanged; PredictionWhySheet unaffected.
+
+Note: deploy was delayed a few hours — the phone was away from the Mac (user out of home), device
+showed `unavailable`; shipped once it returned to `available (paired)`.
+
+Deployed + launched: **databaseSequenceNumber: 7116**.
+
+Latest deployed sequence: **7116**.

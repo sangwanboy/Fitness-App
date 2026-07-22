@@ -412,20 +412,6 @@ struct ChatMessageRow: View {
 
     var isUser: Bool { message.role == .user }
 
-    /// Parse the LLM's markdown (bold/italic/code/lists/links) into an AttributedString
-    /// so it renders with proper styling instead of showing raw `**asterisks**`.
-    private var renderedAttributedText: AttributedString {
-        let options = AttributedString.MarkdownParsingOptions(
-            allowsExtendedAttributes: true,
-            interpretedSyntax: .full,
-            failurePolicy: .returnPartiallyParsedIfPossible
-        )
-        if let attr = try? AttributedString(markdown: message.text, options: options) {
-            return attr
-        }
-        return AttributedString(message.text)
-    }
-
     var body: some View {
         VStack(alignment: isUser ? .trailing : .leading, spacing: 6) {
             HStack(alignment: .bottom, spacing: 8) {

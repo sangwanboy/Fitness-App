@@ -2,9 +2,10 @@ import SwiftUI
 
 /// Block-level markdown renderer for Coach replies.
 /// SwiftUI's Text(AttributedString(markdown:)) only renders *inline* attributes
-/// (bold, italic, code, link). Block elements — headings, bullet lists, the
-/// "Next:" call-to-action — need their own SwiftUI views with proper spacing
-/// to read as a structured response. That's what this view does.
+/// (bold, italic, code, link). Block elements — headings, bullet lists,
+/// blockquotes (`>`), the "Next:" call-to-action — need their own SwiftUI
+/// views with proper spacing to read as a structured response. That's what
+/// this view does.
 struct StructuredMarkdownText: View {
     let text: String
     let isDark: Bool
@@ -45,16 +46,41 @@ struct StructuredMarkdownText: View {
         case paragraph(AttributedString)
         case codeBlock(String)
         case divider
+        // [Block] recurses through Array's heap box, so this compiles without
+        // `indirect` — the enum itself never needs to store a Block inline.
+        case quote([Block])
     }
 
     /// Parse into blocks. We accept both real `\n\n` paragraph breaks and the
     /// LLM's frequent mistake of running sections together on a single line —
     /// classifying line-by-line gives us the right structure either way.
-    private func parseBlocks(_ text: String) -> [Block] {
+    ///
+    /// `depth` counts how many `.quote` wrappers already contain this call
+    /// (0 = top-level, not inside any quote). It's an implementation detail
+    /// for the nesting clamp below — callers never need to pass it.
+    private func parseBlocks(_ text: String, depth: Int = 0) -> [Block] {
         // Normalize CRLF, then split on \n. We rebuild paragraphs ourselves.
-        let lines = text
+        var lines = text
             .replacingOccurrences(of: "\r\n", with: "\n")
             .components(separatedBy: "\n")
+
+        // Full-wrap unwrap: the model sometimes imitates the prompt's example
+        // literally and wraps an ENTIRE reply in '>'. If every non-empty line
+        // is quoted, strip one level from every line and repeat until it's no
+        // longer fully wrapped — the glass bubble already frames the reply,
+        // so a fully-quoted reply should render exactly as an unquoted one
+        // would. Partial quoting (only some lines) is left to the quote-run
+        // branch in the loop below.
+        while lines.contains(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }),
+              lines.allSatisfy({ line in
+                  let trimmed = line.trimmingCharacters(in: .whitespaces)
+                  return trimmed.isEmpty || trimmed.hasPrefix(">")
+              }) {
+            lines = lines.map { line in
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                return trimmed.isEmpty ? line : stripOneQuoteLevel(trimmed)
+            }
+        }
 
         var result: [Block] = []
         var pendingBullets: [String] = []
@@ -78,8 +104,36 @@ struct StructuredMarkdownText: View {
         }
         func flushAll() { flushParagraph(); flushBullets(); flushNumbered() }
 
-        for raw in lines {
+        var i = 0
+        while i < lines.count {
+            let raw = lines[i]
             let line = raw.trimmingCharacters(in: .whitespaces)
+
+            // Quote-run: '>'-prefixed line(s) — checked BEFORE the code-fence
+            // check so a quoted fence marker (`> ```) is handled by the
+            // recursive parse rather than toggling fence state at this level,
+            // unless already inside a code fence.
+            if !inCode && line.hasPrefix(">") {
+                flushAll()
+                var buffer: [String] = []
+                let clamp = depth >= 3
+                while i < lines.count {
+                    let qLine = lines[i].trimmingCharacters(in: .whitespaces)
+                    guard qLine.hasPrefix(">") else { break }
+                    buffer.append(clamp ? stripAllQuoteLevels(qLine) : stripOneQuoteLevel(qLine))
+                    i += 1
+                }
+                if clamp {
+                    // Already at max nesting (3) — flatten instead of
+                    // wrapping again so a run of '>' beyond depth 3 renders
+                    // as plain content, not a 4th nested quote bar.
+                    result.append(contentsOf: parseBlocks(buffer.joined(separator: "\n"), depth: depth))
+                } else {
+                    let inner = parseBlocks(buffer.joined(separator: "\n"), depth: depth + 1)
+                    if !inner.isEmpty { result.append(.quote(inner)) }
+                }
+                continue
+            }
 
             // Fenced code block ``` ... ```
             if line.hasPrefix("```") {
@@ -91,27 +145,27 @@ struct StructuredMarkdownText: View {
                     flushAll()
                     inCode = true
                 }
-                continue
+                i += 1; continue
             }
-            if inCode { codeLines.append(raw); continue }
+            if inCode { codeLines.append(raw); i += 1; continue }
 
-            if line.isEmpty { flushAll(); continue }
+            if line.isEmpty { flushAll(); i += 1; continue }
 
             // Horizontal rule
             if line == "---" || line == "***" {
-                flushAll(); result.append(.divider); continue
+                flushAll(); result.append(.divider); i += 1; continue
             }
 
             // Heading: # / ## / ### (treat all alike — section header)
             if let headingText = stripHeading(line) {
-                flushAll(); result.append(.heading(inline(headingText))); continue
+                flushAll(); result.append(.heading(inline(headingText))); i += 1; continue
             }
 
-            // Bullet: - or * (not **)
-            if line.hasPrefix("- ") || (line.hasPrefix("* ") && !line.hasPrefix("**")) {
+            // Bullet: - or * (not **) or +
+            if line.hasPrefix("- ") || line.hasPrefix("+ ") || (line.hasPrefix("* ") && !line.hasPrefix("**")) {
                 flushParagraph(); flushNumbered()
                 pendingBullets.append(String(line.dropFirst(2)))
-                continue
+                i += 1; continue
             }
 
             // Numbered: 1. / 2. ...
@@ -121,20 +175,43 @@ struct StructuredMarkdownText: View {
                 flushParagraph(); flushBullets()
                 let body = String(line[line.index(after: dot)...]).trimmingCharacters(in: .whitespaces)
                 pendingNumbered.append(body)
-                continue
+                i += 1; continue
             }
 
             // "Next: …" call-to-action treated as its own block.
             if let nextBody = matchNext(line) {
-                flushAll(); result.append(.next(inline(nextBody))); continue
+                flushAll(); result.append(.next(inline(nextBody))); i += 1; continue
             }
 
             // Regular paragraph line.
             flushBullets(); flushNumbered()
             pendingParagraph.append(line)
+            i += 1
+        }
+        // Streaming mid-fence: if the text ended while still inside an
+        // unterminated code fence, flush what's buffered so far instead of
+        // dropping it silently until the closing fence arrives.
+        if inCode && !codeLines.isEmpty {
+            result.append(.codeBlock(codeLines.joined(separator: "\n")))
         }
         flushAll()
         return result
+    }
+
+    /// Strip exactly one quote level: a leading '>' plus at most one
+    /// following space (`> text` → `text`, `>text` → `text`, bare `>` → "").
+    private func stripOneQuoteLevel(_ trimmedLine: String) -> String {
+        guard trimmedLine.hasPrefix(">") else { return trimmedLine }
+        var rest = String(trimmedLine.dropFirst())
+        if rest.hasPrefix(" ") { rest.removeFirst() }
+        return rest
+    }
+
+    /// Strip every leading quote level (used only past the nesting clamp).
+    private func stripAllQuoteLevels(_ trimmedLine: String) -> String {
+        var s = trimmedLine
+        while s.hasPrefix(">") { s = stripOneQuoteLevel(s) }
+        return s
     }
 
     private func stripHeading(_ line: String) -> String? {
@@ -256,6 +333,23 @@ struct StructuredMarkdownText: View {
             Rectangle()
                 .fill(fg.opacity(0.12))
                 .frame(height: 0.5)
+
+        case .quote(let inner):
+            // AnyView is mandatory here — a recursive @ViewBuilder `some View`
+            // call doesn't compile. The overlay (not an HStack rule + content)
+            // avoids the greedy-Rectangle sizing problem an HStack would have.
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(Array(inner.enumerated()), id: \.offset) { _, b in
+                    AnyView(renderBlock(b))
+                }
+            }
+            .padding(.leading, 11)
+            .overlay(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 1.5)
+                    .fill(accentColor.opacity(0.45))
+                    .frame(width: 3)
+                    .padding(.vertical, 1)
+            }
         }
     }
 
