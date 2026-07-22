@@ -12,6 +12,7 @@ project overview; these documents go deep on each subsystem.
 | [ASTRA_AI.md](ASTRA_AI.md) | Touch anything Vertex/Gemini — the on-device auth flow, the streaming + thought-signature pipeline, the ~24-tool registry and confirm/follow-up flow, system-prompt assembly, chat-history persistence, and the token meter. |
 | [DATA_AND_PRIVACY.md](DATA_AND_PRIVACY.md) | Reason about data — HealthKit read/write type lists, the `HealthMetricType` model, `LocaleUnits`, app-scoped EventKit, the full UserDefaults/`@AppStorage` key inventory, what leaves the device, and credential handling. |
 | [BUILD_AND_DEPLOY.md](BUILD_AND_DEPLOY.md) | Build, deploy, or contribute — XcodeGen, the `register_pbx.py` fallback, exact device/simulator commands, troubleshooting, the git secret-scan protocol, firm conventions, and the multi-agent workflow norms. |
+| [LAUNCH_TO_APP_STORE.md](LAUNCH_TO_APP_STORE.md) | Ship to the App Store — readiness status + remaining blockers, release pre-flight, screenshots, archive & upload (Organizer and CLI), ASC submission, TestFlight, review, post-approval. Links to the paste-ready [metadata pack](APP_STORE_METADATA.md) and [review notes](APP_STORE_REVIEW_NOTES.md). |
 
 ## Conventions these docs assume
 

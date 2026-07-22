@@ -4058,3 +4058,22 @@ present ×2 (Debug+Release), DEBUG condition only in Debug configs, all sources 
 `xcodebuild` unavailable. No deploy, sequence unchanged.
 
 Latest deployed sequence: **7132**.
+
+---
+
+## Session 78 — 2026-07-22 (docs: App Store launch runbook)
+
+Xcode 26.6 landed on the new Mac (user installed); simulator compile check of `28e250b`
+**BUILD SUCCEEDED** (iPhone 17 Pro sim, iOS 26.5) — retroactively verifies Session 77's
+un-build-verified project.yml fix. Physical iPhone still not paired to this Mac.
+
+NEW **docs/LAUNCH_TO_APP_STORE.md** — end-to-end launch runbook synthesizing the current
+readiness state (verified against the tree, not the 07-17 handoff): done-list table
+(SIWA + entitlement, privacy manifest, deletion, login-gate flip, prod gateway, legal
+site, real-PNG icon, 1.0.1(2)) + 4 outstanding blockers (GCP key rotation — USER-GATED;
+Release on-device E2E test; server-side SIWA token revocation — external; user-only ASC
+steps). Covers pre-flight (build-gate pattern from Session 66), screenshots, archive +
+upload (Organizer + CLI exportArchive), ASC sequence, TestFlight, review-rejection
+playbook, post-approval. Linked from docs/README.md index. No deploy, sequence unchanged.
+
+Latest deployed sequence: **7132**.
