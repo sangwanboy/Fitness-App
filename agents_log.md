@@ -4077,3 +4077,22 @@ upload (Organizer + CLI exportArchive), ASC sequence, TestFlight, review-rejecti
 playbook, post-approval. Linked from docs/README.md index. No deploy, sequence unchanged.
 
 Latest deployed sequence: **7132**.
+---
+
+## Session 79 — 2026-07-22 (WP-J.2: Morning Brief stale-sleep gate + WP-J/WP-CAM cleanups)
+
+Fast-follow. Sonnet-implemented → Opus-verified SHIP (no findings). Four small changes:
+1. **MorningBriefEngine.gatherStats** — the brief could cite an OLD night's sleep as "last night"
+   (same bug WP-J fixed for chat). Gated on the sleep sample's night-bucket via the SAME day-diff
+   logic as ChatViewModel.sleepTag: bucket==last-night → "Slept Xh"; ==yesterday → "No sleep synced
+   for last night yet"; ≥2 days or nil provenance → omit the sleep chip. Never asserts "last night"
+   on stale/unknown data.
+2. **HealthKitManager** — dropped the unused `.bodyMass` latestSampleProvenance companion query
+   (Opus WP-J finding: computed but never rendered). RHR/SpO₂/VO₂ companions + bodyMass value fetch intact.
+3. **ChatViewModel** — corrected the `ageString` doc comment ("1d ago" is never emitted).
+4. **FoodCameraView** — clear `startInFlight` on the `.unavailable` branch too (Opus WP-CAM latent
+   nit), so the flag is cleared on ALL block-resolution paths.
+
+Deployed + launched: **databaseSequenceNumber: 7140**.
+
+Latest deployed sequence: **7140**.

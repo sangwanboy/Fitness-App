@@ -2015,11 +2015,13 @@ public final class ChatViewModel: ObservableObject {
         // MEMORY HYGIENE above). All of it is volatile — Date()-derived — so
         // it's computed only here, in the LIVE CONTEXT half of this function,
         // never mixed into the cacheable static run above.
-        /// "42m ago" / "5h ago" / "3d ago" — fixed English, no locale
+        /// "42m ago" / "23h ago" / "3d ago" — fixed English, no locale
         /// formatter. Minute/hour thresholds use raw `Date()` deltas
-        /// (TZ-independent); the day count uses a Calendar day difference,
-        /// never a naive seconds/86400 divide, so a sample 25h old reads
-        /// "1d ago" only once it's actually crossed a calendar day.
+        /// (TZ-independent): <60min shows minutes, <48h shows hours — so a
+        /// sample 25h old reads "25h ago", never "1d ago" (that string is
+        /// never emitted). Only at/after 48h does it switch to a Calendar
+        /// day difference, floored at 2 ("2d ago" minimum) so it never
+        /// undercounts a day boundary as "1d ago" either.
         func ageString(_ date: Date) -> String {
             let now = Date()
             let seconds = now.timeIntervalSince(date)

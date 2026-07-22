@@ -485,6 +485,7 @@ final class FoodCameraModel: NSObject, ObservableObject {
                     session.commitConfiguration()
                     DispatchQueue.main.async { [weak self] in
                         guard let self, attempt == self.attemptID else { return }
+                        self.startInFlight = false
                         self.state = .unavailable
                     }
                     return

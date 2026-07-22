@@ -210,8 +210,29 @@ public final class MorningBriefEngine: ObservableObject {
         if let recovery = hk.predictions?.recovery {
             stats.append("Recovery \(recovery.score)/100 \u{00B7} \(recovery.label.headline)")
         }
-        if let sleepHours = hk.metricSummaries[.sleep]?.currentValue, sleepHours > 0 {
-            stats.append("Slept \(String(format: "%.1f", sleepHours))h")
+        // Gated on the SAME night-bucket rule ChatViewModel's sleepTag() uses
+        // for chat — the incident that shipped that fix was Astra (and here,
+        // the brief) citing an old night's sleep as if it were last night.
+        // Bucket = the calendar day of the winning sample's endDate (the
+        // morning after), compared against today's calendar day.
+        if let sleepSummary = hk.metricSummaries[.sleep], sleepSummary.currentValue > 0 {
+            if let prov = sleepSummary.provenance {
+                let cal = Calendar.current
+                let bucketDay = cal.startOfDay(for: prov.sampleEnd)
+                let todayDay = cal.startOfDay(for: Date())
+                let dayDiff = cal.dateComponents([.day], from: bucketDay, to: todayDay).day ?? 0
+                if dayDiff <= 0 {
+                    stats.append("Slept \(String(format: "%.1f", sleepSummary.currentValue))h")
+                } else if dayDiff == 1 {
+                    // 1 night ago, not yet synced for last night — honest,
+                    // not silent: still worth Astra acknowledging in the brief.
+                    stats.append("No sleep synced for last night yet")
+                }
+                // dayDiff >= 2: stale reading from an older night — omit
+                // rather than let it be narrated as current.
+            }
+            // provenance nil: unknown recency — stay conservative, don't
+            // assert "last night" (mirrors sleepTag's own "no reading" guard).
         }
         let load = TrainingLoadEngine.shared
         if load.chronicLoad > 0 {

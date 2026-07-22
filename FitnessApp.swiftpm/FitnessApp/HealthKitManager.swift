@@ -347,14 +347,16 @@ public final class HealthKitManager: ObservableObject {
             group.addTask { await self.fetchSimpleStatistics(.oxygenSaturation, hkID: .oxygenSaturation, unit: .percent(),                                   options: .discreteAverage, scale: 100) }
             group.addTask { await self.fetchSimpleStatistics(.vo2Max,           hkID: .vo2Max,           unit: HKUnit(from: "ml/(kg*min)"),                  options: .mostRecent) }
             group.addTask { await self.fetchMindfulMinutes() }
-            // Provenance-only companions for the 4 statistics-query metrics
+            // Provenance-only companions for 3 of the statistics-query metrics
             // above — HKStatisticsQuery exposes no sample, so these separate
             // limit-1 sample queries supply (source, reading age) without
             // touching the displayed value (see `latestSampleProvenance`).
+            // bodyMass has no companion: nothing renders `.provenance` for
+            // `.bodyMass` anywhere, so that query was a wasted HK round-trip
+            // every fetch tick — dropped.
             group.addTask { await self.latestSampleProvenance(.restingHeartRate) }
             group.addTask { await self.latestSampleProvenance(.oxygenSaturation) }
             group.addTask { await self.latestSampleProvenance(.vo2Max) }
-            group.addTask { await self.latestSampleProvenance(.bodyMass) }
             // iPhone-trackable show-more tiles (no Watch required)
             group.addTask { await self.fetchSimpleStatistics(.restingEnergy,        hkID: .basalEnergyBurned,                 unit: HKUnit.kilocalorie(),       options: .cumulativeSum, todayOnly: true) }
             group.addTask { await self.fetchSimpleStatistics(.walkingSpeed,         hkID: .walkingSpeed,                      unit: HKUnit(from: "mi/hr"),      options: .discreteAverage) }
