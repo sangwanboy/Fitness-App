@@ -229,6 +229,34 @@ final class FoodCameraModel: NSObject, ObservableObject {
     /// AFTER a retry rebuilt the session must not touch state (the poisoned
     /// flag alone can't protect — a retry resets it).
     private var attemptID = UUID()
+    /// Consecutive watchdog timeouts with no success in between. After 2,
+    /// the failure copy names the real remedy (system camera service stuck)
+    /// instead of the generic "another app may be using it" guess. Reset to
+    /// 0 on any success, including a late one recovered after a timeout.
+    private var consecutiveWatchdogFailures = 0
+    /// True for exactly the lifetime of an outstanding configureAndRun()
+    /// queue block (config+startRunning) — set when that block is armed,
+    /// cleared only when it actually resolves. Without this, a non-rebuild
+    /// "Try again" (start() skips rebuild because the attempt wasn't
+    /// poisoned) — or the interruptionEnded->start() observer firing mid-
+    /// startup — re-enters configureAndRun() while a block is still
+    /// outstanding, enqueueing a SECOND config/start block behind it on the
+    /// serial queue. When block 1 resolves (state=.ready), block 2 dequeues
+    /// with its own captured needsConfigure=true and calls
+    /// beginConfiguration on the now-running session -> canAddInput/
+    /// canAddOutput return false -> `.unavailable`, a dead end with no
+    /// retry. This tracks the OUTSTANDING QUEUE BLOCK, not UI state: a
+    /// watchdog firing does NOT resolve the block, so it must NOT clear
+    /// this flag (see armWatchdog / configureAndRun's completion handler).
+    private var startInFlight = false
+
+    /// Diagnostic tripwire only — never influences behavior. No-ops outside
+    /// DEBUG so call sites don't need `#if DEBUG` at every line.
+    private func audit(_ event: String, _ info: [String: Any] = [:]) {
+        #if DEBUG
+        DebugCameraAudit.log(event, info)
+        #endif
+    }
 
     /// Called on the main thread with the captured/normalised still.
     var onCapture: ((UIImage) -> Void)?
@@ -236,10 +264,37 @@ final class FoodCameraModel: NSObject, ObservableObject {
     var onBarcode: ((String) -> Void)?
 
     func start() {
-        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        let authStatus = AVCaptureDevice.authorizationStatus(for: .video)
+        switch authStatus {
         case .authorized:
-            if poisoned { rebuildSessionObjects() }
+            // Only an explicit Try again on a session we KNOW is dead
+            // (poisoned: hard startRunning failure or a runtime error, never
+            // just a watchdog timeout) tears down and rebuilds. A Try again
+            // after a mere watchdog timeout instead falls through to
+            // configureAndRun() below reusing the SAME session/queue — it
+            // just chains another attempt behind whatever startRunning call
+            // may still be outstanding on that serial queue, rather than
+            // spinning up a second AVCaptureSession that would race the
+            // first for the camera hardware (the retry-storm this class of
+            // bug is suspected to have caused).
+            if poisoned {
+                rebuildSessionObjects()
+            } else if startInFlight {
+                // Re-entrancy guard: a start/config block from a PRIOR call
+                // is still outstanding on the queue (reachable from a
+                // non-rebuild "Try again", or from the interruptionEnded->
+                // start() observer firing mid-startup). Re-entering
+                // configureAndRun() here would enqueue a SECOND block
+                // behind the first — see the startInFlight doc comment for
+                // the exact failure mode this avoids. Just re-arm the
+                // watchdog so a hung/slow outstanding block can still
+                // recover via late-success, and leave state alone.
+                audit("start.skipped-inflight", ["attempt": attemptID.uuidString])
+                armWatchdog()
+                return
+            }
             state = .configuring
+            logStart(authStatus: authStatus)
             armWatchdog()
             configureAndRun()
         case .notDetermined:
@@ -247,6 +302,7 @@ final class FoodCameraModel: NSObject, ObservableObject {
                 DispatchQueue.main.async {
                     guard let self else { return }
                     if granted {
+                        self.logStart(authStatus: .authorized)
                         self.armWatchdog()
                         self.configureAndRun()
                     } else { self.state = .denied }
@@ -257,9 +313,34 @@ final class FoodCameraModel: NSObject, ObservableObject {
         }
     }
 
+    /// `authStatus`/`snoreListening`/`sleepRunning`/`audioCategory`/
+    /// `otherAudio` name every shared-hardware suspect at once — if the
+    /// camera wedges again, this line says whether the sleep/snore pipeline
+    /// (the last root cause) or something new (another app, system
+    /// pressure) was in play at the moment of the attempt.
+    private func logStart(authStatus: AVAuthorizationStatus) {
+        let audioSession = AVAudioSession.sharedInstance()
+        // SnoreDetector/SleepSessionManager are @MainActor singletons; start()
+        // only ever calls in from a main-thread context (SwiftUI onAppear/
+        // onChange, or the requestAccess callback already hopped to
+        // DispatchQueue.main), so asserting isolation here is safe.
+        let (snoreListening, sleepRunning) = MainActor.assumeIsolated {
+            (SnoreDetector.shared.isListening, SleepSessionManager.shared.isRunning)
+        }
+        audit("start", [
+            "authStatus": authStatus.rawValue,
+            "snoreListening": snoreListening,
+            "sleepRunning": sleepRunning,
+            "audioCategory": audioSession.category.rawValue,
+            "otherAudio": audioSession.isOtherAudioPlaying,
+            "attempt": attemptID.uuidString,
+        ])
+    }
+
     /// Abandon a queue whose startRunning hung and start clean — enqueueing
     /// anything else behind a blocked serial queue would never run.
     private func rebuildSessionObjects() {
+        audit("rebuild", ["attempt": attemptID.uuidString])
         sessionObservers.forEach { NotificationCenter.default.removeObserver($0) }
         sessionObservers = []
         // Enqueue a stop for the abandoned pair on ITS OWN queue: it runs the
@@ -276,39 +357,76 @@ final class FoodCameraModel: NSObject, ObservableObject {
         attemptID = UUID()
     }
 
-    /// If the session isn't live within 5 s, stop showing an infinite spinner:
-    /// mark the attempt poisoned and surface an honest retryable state.
+    /// If the session isn't live within 10 s, stop showing an infinite
+    /// spinner: surface an honest retryable state. Unlike the old 5s design,
+    /// this does NOT poison the attempt — a startRunning that's merely slow
+    /// (contended, not truly wedged) can still complete after this fires,
+    /// and configureAndRun's completion handler promotes that late success
+    /// to `.ready` instead of abandoning a session that's actually running
+    /// behind a "failed" screen (only an explicit Try again poisons/rebuilds).
     private func armWatchdog() {
         watchdog?.cancel()
+        let attempt = attemptID
         watchdog = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(5))
-            guard let self, !Task.isCancelled, self.state == .configuring else { return }
-            self.poisoned = true
-            self.state = .failed("The camera didn't start — another app may be using it, or the system camera service stalled.")
+            try? await Task.sleep(for: .seconds(10))
+            guard let self, !Task.isCancelled, attempt == self.attemptID, self.state == .configuring else { return }
+            self.consecutiveWatchdogFailures += 1
+            self.audit("watchdog.fired", ["attempt": attempt.uuidString, "consecutiveFailures": self.consecutiveWatchdogFailures])
+            let message = self.consecutiveWatchdogFailures >= 2
+                ? "The system camera service appears stuck — close other camera apps, or restart your iPhone."
+                : "The camera didn't start — another app may be using it, or the system camera service stalled."
+            self.state = .failed(message)
         }
     }
 
     /// Honest states for mid-use interruptions (Camera app grabs the device,
     /// thermal shutdown, media-services reset) instead of a frozen preview.
-    private func observeSession(_ s: AVCaptureSession) {
+    /// Attached BEFORE startRunning is invoked (see configureAndRun) rather
+    /// than only after reaching `.ready` — a startRunning that hangs or that
+    /// iOS interrupts before it ever returns must still surface the real
+    /// cause, not sit mute behind the generic watchdog timeout. Guarded by
+    /// the attempt token so a stale (rebuilt-away) session's notifications,
+    /// which can arrive after this session is abandoned, are ignored.
+    private func observeSession(_ s: AVCaptureSession, attempt: UUID) {
         let nc = NotificationCenter.default
         sessionObservers.append(nc.addObserver(
             forName: AVCaptureSession.wasInterruptedNotification, object: s, queue: .main
-        ) { [weak self] _ in
-            self?.state = .failed("The camera was interrupted by another app or the system.")
+        ) { [weak self] note in
+            guard let self, attempt == self.attemptID else { return }
+            let code = note.userInfo?[AVCaptureSessionInterruptionReasonKey] as? Int
+            self.audit("note.wasInterrupted", ["reason": Self.describeInterruptionReason(code), "code": code ?? -1])
+            self.state = .failed("The camera was interrupted by another app or the system.")
         })
         sessionObservers.append(nc.addObserver(
             forName: AVCaptureSession.interruptionEndedNotification, object: s, queue: .main
         ) { [weak self] _ in
-            self?.start()
+            guard let self, attempt == self.attemptID else { return }
+            self.audit("note.interruptionEnded")
+            self.start()
         })
         sessionObservers.append(nc.addObserver(
             forName: AVCaptureSession.runtimeErrorNotification, object: s, queue: .main
         ) { [weak self] note in
-            let msg = (note.userInfo?[AVCaptureSessionErrorKey] as? AVError)?.localizedDescription
-            self?.poisoned = true
-            self?.state = .failed(msg ?? "The camera hit a system error.")
+            guard let self, attempt == self.attemptID else { return }
+            let error = note.userInfo?[AVCaptureSessionErrorKey] as? AVError
+            self.audit("note.runtimeError", ["code": error?.code.rawValue ?? -1, "desc": error?.localizedDescription ?? "unknown"])
+            self.poisoned = true
+            self.startInFlight = false
+            self.state = .failed(error?.localizedDescription ?? "The camera hit a system error.")
         })
+    }
+
+    /// Decodes AVCaptureSessionInterruptionReasonKey — this is the line that
+    /// names the real cause next time the camera wedges (was: silently
+    /// invisible, since interruption notifications only attached post-.ready).
+    private static func describeInterruptionReason(_ code: Int?) -> String {
+        switch code {
+        case 1: return "notAvailableInBackground"
+        case 3: return "inUseByAnotherClient"
+        case 4: return "multipleForegroundApps"
+        case 5: return "systemPressure"
+        default: return "unknown(\(code.map(String.init) ?? "nil"))"
+        }
     }
 
     private func configureAndRun() {
@@ -324,8 +442,22 @@ final class FoodCameraModel: NSObject, ObservableObject {
         let output = self.output
         let metadataOutput = self.metadataOutput
         let needsConfigure = !configured
+
+        // Attach interruption/runtime-error observers BEFORE startRunning is
+        // invoked, not only on the success path below — a startRunning that
+        // hangs, or that iOS interrupts before it ever returns, must still
+        // surface the real cause instead of sitting mute behind the generic
+        // watchdog timeout.
+        if sessionObservers.isEmpty { observeSession(session, attempt: attempt) }
+
+        // Armed for exactly the lifetime of this outstanding queue block —
+        // cleared only when it resolves (completion handler below or the
+        // runtimeError observer), never merely because the watchdog fires.
+        startInFlight = true
         queue.async { [weak self] in
             if needsConfigure {
+                let configureStart = DispatchTime.now()
+                self?.audit("configure.begin", ["attempt": attempt.uuidString])
                 session.beginConfiguration()
                 // CRITICAL: photo-only capture must not touch the app's
                 // shared AVAudioSession. The default (true) makes startRunning
@@ -335,8 +467,18 @@ final class FoodCameraModel: NSObject, ObservableObject {
                 // the sleep session resumes on every launch, so every camera
                 // start collided with it).
                 session.automaticallyConfiguresApplicationAudioSession = false
+                // Belt-and-braces alongside the flag above: this session has
+                // no audio input at all, so it should have zero relationship
+                // with the app's shared AVAudioSession (the one SnoreDetector
+                // holds open in .record mode during sleep tracking).
+                session.usesApplicationAudioSession = false
                 session.sessionPreset = .photo
-                guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
+
+                let lookupStart = DispatchTime.now()
+                let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back)
+                self?.audit("device.lookup", ["found": device != nil, "ms": Self.elapsedMs(since: lookupStart)])
+
+                guard let device,
                       let input = try? AVCaptureDeviceInput(device: device),
                       session.canAddInput(input),
                       session.canAddOutput(output) else {
@@ -363,11 +505,19 @@ final class FoodCameraModel: NSObject, ObservableObject {
                 }
 
                 session.commitConfiguration()
+                self?.audit("configure.end", ["ms": Self.elapsedMs(since: configureStart)])
             }
+
+            self?.audit("startRunning.invoke", ["attempt": attempt.uuidString])
+            let startCall = DispatchTime.now()
             if !session.isRunning { session.startRunning() }
             // startRunning can also RETURN with the session not running
             // (silent failure) — don't report .ready on faith.
             let actuallyRunning = session.isRunning
+            self?.audit("startRunning.returned", [
+                "attempt": attempt.uuidString, "isRunning": actuallyRunning, "ms": Self.elapsedMs(since: startCall),
+            ])
+
             DispatchQueue.main.async { [weak self] in
                 // A hung attempt may complete long after the watchdog failed
                 // the UI — or after a retry already rebuilt the session pair
@@ -377,21 +527,51 @@ final class FoodCameraModel: NSObject, ObservableObject {
                 self.watchdog?.cancel()
                 guard actuallyRunning else {
                     self.poisoned = true
+                    self.startInFlight = false
                     self.state = .failed("The camera session couldn't start. Close any app using the camera and try again.")
                     return
                 }
                 self.configured = true
-                if self.sessionObservers.isEmpty { self.observeSession(session) }
+                // If the watchdog already fired for THIS attempt (state is
+                // still .failed, not overwritten by a rebuild since attempt
+                // == attemptID held above), this is the late success the
+                // 10s watchdog is designed to recover instead of abandoning
+                // a session that's actually running behind a "failed" screen.
+                let recoveredLate: Bool
+                if case .failed = self.state { recoveredLate = true } else { recoveredLate = false }
+                self.consecutiveWatchdogFailures = 0
+                self.startInFlight = false
                 self.state = .ready
+                if recoveredLate { self.audit("late-success-recovered", ["attempt": attempt.uuidString]) }
             }
         }
     }
 
+    private static func elapsedMs(since start: DispatchTime) -> Double {
+        Double(DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000
+    }
+
     func stop() {
+        audit("stop.invoke")
         watchdog?.cancel()
-        queue.async { [weak self] in
-            guard let self, self.session.isRunning else { return }
-            self.session.stopRunning()
+        // Capture the session/queue STRONGLY: with `[weak self]` here, a
+        // model deallocated before this block runs would skip stopRunning
+        // entirely, orphaning a session that still holds the camera device.
+        let s = session
+        let q = queue
+        q.async { [self] in
+            if s.isRunning { s.stopRunning() }
+            audit("stop.done")
+        }
+    }
+
+    deinit {
+        // Same strong-capture stop as above, so teardown always releases the
+        // device even if the view disappears without stop() ever landing.
+        let s = session
+        let q = queue
+        q.async {
+            if s.isRunning { s.stopRunning() }
         }
     }
 

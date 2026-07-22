@@ -4002,3 +4002,38 @@ bodyMass companion query + fix the ageString comment.
 Deployed + launched: **databaseSequenceNumber: 7124**.
 
 Latest deployed sequence: **7124**.
+
+---
+
+## Session 76 — 2026-07-22 (WP-CAM: camera hardening — stop the retry-storm wedging mediaserverd)
+
+Fable-diagnosed → Sonnet-implemented → Opus-verified (FIX FIRST re-entrancy bug → Sonnet fix →
+Opus re-verify SHIP). User: "Camera didn't start" on Scan Meal AND the chat camera.
+
+ROOT CAUSE (Fable): ENVIRONMENTAL — the phone's mediaserverd/camera daemon is wedged from the
+2026-07-21 hung-session storm; the reboot Session 67 flagged was never done. Decisive tell: the
+chat camera uses `UIImagePickerController` (pure Apple stack, ZERO shared code with FoodCameraView)
+and it ALSO fails → the app's AVCaptureSession code is exonerated; problem is at/below the daemon.
+The custom camera fails by HANG (watchdog string), not an error/permission path. IMMEDIATE FIX for
+the user = reboot the iPhone (told them). This WP is recurrence-prevention + diagnostics.
+
+Changes (Views/FoodScan/FoodCameraView.swift FoodCameraModel + NEW Services/DebugCameraAudit.swift
++ CameraImagePicker chatPicker.present log): (1) DEBUG camera audit → Documents/camera_audit.jsonl
+(synchronous per-event); observers now attach BEFORE startRunning so the real interruption reason
+(AVCaptureSessionInterruptionReasonKey — 3=inUseByAnotherClient etc.) is logged next time.
+(2) Watchdog 5s→10s + LATE-SUCCESS RECOVERY (a slow start that lands after the watchdog is adopted
+to .ready instead of abandoned as an orphan; watchdog no longer poisons). (3) stop()+deinit
+strong-capture the session so teardown always releases the device (no orphan holding the camera).
+(4) session.usesApplicationAudioSession = false (video-only; zero relationship w/ SnoreDetector's
+.record). (5) Retry-storm cap: no new AVCaptureSession per Try-again unless poisoned; after 2
+watchdog fires the copy names the reboot remedy. Opus caught + Sonnet fixed a re-entrancy MEDIUM
+(non-rebuild Try-again stacked a 2nd config block → adopted-then-reconfigured → dead .unavailable);
+fixed with a `startInFlight` guard (tracks the outstanding queue block; NOT cleared on watchdog
+fire; poisoned-priority bypasses it for legit rebuilds). Opus re-verify SHIP.
+
+DEFERRED to WP-J.2 (Opus latent nit): the .unavailable branch doesn't clear startInFlight — safe
+today (nothing re-enters start() from that screen), one-line hardening if a retry is ever added.
+
+Deployed + launched: **databaseSequenceNumber: 7132**.
+
+Latest deployed sequence: **7132**.

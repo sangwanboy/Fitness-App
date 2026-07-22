@@ -15,6 +15,12 @@ struct CameraImagePicker: UIViewControllerRepresentable {
         picker.sourceType = UIImagePickerController.isSourceTypeAvailable(.camera) ? .camera : .photoLibrary
         picker.allowsEditing = false
         picker.delegate = context.coordinator
+        #if DEBUG
+        // Cross-path correlation with the FoodCameraView audit trail — if a
+        // wedged mediaserverd also blocks this system picker, the timeline
+        // shows both paths stalling together rather than looking unrelated.
+        DebugCameraAudit.log("chatPicker.present", ["sourceType": picker.sourceType == .camera ? "camera" : "photoLibrary"])
+        #endif
         return picker
     }
 

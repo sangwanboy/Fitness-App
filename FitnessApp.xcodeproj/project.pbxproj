@@ -116,6 +116,7 @@
 		4507FB949F266FB37F661B09 /* WorkoutAnalyticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B948D63ADE9D91E7248261E /* WorkoutAnalyticsView.swift */; };
 		1570E9462CF2FCB34DC89217 /* DailyChallengeCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF1785ADF16F5158CDFC008C /* DailyChallengeCard.swift */; };
 		574D8508D38E6EA65F34CCB6 /* StreakCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 296E6114F33AF0D457656B52 /* StreakCard.swift */; };
+		44A726BE1A5644DAAE4F87FB /* DebugCameraAudit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68CA8ABC7E924BA2897CEE77 /* DebugCameraAudit.swift */; };
 		/* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -229,6 +230,7 @@
 		5B948D63ADE9D91E7248261E /* WorkoutAnalyticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutAnalyticsView.swift; sourceTree = "<group>"; };
 		CF1785ADF16F5158CDFC008C /* DailyChallengeCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyChallengeCard.swift; sourceTree = "<group>"; };
 		296E6114F33AF0D457656B52 /* StreakCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreakCard.swift; sourceTree = "<group>"; };
+		68CA8ABC7E924BA2897CEE77 /* DebugCameraAudit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugCameraAudit.swift; sourceTree = "<group>"; };
 		/* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -401,6 +403,7 @@
 				48882C1E348D44A597BF529A /* TrainingPlanStore.swift */,
 				B245EF4DFE2C47CCBF39C842 /* ChatSuggestionEngine.swift */,
 				3C2A112492E24AB294E73CC0 /* MealIdeasEngine.swift */,
+				68CA8ABC7E924BA2897CEE77 /* DebugCameraAudit.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -643,6 +646,7 @@
 				A8D80F5EA98535D2EB1360FC /* GatewayChatClient.swift in Sources */,
 				208FA99AD878CD2CEE68E3FE /* WidgetsCard.swift in Sources */,
 				41AFF5110C3DACF67FC24CB6 /* WorkoutTrackerView.swift in Sources */,
+				44A726BE1A5644DAAE4F87FB /* DebugCameraAudit.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
