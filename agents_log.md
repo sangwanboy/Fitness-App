@@ -4181,3 +4181,27 @@ at group creation — tester (tusharsangwani83@gmail.com) will get a TestFlight 
 further action needed.
 
 Latest deployed sequence: **7148** (unchanged — this session was ASC/TestFlight setup, not a code deploy).
+
+---
+
+## Session 81 addendum — TestFlight tester-invite decision (HANDOFF, open)
+
+User asked whether people can be invited via a shareable code instead of adding them one by one.
+Answer given: **Internal Testing** (current setup — "Early Testers" group, 1 tester: the account
+holder tusharsangwani83@gmail.com, build 1.0.1 (2) uploaded/processing) has **no code/link option**
+— testers must already be ASC "Users," added individually. **External Testing** supports a
+**Public Link** (shareable URL, functions like an invite code) that can be sent privately to
+hand-picked people — but it requires a one-time **Beta App Review** first (a separate, lighter
+Apple review than full App Store review, ~24–48h, never makes the app public/listed).
+
+**USER HAS NOT YET DECIDED. No External Testing group created, no Beta App Review submitted.**
+Next agent/session picking this up: do NOT unilaterally create an External Testing group or submit
+for Beta App Review — ask the user to choose between (a) keep Internal-only, add future testers by
+email one at a time (no review, what's live today), or (b) create an External group + Public Link
+(one-time Beta App Review required). If they say "do the external one," the flow is: TestFlight →
+External Testing → New Group → enable Public Link → attach build 1.0.1 (2) → submit for Beta App
+Review (Test Information / export-compliance fields may need filling first — check
+`docs/APP_STORE_REVIEW_NOTES.md` for pre-written justifications, e.g. background audio/HealthKit,
+that likely double as Beta Review answers).
+
+Latest deployed sequence: **7148** (unchanged).
