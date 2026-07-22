@@ -4096,3 +4096,41 @@ Fast-follow. Sonnet-implemented → Opus-verified SHIP (no findings). Four small
 Deployed + launched: **databaseSequenceNumber: 7140**.
 
 Latest deployed sequence: **7140**.
+
+---
+
+## Session 80 — 2026-07-22 (WP-K: beat-to-beat R-R HRV → sharper recovery, Option A)
+
+Fable-designed (feasibility-gated) → Sonnet-implemented → Opus-verified SHIP (one non-blocking
+fast-follow) → SIMULATOR self-tested → deploy. Uses `HKHeartbeatSeries` R-R intervals (already
+authorized at HealthKitManager:211, never queried) to compute rMSSD and sharpen the recovery score.
+
+- `fetchRestingRMSSD` (HealthKitManager): picks the most recent RESTING/overnight heartbeat series
+  (22:00–10:00 or overlapping sleep; excludes workout ±60min), streams beats via
+  HKHeartbeatSeriesQuery (single-resume NSLock guard + 5s timeout + stop(query)), reconstructs R-R
+  honoring precededByGap, artifact-filters ([300,2000]ms + 20% adaptive, chain breaks), rMSSD over
+  ≥30 accepted pairs. Side-channel task (@Published latestRMSSD). Day-keyed `RMSSDBaselineStore`
+  (UserDefaults) + series-UUID cache to avoid re-streaming.
+- Recovery (PredictionEngine): PREFERS rMSSD only when present AND ≥5 non-zero baseline days,
+  z-scored vs its OWN baseline (never vs SDNN); else the existing SDNN path UNCHANGED. Snapshot +
+  RecoveryReadiness gained 4 defaulted fields each. LIVE CONTEXT recovery bullet appends an rMSSD
+  provenance line ONLY when usedRMSSD (volatile tail, cache-safe). No-regression proven (Opus): no
+  rMSSD → score + Astra context byte-identical.
+- DEBUG-only `DebugHealthSeeder` (#if DEBUG) + Settings menu (.staleWatch / .freshDay + rMSSD) with
+  a DEBUG-only heartbeat/HR/HRV/RHR write grant (Release auth byte-unchanged, Opus-confirmed).
+
+SIMULATOR SELF-TEST (ClaudeGate sim, driven via the control tool): full onboarding, WP-E login UI +
+WP-L consent toggle, HealthKit auth incl. Beat-to-Beat WRITE, seeded HR/HRV/RHR + a 60-beat
+HKHeartbeatSeries → fetchRestingRMSSD streamed it with NO CRASH; seeded data read through (RHR 56,
+HR 62, HRV 52); recovery card correctly used the SDNN fallback ("Moderate recovery (HRV 52 ms)") and
+"Building your baseline — Day 0 of 7" — the graceful no-rMSSD path validated live. (rMSSD feeding the
+score needs a 5-day baseline; chat-facing tags need a gateway session — both validate on-device over time.)
+
+OPUS FAST-FOLLOW (WP-K.2, non-blocking): detach the rMSSD task from the metric TaskGroup (so a
+stalled stream can't delay the fast-tile publish) + cache the series UUID on FAILURE too (so a
+sub-30-pair/stalling series doesn't re-stream every tick) + migrate HKHeartbeatSeriesQuery →
+HKHeartbeatSeriesQueryDescriptor (deletes the manual continuation/lock/timeout).
+
+Deployed + launched: **databaseSequenceNumber: 7148**.
+
+Latest deployed sequence: **7148**.

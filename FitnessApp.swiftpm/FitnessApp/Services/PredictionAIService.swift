@@ -361,7 +361,8 @@ public actor PredictionAIService {
             lines.append("Health Meter: \(m.score)/100 (\(m.label.headline)) confidence=\(m.confidence.rawValue) — Activity \(m.activityScore)/30, Nutrition \(m.nutritionScore)/30 (hasMealData=\(m.usedNutrition), mealsLoggedToday=\(m.mealsLoggedToday)), Body \(m.bodyScore)/18 (BMI=\(m.usedBMI)), Vitals \(m.vitalsScore)/22")
         }
         if let r = p.recovery {
-            lines.append("Recovery: \(r.score)/100 (\(r.label.headline)) confidence=\(r.confidence.rawValue) usedHRV=\(r.usedHRV) usedRHR=\(r.usedRHR)")
+            let rmssdNote = r.usedRMSSD ? " (HRV signal from rMSSD, beat-to-beat — not SDNN)" : ""
+            lines.append("Recovery: \(r.score)/100 (\(r.label.headline)) confidence=\(r.confidence.rawValue) usedHRV=\(r.usedHRV) usedRHR=\(r.usedRHR)\(rmssdNote)")
         }
         if let n = p.nextWorkout {
             let cat = n.isCategoryFallback ? "(time-only pattern)" : n.category.displayName
@@ -417,10 +418,13 @@ public actor PredictionAIService {
         switch kind {
         case .recovery:
             if let r = p.recovery {
+                let rmssdLine = r.usedRMSSD
+                    ? "\nrMSSD: \(r.rmssdValue.map { String(format: "%.0f", $0) } ?? "—") ms (source: \(r.rmssdSourceLabel ?? "—")) — beat-to-beat, preferred over SDNN when available"
+                    : ""
                 detail = """
                 Recovery score: \(r.score)/100 (\(r.label.headline))
                 Confidence: \(r.confidence.rawValue)
-                Used HRV: \(r.usedHRV) · Used RHR: \(r.usedRHR)
+                Used HRV: \(r.usedHRV) · Used RHR: \(r.usedRHR)\(rmssdLine)
                 Bullets: \(r.explanation.bullets.joined(separator: " | "))
                 """
             } else {

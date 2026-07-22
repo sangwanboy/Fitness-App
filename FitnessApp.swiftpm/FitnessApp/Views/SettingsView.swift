@@ -64,6 +64,13 @@ public struct SettingsView: View {
     @State private var sendCodeError: String?
     @State private var showVerifyEmailSheet = false
 
+    #if DEBUG
+    // DEBUG-only synthetic HealthKit seeding (WP-J / WP-K validation in the
+    // Simulator, which has no real wearable). Never compiled into Release.
+    @State private var debugSeedResult: String?
+    @State private var isSeedingDebugHealth = false
+    #endif
+
     enum GatewayTestState: Equatable {
         case idle
         case testing
@@ -125,6 +132,15 @@ public struct SettingsView: View {
                     Button("Edit Profile", systemImage: "person.crop.circle") { showEditProfile = true }
                     Button("Apple Health", systemImage: "heart.fill") { ExternalLink.openHealth() }
                     Button("iOS Settings", systemImage: "gearshape.fill") { ExternalLink.openAppSettings() }
+                    #if DEBUG
+                    Divider()
+                    Menu {
+                        Button("Stale Watch (WP-J)") { Task { await runDebugSeed(.staleWatch) } }
+                        Button("Fresh Day + rMSSD (WP-K)") { Task { await runDebugSeed(.freshDay) } }
+                    } label: {
+                        Label("DEBUG: Seed Health Data", systemImage: "ladybug.fill")
+                    }
+                    #endif
                 } label: {
                     Image(systemName: "ellipsis")
                 }
@@ -186,6 +202,16 @@ public struct SettingsView: View {
         .sheet(isPresented: $showVerifyEmailSheet) {
             VerifyEmailCodeSheet(onVerified: { emailVerified = true })
         }
+        #if DEBUG
+        .alert("DEBUG seed result", isPresented: Binding(
+            get: { debugSeedResult != nil },
+            set: { if !$0 { debugSeedResult = nil } }
+        )) {
+            Button("OK") { debugSeedResult = nil }
+        } message: {
+            Text(debugSeedResult ?? "")
+        }
+        #endif
         .onAppear {
             glassTintColorHex = "#FFFFFF"
         }
@@ -528,6 +554,20 @@ public struct SettingsView: View {
             Task { await GatewayProfileSync.shared.syncNow() }
         }
     }
+
+    #if DEBUG
+    /// Seeds synthetic HealthKit data for the given scenario, then re-runs
+    /// `fetchTodayData()` so the seeded samples immediately show up in
+    /// LIVE CONTEXT / the dashboard for on-device validation.
+    private func runDebugSeed(_ scenario: DebugHealthSeeder.Scenario) async {
+        guard !isSeedingDebugHealth else { return }
+        isSeedingDebugHealth = true
+        let result = await DebugHealthSeeder.seed(scenario)
+        await HealthKitManager.shared.fetchTodayData()
+        debugSeedResult = result.summary
+        isSeedingDebugHealth = false
+    }
+    #endif
 
     /// Deletes the gateway account (`GatewayAuth.deleteAccount()`), then
     /// clears local account state and flips the login gate so the user lands

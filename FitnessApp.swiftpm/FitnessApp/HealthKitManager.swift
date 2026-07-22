@@ -37,6 +37,22 @@ public final class HealthKitManager: ObservableObject {
     /// `fetchTodayData()` (foreground + pull-to-refresh + staleness check).
     @Published public var predictions: Predictions? = nil
 
+    /// Beat-to-beat rMSSD from the most recent qualifying RESTING heartbeat
+    /// series (see `fetchRestingRMSSD`, WP-K). A SIDE-CHANNEL result exactly
+    /// like `recentWorkouts28` below — never touches `metricSummaries`. nil
+    /// whenever no qualifying series exists this tick (the common case for
+    /// most users — HealthKit only records heartbeat series for specific
+    /// features like AFib History); `predictRecoveryReadiness` falls back
+    /// completely to the existing SDNN path in that case.
+    @Published public var latestRMSSD: RMSSDResult? = nil
+
+    /// Series UUID + result of the last rMSSD computation — lets a repeat
+    /// `fetchTodayData()` tick that lands on the SAME qualifying series skip
+    /// re-streaming every beat (battery). Plain (non-published) instance
+    /// state; MainActor-isolated like the rest of this class, so no locking.
+    private var lastRMSSDSeriesID: UUID?
+    private var lastRMSSDResult: RMSSDResult?
+
     /// 24 hourly step buckets for today (index = hour-of-day). Drives the
     /// sedentary-alert prediction; also useful for future debug views.
     @Published public var hourlyStepsToday: [Double] = Array(repeating: 0, count: 24)
@@ -244,6 +260,22 @@ public final class HealthKitManager: ObservableObject {
         }
         typesToWrite.insert(HKObjectType.workoutType())
 
+        #if DEBUG
+        // DEBUG-only: DebugHealthSeeder needs to WRITE resting heart rate,
+        // HRV, and a synthetic heartbeat series to exercise WP-J's stale-data
+        // paths and WP-K's rMSSD path in the simulator (there's no real
+        // wearable there). The shipping app only ever READS these — this
+        // never runs in a Release build, and Release's authorization request
+        // is unchanged.
+        let debugQuantityWrite: [HKQuantityTypeIdentifier] = [.restingHeartRate, .heartRateVariabilitySDNN]
+        for id in debugQuantityWrite {
+            if let t = HKQuantityType.quantityType(forIdentifier: id) { typesToWrite.insert(t) }
+        }
+        if #available(iOS 16.0, *) {
+            typesToWrite.insert(HKSeriesType.heartbeat())
+        }
+        #endif
+
         do {
             try await healthStore.requestAuthorization(toShare: typesToWrite, read: typesToRead)
             await fetchTodayData()
@@ -392,6 +424,18 @@ public final class HealthKitManager: ObservableObject {
             // One-shot per refresh: ask "is there any HR-class data flowing?"
             // so DashboardView can hide Watch-only cards on iPhone-only setups.
             group.addTask { await self.detectWatchClassData(); return nil }
+            // Beat-to-beat rMSSD (WP-K) — side-channel, backs its own
+            // `@Published latestRMSSD`, never touches `metricSummaries`.
+            // Lower priority than the metric queries above: streaming a
+            // heartbeat series can take up to the ~5s stall timeout, and it
+            // must never be the thing that makes the fast tiles wait.
+            if #available(iOS 16.0, *) {
+                group.addTask(priority: .utility) {
+                    let r = await self.fetchRestingRMSSD()
+                    await MainActor.run { self.latestRMSSD = r }
+                    return nil
+                }
+            }
             // Prediction inputs: 28-day workout cache + hourly steps for sedentary detection.
             group.addTask {
                 let workouts = await self.fetchRecentWorkouts(days: 28)
@@ -765,7 +809,232 @@ public final class HealthKitManager: ObservableObject {
         return MetricFetchResult(type: .sleep, value: result.hours, history: nil, provenance: result.provenance)
     }
 
-    
+    // MARK: - Beat-to-beat rMSSD (WP-K)
+
+    /// Beat-to-beat rMSSD from the most recent qualifying RESTING heartbeat
+    /// series. HealthKit itself never stores rMSSD — only SDNN (`fetchHRV`
+    /// above) — so this reconstructs R-R intervals from a raw
+    /// `HKHeartbeatSeriesSample` beat stream and computes it entirely
+    /// on-device. This is a SIDE-CHANNEL fetch (see the `fetchTodayData` task
+    /// group): it backs its own `@Published latestRMSSD`, never
+    /// `metricSummaries`.
+    ///
+    /// Series selection (v1 — single series, no pooling across series):
+    ///   1. Look back 36h for `HKHeartbeatSeriesSample`s, newest first.
+    ///   2. A series QUALIFIES when its `startDate` falls in the local
+    ///      22:00–10:00 resting window OR it overlaps the most recent
+    ///      tracked sleep session — AND it does NOT overlap any workout's
+    ///      ±60min cooldown window. `recentWorkouts28` is read directly
+    ///      (per the design spec, to avoid a duplicate 28-day HK round trip)
+    ///      even though it's refreshed by a PEER task in the same task
+    ///      group — worst case this reads the previous tick's list (workouts
+    ///      are logged as discrete, infrequent events, so this self-heals
+    ///      next tick; flagged for review, not a correctness hazard in
+    ///      practice).
+    ///   3. The MOST RECENT qualifying series wins — nothing else is pooled.
+    ///   4. No qualifying series → nil. `predictRecoveryReadiness` then falls
+    ///      back completely to the existing SDNN path.
+    @available(iOS 16.0, *)
+    private func fetchRestingRMSSD() async -> RMSSDResult? {
+        guard HKHealthStore.isHealthDataAvailable() else { return nil }
+        let seriesType = HKSeriesType.heartbeat()
+        let now = Date()
+        guard let windowStart = Calendar.current.date(byAdding: .hour, value: -36, to: now) else { return nil }
+        let predicate = HKQuery.predicateForSamples(withStart: windowStart, end: now, options: .strictStartDate)
+        let sort = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
+
+        let candidates: [HKHeartbeatSeriesSample] = await withCheckedContinuation { (cont: CheckedContinuation<[HKHeartbeatSeriesSample], Never>) in
+            let q = HKSampleQuery(sampleType: seriesType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [sort]) { _, samples, _ in
+                cont.resume(returning: (samples as? [HKHeartbeatSeriesSample]) ?? [])
+            }
+            healthStore.execute(q)
+        }
+        guard !candidates.isEmpty else { return nil }
+
+        let sleepWindow = await mostRecentSleepSessionWindow(lookbackHours: 36)
+        // ±60min cooldown around every workout that could overlap the lookback.
+        let cooldowns: [(start: Date, end: Date)] = recentWorkouts28.compactMap { w in
+            guard w.endDate >= windowStart else { return nil }
+            return (w.startDate.addingTimeInterval(-3600), w.endDate.addingTimeInterval(3600))
+        }
+
+        func overlapsWorkoutCooldown(_ series: HKHeartbeatSeriesSample) -> Bool {
+            cooldowns.contains { series.startDate < $0.end && series.endDate > $0.start }
+        }
+        func isRestingWindowStart(_ date: Date) -> Bool {
+            let hour = Calendar.current.component(.hour, from: date)
+            return hour >= 22 || hour < 10
+        }
+        func overlapsSleep(_ series: HKHeartbeatSeriesSample) -> Bool {
+            guard let sw = sleepWindow else { return false }
+            return series.startDate < sw.end && series.endDate > sw.start
+        }
+
+        guard let series = candidates.first(where: { s in
+            !overlapsWorkoutCooldown(s) && (isRestingWindowStart(s.startDate) || overlapsSleep(s))
+        }) else { return nil }
+
+        // Battery guard: a repeat tick landing on the SAME series we already
+        // streamed + computed reuses the stored result instead of
+        // re-streaming every beat again.
+        if series.uuid == lastRMSSDSeriesID, let cached = lastRMSSDResult {
+            return cached
+        }
+
+        guard let beats = await streamHeartbeatBeats(series),
+              let computed = Self.computeRMSSD(from: beats) else { return nil }
+
+        let result = RMSSDResult(
+            rmssd: computed.rmssd,
+            sampleEnd: series.endDate,
+            sourceLabel: Self.sourceLabel(for: series),
+            beatCount: computed.beatCount
+        )
+        lastRMSSDSeriesID = series.uuid
+        lastRMSSDResult = result
+        RMSSDBaselineStore.record(result.rmssd, on: result.sampleEnd)
+        return result
+    }
+
+    /// Approximates "the most recent tracked sleep session" as the most
+    /// recent contiguous cluster of `sleepAnalysis` samples within
+    /// `lookbackHours` — a >90min gap between consecutive samples starts a
+    /// NEW cluster, so an earlier nap doesn't get merged into last night's
+    /// session. Deliberately separate from `fetchSleep()`'s day-bucketed
+    /// duration math above — this only needs a rough start/end window to
+    /// test heartbeat-series overlap against.
+    private func mostRecentSleepSessionWindow(lookbackHours: Int) async -> (start: Date, end: Date)? {
+        guard let sleepType = HKCategoryType.categoryType(forIdentifier: .sleepAnalysis) else { return nil }
+        let now = Date()
+        guard let windowStart = Calendar.current.date(byAdding: .hour, value: -lookbackHours, to: now) else { return nil }
+        let predicate = HKQuery.predicateForSamples(withStart: windowStart, end: now, options: .strictStartDate)
+        let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
+
+        let samples: [HKCategorySample] = await withCheckedContinuation { (cont: CheckedContinuation<[HKCategorySample], Never>) in
+            let q = HKSampleQuery(sampleType: sleepType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [sort]) { _, samples, _ in
+                cont.resume(returning: (samples as? [HKCategorySample]) ?? [])
+            }
+            healthStore.execute(q)
+        }
+        guard let first = samples.first else { return nil }
+
+        var clusterStart = first.startDate
+        var clusterEnd = first.endDate
+        for sample in samples.dropFirst() {
+            if sample.startDate.timeIntervalSince(clusterEnd) > 90 * 60 {
+                // Gap > 90min — start a new (more recent) cluster.
+                clusterStart = sample.startDate
+            }
+            clusterEnd = max(clusterEnd, sample.endDate)
+        }
+        return (clusterStart, clusterEnd)
+    }
+
+    /// Streams every beat of `series` via `HKHeartbeatSeriesQuery`,
+    /// accumulating `(timeSinceSeriesStart, precededByGap)` pairs in
+    /// delivery order. `HKHeartbeatSeriesQuery` is Swift-deprecated in favor
+    /// of `HKHeartbeatSeriesQueryDescriptor` (SDK marks it
+    /// `API_TO_BE_DEPRECATED` for Swift callers only) — kept here per spec;
+    /// a future pass can migrate to the descriptor-based query.
+    ///
+    /// The continuation resumes EXACTLY ONCE, guarded by `resumed` under a
+    /// lock: HealthKit's `done == true` callback and the ~5s stall timeout
+    /// below run on DIFFERENT queues and could otherwise both fire — a
+    /// double-resume on a `CheckedContinuation` is a hard crash, not a
+    /// warning. A stalled query is stopped via `healthStore.stop(query)` and
+    /// resolves to nil — no partial beats returned; a truncated stream isn't
+    /// honest enough to compute rMSSD from.
+    @available(iOS 16.0, *)
+    private func streamHeartbeatBeats(_ series: HKHeartbeatSeriesSample) async -> [(t: Double, gap: Bool)]? {
+        final class StreamState: @unchecked Sendable {
+            let lock = NSLock()
+            var resumed = false
+            var beats: [(t: Double, gap: Bool)] = []
+        }
+        let state = StreamState()
+
+        return await withCheckedContinuation { (cont: CheckedContinuation<[(t: Double, gap: Bool)]?, Never>) in
+            func finish(_ result: [(t: Double, gap: Bool)]?, stopping query: HKHeartbeatSeriesQuery?) {
+                state.lock.lock()
+                let alreadyResumed = state.resumed
+                state.resumed = true
+                state.lock.unlock()
+                guard !alreadyResumed else { return }
+                if let query { self.healthStore.stop(query) }
+                cont.resume(returning: result)
+            }
+
+            let query = HKHeartbeatSeriesQuery(heartbeatSeries: series) { q, timeSinceSeriesStart, precededByGap, done, error in
+                guard error == nil else { finish(nil, stopping: q); return }
+                state.lock.lock()
+                state.beats.append((t: timeSinceSeriesStart, gap: precededByGap))
+                let snapshot = done ? state.beats : nil
+                state.lock.unlock()
+                if done { finish(snapshot, stopping: q) }
+            }
+            healthStore.execute(query)
+
+            // Stall guard: a query that never calls back with done==true
+            // (or never calls back at all) must not hang this fetch forever.
+            DispatchQueue.global().asyncAfter(deadline: .now() + 5.0) {
+                finish(nil, stopping: query)
+            }
+        }
+    }
+
+    /// Reconstructs R-R intervals from a raw beat stream and computes rMSSD
+    /// (root mean square of successive differences) — pure / synchronous, no
+    /// I/O, so it's trivially testable in isolation from the streaming query
+    /// above.
+    ///
+    /// Per-beat handling (`i` runs `1..<beats.count` — beat 0 has no prior
+    /// beat to diff against):
+    ///   - `beats[i].gap == true`: HealthKit itself lost contact across this
+    ///     beat — the interval ending here is discarded, and it's a CHAIN
+    ///     BREAK (the next interval can't be diffed against anything before it).
+    ///   - R-R outside [300, 2000]ms: physiologically implausible (>200 bpm
+    ///     or <30 bpm) — sensor artifact, discarded, chain break.
+    ///   - R-R differing >20% from the last ACCEPTED interval: an ectopic or
+    ///     misdetected beat — THIS interval is rejected, chain break (an
+    ///     ectopic beat's own successive diff isn't trustworthy either).
+    /// rMSSD = sqrt(mean of squared successive differences)) computed ONLY
+    /// over consecutive ACCEPTED intervals with no break between them.
+    /// Requires ≥30 such pairs — below that the reading is too sparse to be
+    /// honest, so this returns nil rather than a noisy number.
+    nonisolated private static func computeRMSSD(from beats: [(t: Double, gap: Bool)]) -> (rmssd: Double, beatCount: Int)? {
+        guard beats.count > 1 else { return nil }
+
+        var pairSquaredDiffsMs2: [Double] = []
+        var lastAcceptedRR: Double? = nil
+
+        for i in 1..<beats.count {
+            guard !beats[i].gap else { lastAcceptedRR = nil; continue }
+            let rr = (beats[i].t - beats[i - 1].t) * 1000.0
+            guard rr >= 300, rr <= 2000 else { lastAcceptedRR = nil; continue }
+
+            if let last = lastAcceptedRR, last > 0 {
+                let pctDiff = abs(rr - last) / last
+                guard pctDiff <= 0.20 else { lastAcceptedRR = nil; continue }
+                let diff = rr - last
+                pairSquaredDiffsMs2.append(diff * diff)
+            }
+            lastAcceptedRR = rr
+        }
+
+        guard pairSquaredDiffsMs2.count >= 30 else { return nil }
+        let rmssd = (pairSquaredDiffsMs2.reduce(0, +) / Double(pairSquaredDiffsMs2.count)).squareRoot()
+        return (rmssd, beats.count)
+    }
+
+    /// Non-zero rMSSD readings from the last `days` calendar days — the
+    /// baseline `predictRecoveryReadiness` z-scores tonight's rMSSD against.
+    /// Backed by `RMSSDBaselineStore` (UserDefaults JSON keyed by day) since
+    /// HealthKit has nowhere to read an rMSSD history from — it never stores
+    /// this metric at all, only SDNN.
+    public func rmssdHistory(days: Int = 28) -> [Double] {
+        RMSSDBaselineStore.history(days: days)
+    }
+
         private func fetchHRV() async -> MetricFetchResult? {
         guard let hrvType = HKQuantityType.quantityType(forIdentifier: .heartRateVariabilitySDNN) else { return nil }
 
@@ -2146,6 +2415,10 @@ public final class HealthKitManager: ObservableObject {
             hrvHistory28: hrv28,
             rhrHistory28: rhr28,
             sleepHistory28NonZero: sleep28,
+            lastNightRMSSD: latestRMSSD?.rmssd,
+            rmssdHistory28: rmssdHistory(days: 28),
+            rmssdSourceLabel: latestRMSSD?.sourceLabel,
+            rmssdSampleEnd: latestRMSSD?.sampleEnd,
             hrvHistory30: lastNDays(hrvHistoryAll, days: 30),
             rhrHistory30: lastNDays(rhrHistoryAll, days: 30),
             sleepHistory30: lastNDays(sleepHistoryAll, days: 30),
@@ -2486,6 +2759,63 @@ public final class HealthKitManager: ObservableObject {
         if var summary = metricSummaries[type] {
             summary.history = history
             metricSummaries[type] = summary
+        }
+    }
+}
+
+// MARK: - RMSSD daily baseline store (WP-K)
+
+/// On-device daily rMSSD store — HealthKit has nowhere to read a history
+/// from since it never stores rMSSD (only SDNN). UserDefaults JSON keyed by
+/// calendar day (`yyyy-MM-dd`), mirroring `ChallengeEngine`'s persistence
+/// pattern. Only ever touched from `HealthKitManager` (@MainActor), so no
+/// locking is needed.
+private enum RMSSDBaselineStore {
+    private static let key = "rmssd_daily_baseline_v1"
+    private static let maxDays = 60  // headroom well past the 28-day baseline window
+
+    private static func dayFormatter() -> DateFormatter {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.calendar = Calendar(identifier: .gregorian)
+        f.timeZone = .current
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return f
+    }
+
+    private static func load() -> [String: Double] {
+        guard let data = UserDefaults.standard.data(forKey: key),
+              let dict = try? JSONDecoder().decode([String: Double].self, from: data) else { return [:] }
+        return dict
+    }
+
+    private static func save(_ dict: [String: Double]) {
+        guard let data = try? JSONEncoder().encode(dict) else { return }
+        UserDefaults.standard.set(data, forKey: key)
+    }
+
+    /// Record a day's rMSSD reading (one value per calendar day — a repeat
+    /// write for the same day overwrites, it doesn't average).
+    static func record(_ rmssd: Double, on date: Date) {
+        guard rmssd > 0 else { return }
+        var dict = load()
+        dict[dayFormatter().string(from: date)] = rmssd
+        if dict.count > maxDays {
+            for k in dict.keys.sorted().prefix(dict.count - maxDays) { dict.removeValue(forKey: k) }
+        }
+        save(dict)
+    }
+
+    /// Non-zero rMSSD values recorded in the last `days` calendar days.
+    static func history(days: Int) -> [Double] {
+        let dict = load()
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        guard let cutoff = cal.date(byAdding: .day, value: -days, to: today) else { return [] }
+        let f = dayFormatter()
+        return dict.compactMap { key, value -> Double? in
+            guard value > 0, let d = f.date(from: key), d >= cutoff else { return nil }
+            return value
         }
     }
 }

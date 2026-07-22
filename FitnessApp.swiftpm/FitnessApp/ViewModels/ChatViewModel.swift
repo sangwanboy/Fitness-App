@@ -817,7 +817,7 @@ public final class ChatViewModel: ObservableObject {
     /// Skips AI-generated narrative fields (daily insight, action chip text,
     /// anomaly interpretation) — those are downstream products of the model
     /// itself, re-injecting them would be recursion.
-    fileprivate static func predictionsFullBlock(_ p: Predictions?) -> String {
+    fileprivate static func predictionsFullBlock(_ p: Predictions?, ageString: (Date) -> String) -> String {
         guard let p else { return "Snapshot not yet computed." }
         if let n = p.insufficientHistoryDays, n > 0 {
             return "Building baseline — \(n) more day(s) of step history needed before predictions unlock."
@@ -848,7 +848,18 @@ public final class ChatViewModel: ObservableObject {
         // Recovery
         if let r = p.recovery {
             let watchTag = (r.usedHRV || r.usedRHR) ? "" : " — estimated from sleep + load (no Watch HRV/RHR)"
-            lines.append("• Recovery: \(r.score)/100 (\(r.label.headline), \(r.confidence.rawValue) confidence)\(watchTag)")
+            var recoveryLine = "• Recovery: \(r.score)/100 (\(r.label.headline), \(r.confidence.rawValue) confidence)\(watchTag)"
+            // rMSSD provenance (WP-K) — ONLY when the score actually used it;
+            // `usedRMSSD == false` (every scenario before this shipped, and
+            // any tick without a qualifying resting series) leaves this line
+            // byte-identical to before. Stale note mirrors the ~18h window a
+            // resting series stays trustworthy as "last night's" reading.
+            if r.usedRMSSD, let value = r.rmssdValue, let source = r.rmssdSourceLabel, let sampleEnd = r.rmssdSampleEnd {
+                let isStale = Date().timeIntervalSince(sampleEnd) > 18 * 3600
+                let staleNote = isStale ? " — STALE" : ""
+                recoveryLine += " — rMSSD \(Int(value.rounded())) ms from last night's series (\(source), \(ageString(sampleEnd))\(staleNote))"
+            }
+            lines.append(recoveryLine)
             for b in r.explanation.bullets {
                 lines.append("    – \(b)")
             }
@@ -2131,7 +2142,7 @@ public final class ChatViewModel: ObservableObject {
         }
 
         // -- On-device prediction snapshot — full structured breakdown -------
-        let predictionsBlock = Self.predictionsFullBlock(hk.predictions)
+        let predictionsBlock = Self.predictionsFullBlock(hk.predictions, ageString: ageString)
 
         // -- Sleep pattern (from on-device SleepSessionStore) ----------------
         let sleepPatternBlock = Self.sleepPatternInlineBlock()

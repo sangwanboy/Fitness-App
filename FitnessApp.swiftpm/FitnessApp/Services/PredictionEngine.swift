@@ -39,6 +39,18 @@ public enum PredictionEngine {
         public let rhrHistory28: [Double]
         public let sleepHistory28NonZero: [Double]
 
+        // Beat-to-beat rMSSD (WP-K) — computed on-device from a resting
+        // `HKHeartbeatSeriesSample`; HealthKit itself never stores this
+        // metric, only SDNN (the `hrvHistory28`/`lastNightHRV` pair above).
+        // nil / empty whenever no qualifying series was found this tick —
+        // `predictRecoveryReadiness` then falls back completely to the
+        // existing SDNN path. Never z-score one against the other's baseline
+        // — different scales.
+        public let lastNightRMSSD: Double?
+        public let rmssdHistory28: [Double]
+        public let rmssdSourceLabel: String?
+        public let rmssdSampleEnd: Date?
+
         // 30-day daily arrays (chronological, oldest → newest, ZERO-FILLED for
         // missing days — illness-warning & correlation engine align by index).
         // A zero means "no valid reading that day" and is excluded after lag
@@ -123,6 +135,10 @@ public enum PredictionEngine {
                     hrvHistory28: [Double],
                     rhrHistory28: [Double],
                     sleepHistory28NonZero: [Double],
+                    lastNightRMSSD: Double? = nil,
+                    rmssdHistory28: [Double] = [],
+                    rmssdSourceLabel: String? = nil,
+                    rmssdSampleEnd: Date? = nil,
                     hrvHistory30: [Double] = [],
                     rhrHistory30: [Double] = [],
                     sleepHistory30: [Double] = [],
@@ -164,6 +180,10 @@ public enum PredictionEngine {
             self.hrvHistory28 = hrvHistory28
             self.rhrHistory28 = rhrHistory28
             self.sleepHistory28NonZero = sleepHistory28NonZero
+            self.lastNightRMSSD = lastNightRMSSD
+            self.rmssdHistory28 = rmssdHistory28
+            self.rmssdSourceLabel = rmssdSourceLabel
+            self.rmssdSampleEnd = rmssdSampleEnd
             self.hrvHistory30 = hrvHistory30
             self.rhrHistory30 = rhrHistory30
             self.sleepHistory30 = sleepHistory30
@@ -866,8 +886,23 @@ public enum PredictionEngine {
         var rhrZInv: Double = 0
         var usedHRV = false
         var usedRHR = false
+        var usedRMSSD = false
 
-        if let lastHRV = s.lastNightHRV, lastHRV > 0, hrvDays.count >= 5 {
+        // rMSSD (WP-K) is PREFERRED over SDNN whenever it's actually
+        // available — it's the sharper, beat-to-beat signal. Gate mirrors
+        // the SDNN gate directly below (≥5 non-zero baseline days + a
+        // non-nil "last night" value). z-scored against its OWN baseline
+        // (own mean, ~5ms std floor) — never mixed with the SDNN baseline,
+        // a different scale entirely. Falls through to the existing SDNN
+        // path, completely unchanged, whenever rMSSD isn't available.
+        let rmssdDays = s.rmssdHistory28.filter { $0 > 0 }
+        if let lastRMSSD = s.lastNightRMSSD, lastRMSSD > 0, rmssdDays.count >= 5 {
+            let m = mean(rmssdDays)
+            let sd = max(stdDev(rmssdDays, mean: m), 5.0) // ms floor — own scale
+            hrvZ = clamp((lastRMSSD - m) / sd, -2.0, 2.0)
+            usedHRV = true
+            usedRMSSD = true
+        } else if let lastHRV = s.lastNightHRV, lastHRV > 0, hrvDays.count >= 5 {
             let m = mean(hrvDays)
             let sd = max(stdDev(hrvDays, mean: m), 3.0) // ms floor
             hrvZ = clamp((lastHRV - m) / sd, -2.0, 2.0)
@@ -953,7 +988,11 @@ public enum PredictionEngine {
             confidence: confidence,
             usedHRV: usedHRV,
             usedRHR: usedRHR,
-            explanation: PredictionExplanation(bullets: bullets)
+            explanation: PredictionExplanation(bullets: bullets),
+            usedRMSSD: usedRMSSD,
+            rmssdValue: usedRMSSD ? s.lastNightRMSSD : nil,
+            rmssdSourceLabel: usedRMSSD ? s.rmssdSourceLabel : nil,
+            rmssdSampleEnd: usedRMSSD ? s.rmssdSampleEnd : nil
         )
     }
 

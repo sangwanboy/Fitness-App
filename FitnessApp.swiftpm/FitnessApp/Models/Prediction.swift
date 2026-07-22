@@ -34,6 +34,26 @@ public struct SymptomEntry: Codable, Equatable {
     public init(date: Date, name: String, severity: String) { self.date = date; self.name = name; self.severity = severity }
 }
 
+/// Beat-to-beat rMSSD (root mean square of successive R-R differences) —
+/// HealthKit itself only ever stores SDNN (`.heartRateVariabilitySDNN`), so
+/// this is the app's OWN on-device metric, computed from a single resting
+/// `HKHeartbeatSeriesSample` (see `HealthKitManager.fetchRestingRMSSD` /
+/// WP-K). Its own baseline/history/z-scoring is kept entirely separate from
+/// SDNN's — the two are different scales and must never be mixed.
+public struct RMSSDResult: Equatable, Sendable {
+    public let rmssd: Double         // ms
+    public let sampleEnd: Date       // endDate of the resting series this came from
+    public let sourceLabel: String   // via HealthKitManager.sourceLabel(for:)
+    public let beatCount: Int        // raw beats streamed for this series
+
+    public init(rmssd: Double, sampleEnd: Date, sourceLabel: String, beatCount: Int) {
+        self.rmssd = rmssd
+        self.sampleEnd = sampleEnd
+        self.sourceLabel = sourceLabel
+        self.beatCount = beatCount
+    }
+}
+
 // MARK: - Recovery Readiness
 
 public enum RecoveryLabel: String, Codable {
@@ -59,15 +79,31 @@ public struct RecoveryReadiness: Codable, Equatable {
     public let usedHRV: Bool
     public let usedRHR: Bool
     public let explanation: PredictionExplanation
+    /// True when the HRV signal behind `usedHRV` came from the beat-to-beat
+    /// rMSSD path (WP-K) rather than HealthKit's SDNN. `usedHRV` is true
+    /// either way — this just tells callers WHICH baseline supplied it, so
+    /// e.g. Astra's LIVE CONTEXT can cite the sharper rMSSD reading (source +
+    /// age) instead of the SDNN one when it's available. Defaults keep every
+    /// existing `RecoveryReadiness(...)` call site compiling untouched.
+    public let usedRMSSD: Bool
+    public let rmssdValue: Double?         // ms — set only when usedRMSSD
+    public let rmssdSourceLabel: String?
+    public let rmssdSampleEnd: Date?
 
     public init(score: Int, label: RecoveryLabel, confidence: PredictionConfidence,
-                usedHRV: Bool, usedRHR: Bool, explanation: PredictionExplanation) {
+                usedHRV: Bool, usedRHR: Bool, explanation: PredictionExplanation,
+                usedRMSSD: Bool = false, rmssdValue: Double? = nil,
+                rmssdSourceLabel: String? = nil, rmssdSampleEnd: Date? = nil) {
         self.score = score
         self.label = label
         self.confidence = confidence
         self.usedHRV = usedHRV
         self.usedRHR = usedRHR
         self.explanation = explanation
+        self.usedRMSSD = usedRMSSD
+        self.rmssdValue = rmssdValue
+        self.rmssdSourceLabel = rmssdSourceLabel
+        self.rmssdSampleEnd = rmssdSampleEnd
     }
 }
 

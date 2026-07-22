@@ -117,6 +117,7 @@
 		F5B959C9C3882C8E0DDD5474 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40FEEDA56B628E11A1DF72E7 /* DashboardView.swift */; };
 		FA41E7488FA3E4A72F3519C4 /* UserNotifications.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2BD4EB1744F246031A0C99FB /* UserNotifications.framework */; };
 		FBF4FB965ABF1708FB8D2849 /* RemindersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD86BABB2BDF63D8BE40A78C /* RemindersView.swift */; };
+		6F7CB6E826B448F19D5F3C7F /* DebugHealthSeeder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 023A80B487F045928C81C375 /* DebugHealthSeeder.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -231,6 +232,7 @@
 		F49E7AA24285552E1C91AABC /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		F4E5D68E655E0F4C37A7BA80 /* PredictionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PredictionEngine.swift; sourceTree = "<group>"; };
 		FAD5F639B713B5614E8DECAB /* SleepReportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepReportView.swift; sourceTree = "<group>"; };
+		023A80B487F045928C81C375 /* DebugHealthSeeder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugHealthSeeder.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -399,6 +401,7 @@
 				C8AE03D398246F74B3CAFB56 /* WeeklyReviewEngine.swift */,
 				A0C3FE6181E4C7B1E1C27EAF /* Gateway */,
 				F748C28F20052B0AA1E95749 /* Legal */,
+				023A80B487F045928C81C375 /* DebugHealthSeeder.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -647,6 +650,7 @@
 				208FA99AD878CD2CEE68E3FE /* WidgetsCard.swift in Sources */,
 				AAF08D95CD61E4824AA97D57 /* WorkoutAnalyticsView.swift in Sources */,
 				41AFF5110C3DACF67FC24CB6 /* WorkoutTrackerView.swift in Sources */,
+				6F7CB6E826B448F19D5F3C7F /* DebugHealthSeeder.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
