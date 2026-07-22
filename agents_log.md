@@ -4204,4 +4204,42 @@ Review (Test Information / export-compliance fields may need filling first — c
 `docs/APP_STORE_REVIEW_NOTES.md` for pre-written justifications, e.g. background audio/HealthKit,
 that likely double as Beta Review answers).
 
+User said "lets do it later" this session (2026-07-22) — deferred again, still nothing created.
+
 Latest deployed sequence: **7148** (unchanged).
+
+---
+
+## Session 82 — 2026-07-22 (fix: coach reply dropped when app backgrounds mid-stream)
+
+User report: "coach response drops when app goes to bg with finishing previous task" — specifically
+mid `sendFollowup()` (`ViewModels/ChatViewModel.swift:1232`, the tool-loop continuation step after a
+card confirms, e.g. after log_food/log_water/etc.), but the same root cause hits the initial
+`sendMessage()` reply too.
+
+**Root cause**: `GatewayChatClient.streamGenerateContent` (`Services/GatewayChatClient.swift:17-83`)
+opens its SSE read via plain `URLSession.shared.bytes(for:)` (`GatewayTransport.swift`) with zero
+background-execution provision anywhere in the path — no `beginBackgroundTask`, no background
+`URLSessionConfiguration`. The moment iOS suspends the process on backgrounding, the socket read
+throws, the stream finishes with an error, and `ChatViewModel`'s `catch` block (`sendMessage:202-220`,
+`sendFollowup:1295-1315`) flushes whatever partial text had streamed so far and appends a hard error
+bubble — the rest of the model's answer is gone, not delayed. Confirmed via `Explore` agent
+(not a SwiftUI `.task{}`-cancellation-on-view-disappear bug — the send call is a bare
+`Task { await viewModel.sendMessage(...) }`, unrelated to view lifecycle).
+
+**Fix**: wrap the stream's `work`/`watchdog` Tasks in a `UIApplication.shared.beginBackgroundTask`
+or `AstraChatStream`, ended from every exit path (expiration handler, and `continuation.onTermination`
+alongside the existing task-cancellation cleanup) — buys the standard ~30s grace window so an
+in-flight turn can finish (or the follow-up ack lands) before suspension, instead of iOS silently
+severing the socket. `import UIKit` added to `GatewayChatClient.swift`. Simulator build (iOS 26.5,
+`platform=iOS Simulator,id=6C6A4B8D-D292-4B89-9E01-0266C4AE1A71`) **BUILD SUCCEEDED** — no
+concurrency-isolation errors calling `UIApplication.shared` from the actor context.
+
+**NOT deployed to physical iPhone** — `xcrun devicectl list devices` shows
+`6EBFD630-1768-512E-95E3-EC7D76AA8CDD` as **unavailable** (not paired to this Mac; carried over from
+Session 77/78's "physical iPhone still not paired to this Mac" — this is a newer Mac). Connect +
+trust the iPhone on this Mac, then re-run the device build/install/launch commands from this file's
+Build & Deploy section to get the fix on-device and log the new `databaseSequenceNumber`.
+
+Latest deployed sequence: **7148** (unchanged — simulator-verified only, device deploy pending
+pairing).

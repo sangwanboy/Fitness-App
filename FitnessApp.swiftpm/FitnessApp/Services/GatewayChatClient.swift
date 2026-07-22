@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 /// Astra's chat client, now speaking to the Atlas AI Gateway's /v1/chat
 /// proxy instead of Vertex AI directly. The gateway holds the Google
@@ -28,6 +29,25 @@ public actor GatewayChatClient {
         // the backend can't serve it, the error surfaces to the user.
 
         return AsyncThrowingStream<ChatChunk, Error>(ChatChunk.self) { continuation in
+            // Backgrounding mid-stream (user switches apps while Astra is still
+            // replying, or mid tool-loop follow-up) used to kill the SSE socket
+            // the instant iOS suspended the process, dropping the rest of the
+            // reply for good. Request the ~30s grace window iOS grants and end
+            // it from every exit path below so the request either finishes
+            // cleanly or is cancelled on OUR terms via the watchdog/onTermination,
+            // not silently severed by suspension.
+            var bgTaskID = UIBackgroundTaskIdentifier.invalid
+            var workTask: Task<Void, Never>?
+            var watchdogTask: Task<Void, Never>?
+            bgTaskID = UIApplication.shared.beginBackgroundTask(withName: "AstraChatStream") {
+                workTask?.cancel()
+                watchdogTask?.cancel()
+                if bgTaskID != .invalid {
+                    UIApplication.shared.endBackgroundTask(bgTaskID)
+                    bgTaskID = .invalid
+                }
+            }
+
             let work = Task {
                 do {
                     try await capturedSelf.performStreamingRequest(
@@ -44,6 +64,7 @@ public actor GatewayChatClient {
                     continuation.finish(throwing: error)
                 }
             }
+            workTask = work
 
             // Total wall-clock timeout: if the request task is still running 120s
             // after it started, cancel it. Combined with the 60s idle timeout on the
@@ -59,10 +80,15 @@ public actor GatewayChatClient {
                     domain: "GatewayChatClient", code: 408,
                     userInfo: [NSLocalizedDescriptionKey: "LLM timed out after 2 minutes."]))
             }
+            watchdogTask = watchdog
 
             continuation.onTermination = { _ in
                 work.cancel()
                 watchdog.cancel()
+                if bgTaskID != .invalid {
+                    UIApplication.shared.endBackgroundTask(bgTaskID)
+                    bgTaskID = .invalid
+                }
             }
         }
     }
