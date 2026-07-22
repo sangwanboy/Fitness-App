@@ -4037,3 +4037,24 @@ today (nothing re-enters start() from that screen), one-line hardening if a retr
 Deployed + launched: **databaseSequenceNumber: 7132**.
 
 Latest deployed sequence: **7132**.
+
+---
+
+## Session 77 — 2026-07-22 (environment setup on new Mac + project.yml spec fix)
+
+New machine setup (no Xcode, no xcodegen, no local gateway/node/GCP key present).
+Installed **xcodegen 2.46.0** via Homebrew. Regenerating exposed a `project.yml` spec bug:
+six build settings (`PRODUCT_BUNDLE_IDENTIFIER`, `SWIFT_VERSION`, `ASSETCATALOG_COMPILER_APPICON_NAME`,
+`INFOPLIST_KEY_UILaunchScreen_Generation`, `CODE_SIGN_ENTITLEMENTS`, `DEVELOPMENT_TEAM`,
+`CODE_SIGN_STYLE`) sat directly under `settings.configs` (must be a per-config mapping) —
+current xcodegen refuses to parse it. Moved them into `settings.base`; only
+`SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG` remains under `configs.debug`. Also added
+`UISupportedInterfaceOrientations: [Portrait]` to `info.properties` — it lived only in
+`AppInfo.plist` and a regen silently dropped it (plist now round-trips with zero diff).
+Regenerated `project.pbxproj` verified: team/bundle-id/entitlements/deployment-target 26.0
+present ×2 (Debug+Release), DEBUG condition only in Debug configs, all sources registered.
+
+**NOT build-verified** — this Mac has Command Line Tools only (no Xcode.app, no simulators);
+`xcodebuild` unavailable. No deploy, sequence unchanged.
+
+Latest deployed sequence: **7132**.
