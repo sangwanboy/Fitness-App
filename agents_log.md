@@ -4134,3 +4134,43 @@ HKHeartbeatSeriesQueryDescriptor (deletes the manual continuation/lock/timeout).
 Deployed + launched: **databaseSequenceNumber: 7148**.
 
 Latest deployed sequence: **7148**.
+
+---
+
+## Session 81 — 2026-07-22 (TestFlight setup: ASC app record + iPhone-only fix)
+
+App Store Connect record created for TestFlight-only distribution (a few hand-picked testers,
+NOT a public App Store submission — no "Submit for Review" performed or planned for this round).
+
+- **App record**: name "Astra AI Coach" ("Fitness Guru" was already taken on the Store), bundle
+  `com.tushar.fitnessapp`, SKU `fitness-guru-001`, subtitle "AI coach for your health data",
+  category Health & Fitness (primary) + Lifestyle (secondary), Full Access.
+- **Pricing/Availability**: Free, base country United Kingdom (GBP), availability restricted to
+  **United Kingdom only** (UK-first launch; freely changeable later, no version bump needed).
+- **Metadata**: description/keywords/support+marketing URLs/copyright saved on the 1.0 version page
+  (re-branded from the metadata pack's "Fitness Guru" body copy to "Astra AI Coach").
+- **TestFlight**: created internal group "Early Testers", added the account holder
+  (tusharsangwani83@gmail.com) as the first/only tester per user's explicit request ("add my email,
+  rest we'll add later").
+
+**Upload #1 failed**: "Invalid bundle. UIInterfaceOrientationPortrait...but you need to include all
+of the ...Portrait,PortraitUpsideDown,LandscapeLeft,LandscapeRight orientations to support iPad
+multitasking." Root cause: `project.yml` built the app Universal (`TARGETED_DEVICE_FAMILY = "1,2"`)
+while only declaring portrait orientation — Apple requires all 4 orientations for any app
+supporting iPad. This app was only ever designed/tested for iPhone (per this file's own header).
+User chose to drop iPad support outright rather than add untested landscape/iPad layouts.
+
+**Fix**: `project.yml` target settings.base now sets `TARGETED_DEVICE_FAMILY: "1"` explicitly
+(iPhone-only, comment explains why — prevents a future xcodegen regen from silently widening back
+to "1,2"). xcodegen isn't installed on this machine (brew is currently broken: "unknown or
+unsupported macOS version: 26.5") so the equivalent pbxproj edit was hand-applied directly to both
+Release/Debug `TARGETED_DEVICE_FAMILY` entries — project.yml stays the source of truth for the next
+real regen. Re-archived: `ARCHIVE SUCCEEDED`, verified `UIDeviceFamily => [1]` in the built app's
+Info.plist, no stray iPad orientation keys anywhere in the repo.
+
+No app deploy this session (TestFlight upload, not a device install) — no databaseSequenceNumber
+change. Distribution used Xcode Organizer → **TestFlight Internal Only** (deliberately chosen over
+"App Store Connect" — internal-only can never be promoted to external testing or App Store review
+without a new build, matching the user's explicit "TestFlight only" intent).
+
+Latest deployed sequence: **7148** (unchanged — this session was ASC/TestFlight setup, not a code deploy).

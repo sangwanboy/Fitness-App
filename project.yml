@@ -28,6 +28,13 @@ targets:
         CODE_SIGN_ENTITLEMENTS: FitnessApp.swiftpm/FitnessApp.entitlements
         DEVELOPMENT_TEAM: RM42FV53FU
         CODE_SIGN_STYLE: Automatic
+        # iPhone-only (no iPad support): the app is built and tested solely for
+        # iPhone. Apple requires all 4 UISupportedInterfaceOrientations for any
+        # app that supports iPad (multitasking/Stage Manager); rather than add
+        # landscape orientations we never designed for, we drop iPad targeting
+        # entirely. Explicit here (not left to xcodegen's default) so a future
+        # regen can't silently widen back to "1,2".
+        TARGETED_DEVICE_FAMILY: "1"
       configs:
         debug:
           SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
