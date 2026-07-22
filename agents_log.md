@@ -4173,4 +4173,11 @@ change. Distribution used Xcode Organizer → **TestFlight Internal Only** (deli
 "App Store Connect" — internal-only can never be promoted to external testing or App Store review
 without a new build, matching the user's explicit "TestFlight only" intent).
 
+**Upload #2 (post-fix) confirmed SUCCESSFUL**: "App upload complete: FitnessApp 1.0.1 (2) uploaded."
+Verified in ASC (browser): build 1.0.1 (2) shows under TestFlight → iOS Builds → Build Uploads,
+status "Processing" (uploaded Jul 22, 2026 10:39 PM). Will auto-attach to the "Early Testers"
+internal group once Apple's processing finishes (~15 min) since automatic distribution was enabled
+at group creation — tester (tusharsangwani83@gmail.com) will get a TestFlight notification with no
+further action needed.
+
 Latest deployed sequence: **7148** (unchanged — this session was ASC/TestFlight setup, not a code deploy).
