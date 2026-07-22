@@ -17,6 +17,15 @@ public final class HealthKitManager: ObservableObject {
     /// doesn't flicker on cold start.
     @Published public var hasWatchClassData: Bool = UserDefaults.standard.bool(forKey: "has_watch_class_data")
 
+    /// (end, source label) of the newest heart-rate sample from ANY wearable
+    /// source in the last 7 days — same underlying query as `hasWatchClassData`
+    /// but keeping the actual sample instead of collapsing it to a bool, so
+    /// Astra's system prompt can build an honest "watch not worn / hasn't
+    /// synced" banner with a real gap duration + last source. Source-agnostic
+    /// (a chest strap counts too, not literally an Apple Watch). Recomputed
+    /// every `fetchTodayData()` — no persistence needed.
+    @Published public var lastWatchClassHRSample: (end: Date, label: String)? = nil
+
     /// 28-day workout cache used by the prediction engine for pattern
     /// detection (next-likely-workout) and acute/chronic training-load.
     /// Refreshed on every `fetchTodayData()`. The 7-day callers in
@@ -285,6 +294,14 @@ public final class HealthKitManager: ObservableObject {
         let type: HealthMetricType
         let value: Double?
         let history: [MetricValue]?
+        let provenance: MetricProvenance?
+
+        init(type: HealthMetricType, value: Double?, history: [MetricValue]?, provenance: MetricProvenance? = nil) {
+            self.type = type
+            self.value = value
+            self.history = history
+            self.provenance = provenance
+        }
     }
 
     // Fetch today's health metrics from HealthKit
@@ -330,6 +347,14 @@ public final class HealthKitManager: ObservableObject {
             group.addTask { await self.fetchSimpleStatistics(.oxygenSaturation, hkID: .oxygenSaturation, unit: .percent(),                                   options: .discreteAverage, scale: 100) }
             group.addTask { await self.fetchSimpleStatistics(.vo2Max,           hkID: .vo2Max,           unit: HKUnit(from: "ml/(kg*min)"),                  options: .mostRecent) }
             group.addTask { await self.fetchMindfulMinutes() }
+            // Provenance-only companions for the 4 statistics-query metrics
+            // above — HKStatisticsQuery exposes no sample, so these separate
+            // limit-1 sample queries supply (source, reading age) without
+            // touching the displayed value (see `latestSampleProvenance`).
+            group.addTask { await self.latestSampleProvenance(.restingHeartRate) }
+            group.addTask { await self.latestSampleProvenance(.oxygenSaturation) }
+            group.addTask { await self.latestSampleProvenance(.vo2Max) }
+            group.addTask { await self.latestSampleProvenance(.bodyMass) }
             // iPhone-trackable show-more tiles (no Watch required)
             group.addTask { await self.fetchSimpleStatistics(.restingEnergy,        hkID: .basalEnergyBurned,                 unit: HKUnit.kilocalorie(),       options: .cumulativeSum, todayOnly: true) }
             group.addTask { await self.fetchSimpleStatistics(.walkingSpeed,         hkID: .walkingSpeed,                      unit: HKUnit(from: "mi/hr"),      options: .discreteAverage) }
@@ -413,6 +438,7 @@ public final class HealthKitManager: ObservableObject {
                 guard let result, var summary = newSummaries[result.type] else { continue }
                 if let value = result.value { summary.currentValue = value }
                 if let history = result.history { summary.history = history }
+                if let p = result.provenance { summary.provenance = p }
                 newSummaries[result.type] = summary
             }
         }
@@ -467,18 +493,22 @@ public final class HealthKitManager: ObservableObject {
         guard let t = HKQuantityType.quantityType(forIdentifier: .heartRate) else { return }
         let start = Date().addingTimeInterval(-7 * 24 * 3600)
         let predicate = HKQuery.predicateForSamples(withStart: start, end: Date(), options: .strictStartDate)
+        let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
 
-        let detected: Bool = await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
-            let q = HKSampleQuery(sampleType: t, predicate: predicate, limit: 1, sortDescriptors: nil) { _, samples, _ in
-                cont.resume(returning: (samples?.count ?? 0) > 0)
+        let newest: (end: Date, label: String)? = await withCheckedContinuation { (cont: CheckedContinuation<(end: Date, label: String)?, Never>) in
+            let q = HKSampleQuery(sampleType: t, predicate: predicate, limit: 1, sortDescriptors: [sortDescriptor]) { _, samples, _ in
+                guard let sample = samples?.first else { cont.resume(returning: nil); return }
+                cont.resume(returning: (sample.endDate, Self.sourceLabel(for: sample)))
             }
             healthStore.execute(q)
         }
 
+        let detected = newest != nil
         if hasWatchClassData != detected {
             hasWatchClassData = detected
             UserDefaults.standard.set(detected, forKey: "has_watch_class_data")
         }
+        lastWatchClassHRSample = newest
     }
 
     /// Save a completed workout as a proper `HKWorkout` so Apple Health's
@@ -525,7 +555,29 @@ public final class HealthKitManager: ObservableObject {
     }
     
     // --- HealthKit Specific Queries ---
-    
+
+    /// Human-readable source of a HealthKit sample, in strict priority order:
+    /// explicit manual entry, then Watch-class productType/device model, then
+    /// iPhone productType, then falling back to the raw source name (which we
+    /// still normalize to "Apple Watch" if it contains that string — some
+    /// third-party-relayed samples carry the model only in the source name).
+    /// Never force-unwraps `device` — it's frequently nil (e.g. Watch samples
+    /// synced through the Health app rather than written directly on-device).
+    nonisolated static func sourceLabel(for sample: HKSample) -> String {
+        if sample.metadata?[HKMetadataKeyWasUserEntered] as? Bool == true {
+            return "Manual"
+        }
+        let productType = sample.sourceRevision.productType
+        if productType?.hasPrefix("Watch") == true || sample.device?.model == "Apple Watch" {
+            return "Apple Watch"
+        }
+        if productType?.hasPrefix("iPhone") == true {
+            return "iPhone"
+        }
+        let sourceName = sample.sourceRevision.source.name
+        return sourceName.contains("Apple Watch") ? "Apple Watch" : sourceName
+    }
+
     private func fetchSteps() async -> MetricFetchResult? {
         guard let stepsType = HKQuantityType.quantityType(forIdentifier: .stepCount) else { return nil }
         let now = Date()
@@ -574,19 +626,21 @@ public final class HealthKitManager: ObservableObject {
         let predicate = HKQuery.predicateForSamples(withStart: Date().addingTimeInterval(-3600), end: Date(), options: .strictStartDate)
         let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)
 
-        let bpm: Double? = await withCheckedContinuation { (cont: CheckedContinuation<Double?, Never>) in
+        let result: (bpm: Double, provenance: MetricProvenance)? = await withCheckedContinuation { (cont: CheckedContinuation<(bpm: Double, provenance: MetricProvenance)?, Never>) in
             let query = HKSampleQuery(sampleType: heartRateType, predicate: predicate, limit: 1, sortDescriptors: [sortDescriptor]) { _, samples, error in
                 guard let samples = samples as? [HKQuantitySample], let latestSample = samples.first else {
                     print("Failed to fetch heart rate: \(error?.localizedDescription ?? "unknown")")
                     cont.resume(returning: nil)
                     return
                 }
-                cont.resume(returning: latestSample.quantity.doubleValue(for: HKUnit(from: "count/min")))
+                let bpm = latestSample.quantity.doubleValue(for: HKUnit(from: "count/min"))
+                let provenance = MetricProvenance(sourceLabel: Self.sourceLabel(for: latestSample), sampleEnd: latestSample.endDate)
+                cont.resume(returning: (bpm, provenance))
             }
             healthStore.execute(query)
         }
-        guard let bpm else { return nil }
-        return MetricFetchResult(type: .heartRate, value: bpm, history: nil)
+        guard let result else { return nil }
+        return MetricFetchResult(type: .heartRate, value: result.bpm, history: nil, provenance: result.provenance)
     }
 
     private func fetchDistance() async -> MetricFetchResult? {
@@ -620,7 +674,7 @@ public final class HealthKitManager: ObservableObject {
         guard let windowStart = Calendar.current.date(byAdding: .day, value: -30, to: now) else { return nil }
         let predicate = HKQuery.predicateForSamples(withStart: windowStart, end: now, options: [.strictEndDate])
 
-        let hours: Double? = await withCheckedContinuation { (cont: CheckedContinuation<Double?, Never>) in
+        let result: (hours: Double, provenance: MetricProvenance?)? = await withCheckedContinuation { (cont: CheckedContinuation<(hours: Double, provenance: MetricProvenance?)?, Never>) in
             let query = HKSampleQuery(sampleType: sleepType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, samples, error in
                 guard let samples = samples as? [HKCategorySample] else { cont.resume(returning: nil); return }
 
@@ -645,6 +699,7 @@ public final class HealthKitManager: ObservableObject {
                 }
 
                 var mostRecentHours: Double = 0
+                var winningDay: Date? = nil
                 var cursor = calendar.startOfDay(for: now)
                 for _ in 0..<31 {
                     let asleep = asleepByDay[cursor] ?? 0
@@ -652,18 +707,60 @@ public final class HealthKitManager: ObservableObject {
                     let hrs = asleep > 0 ? asleep : inBed
                     if hrs > 0 {
                         mostRecentHours = hrs
+                        winningDay = cursor
                         break
                     }
                     guard let prev = calendar.date(byAdding: .day, value: -1, to: cursor) else { break }
                     cursor = prev
                 }
 
-                cont.resume(returning: mostRecentHours)
+                // Provenance for the winning night only: accumulate per-source
+                // duration + whether any asleep-STAGE sample (vs inBed-only)
+                // was seen, so the dominant source by duration wins and an
+                // iPhone night with only inBed data (no real sleep-stage
+                // detection) is labeled distinctly from a Watch-tracked night.
+                var provenance: MetricProvenance? = nil
+                if let winningDay {
+                    var durationBySource: [String: Double] = [:]
+                    var hasAsleepStageBySource: [String: Bool] = [:]
+                    var maxEndBySource: [String: Date] = [:]
+                    for sample in samples {
+                        guard calendar.startOfDay(for: sample.endDate) == winningDay else { continue }
+                        let isAsleepStage: Bool
+                        switch sample.value {
+                        case HKCategoryValueSleepAnalysis.asleep.rawValue,
+                             HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue,
+                             HKCategoryValueSleepAnalysis.asleepCore.rawValue,
+                             HKCategoryValueSleepAnalysis.asleepDeep.rawValue,
+                             HKCategoryValueSleepAnalysis.asleepREM.rawValue:
+                            isAsleepStage = true
+                        case HKCategoryValueSleepAnalysis.inBed.rawValue:
+                            isAsleepStage = false
+                        default:
+                            continue
+                        }
+                        let duration = sample.endDate.timeIntervalSince(sample.startDate) / 3600.0
+                        let source = Self.sourceLabel(for: sample)
+                        durationBySource[source, default: 0] += duration
+                        if isAsleepStage { hasAsleepStageBySource[source] = true }
+                        if maxEndBySource[source].map({ sample.endDate > $0 }) ?? true {
+                            maxEndBySource[source] = sample.endDate
+                        }
+                    }
+                    if let dominant = durationBySource.max(by: { $0.value < $1.value })?.key,
+                       let sampleEnd = maxEndBySource[dominant] {
+                        let isInBedOnly = !(hasAsleepStageBySource[dominant] ?? false)
+                        let label = (dominant == "iPhone" && isInBedOnly) ? "iPhone time-in-bed" : dominant
+                        provenance = MetricProvenance(sourceLabel: label, sampleEnd: sampleEnd)
+                    }
+                }
+
+                cont.resume(returning: (mostRecentHours, provenance))
             }
             healthStore.execute(query)
         }
-        guard let hours else { return nil }
-        return MetricFetchResult(type: .sleep, value: hours, history: nil)
+        guard let result else { return nil }
+        return MetricFetchResult(type: .sleep, value: result.hours, history: nil, provenance: result.provenance)
     }
 
     
@@ -673,19 +770,21 @@ public final class HealthKitManager: ObservableObject {
         let predicate = HKQuery.predicateForSamples(withStart: Date().addingTimeInterval(-24 * 3600), end: Date(), options: .strictEndDate)
         let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)
 
-        let ms: Double? = await withCheckedContinuation { (cont: CheckedContinuation<Double?, Never>) in
+        let result: (ms: Double, provenance: MetricProvenance)? = await withCheckedContinuation { (cont: CheckedContinuation<(ms: Double, provenance: MetricProvenance)?, Never>) in
             let query = HKSampleQuery(sampleType: hrvType, predicate: predicate, limit: 1, sortDescriptors: [sortDescriptor]) { _, samples, error in
                 guard let samples = samples as? [HKQuantitySample], let latestSample = samples.first else {
                     print("Failed to fetch HRV: \(error?.localizedDescription ?? "unknown")")
                     cont.resume(returning: nil)
                     return
                 }
-                cont.resume(returning: latestSample.quantity.doubleValue(for: HKUnit.secondUnit(with: .milli)))
+                let ms = latestSample.quantity.doubleValue(for: HKUnit.secondUnit(with: .milli))
+                let provenance = MetricProvenance(sourceLabel: Self.sourceLabel(for: latestSample), sampleEnd: latestSample.endDate)
+                cont.resume(returning: (ms, provenance))
             }
             healthStore.execute(query)
         }
-        guard let ms else { return nil }
-        return MetricFetchResult(type: .hrv, value: ms, history: nil)
+        guard let result else { return nil }
+        return MetricFetchResult(type: .hrv, value: result.ms, history: nil, provenance: result.provenance)
     }
 
     
@@ -1148,6 +1247,38 @@ public final class HealthKitManager: ObservableObject {
         }
         guard let value else { return nil }
         return MetricFetchResult(type: metric, value: value, history: nil)
+    }
+
+    /// `fetchSimpleStatistics` above reads an `HKStatisticsQuery` — averages
+    /// and most-recent-value results that expose no underlying sample, so
+    /// there's nothing to read source/endDate from. This companion query
+    /// fetches just the single newest raw sample in `windowDays` purely to
+    /// attach provenance; it always returns `value: nil` so it can never
+    /// clobber the displayed number computed by the statistics query above.
+    private func latestSampleProvenance(_ hkID: HKQuantityTypeIdentifier, windowDays: Int = 30) async -> MetricFetchResult? {
+        guard let qType = HKQuantityType.quantityType(forIdentifier: hkID) else { return nil }
+        let metric: HealthMetricType
+        switch hkID {
+        case .restingHeartRate: metric = .restingHeartRate
+        case .oxygenSaturation: metric = .oxygenSaturation
+        case .vo2Max:           metric = .vo2Max
+        case .bodyMass:         metric = .bodyMass
+        default: return nil
+        }
+        let now = Date()
+        let start = now.addingTimeInterval(-Double(windowDays) * 24 * 3600)
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: now, options: .strictStartDate)
+        let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
+
+        let provenance: MetricProvenance? = await withCheckedContinuation { (cont: CheckedContinuation<MetricProvenance?, Never>) in
+            let query = HKSampleQuery(sampleType: qType, predicate: predicate, limit: 1, sortDescriptors: [sortDescriptor]) { _, samples, _ in
+                guard let sample = samples?.first else { cont.resume(returning: nil); return }
+                cont.resume(returning: MetricProvenance(sourceLabel: Self.sourceLabel(for: sample), sampleEnd: sample.endDate))
+            }
+            healthStore.execute(query)
+        }
+        guard let provenance else { return nil }
+        return MetricFetchResult(type: metric, value: nil, history: nil, provenance: provenance)
     }
 
 

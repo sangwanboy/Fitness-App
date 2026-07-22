@@ -3964,3 +3964,41 @@ showed `unavailable`; shipped once it returned to `available (paired)`.
 Deployed + launched: **databaseSequenceNumber: 7116**.
 
 Latest deployed sequence: **7116**.
+
+---
+
+## Session 75 — 2026-07-22 (WP-J: metric provenance — source + age + "watch not worn" for Astra)
+
+Fable-designed → Sonnet-implemented → Opus-verified SHIP. Incident: user didn't wear the Apple
+Watch overnight; Astra said "Resting heart rate is steady at 64 bpm after your night work" and
+"3.7 hours of sleep" — both stale/unsourced presented as current.
+
+ROOT CAUSE (Fable recon): RHR/SpO₂ are 30-day `discreteAverage`s (can't look stale — report the
+same value for weeks after the watch comes off); sleep is "most recent night in last 30 days"
+(can cite an old night as "last night"); NO provenance (source/timestamp) survived anywhere —
+MetricSummary carried only value/history.
+
+Fix: `MetricProvenance {sourceLabel, sampleEnd}` on MetricSummary (default nil, memberwise-init
+safe). HealthKitManager: `sourceLabel(for:)` (Manual→Watch productType/device→iPhone→app-name,
+normalizes "Apple Watch"); provenance threaded from in-hand samples (fetchHeartRate/HRV/Sleep) +
+new `latestSampleProvenance` companion limit-1 queries for the 4 statistics-only metrics
+(RHR/SpO₂/VO₂/bodyMass — values UNCHANGED, provenance only); `detectWatchClassData` now stores
+`lastWatchClassHRSample (end,label)` (source-agnostic — a chest strap counts). ChatViewModel LIVE
+CONTEXT: every metric line now tagged `(source, age[ — STALE])`; RHR/SpO₂ honestly read
+`30-day avg (last sample: …)`; a `⚠ WATCH-CLASS SOURCE GAP` banner fires when hasWatchClassData &&
+gap > 6h; sleep tag names source + which night ("last night" / "1 night ago…" / "…STALE, not last
+night"). 5 static PROVENANCE grounding bullets + 1 DATA SEMANTICS sentence (pure literals, cached
+block). Staleness: hrv/SpO₂ 12h, RHR 36h, sleep by night-bucket, vo2/bodyMass never STALE.
+CACHE-SAFE (Opus-confirmed): all tags/ages/banner volatile in LIVE CONTEXT tail only; nothing
+Date()-derived above the divider; turn-pinning intact.
+
+Opus minor findings (deferred to WP-J.2): ageString "1d ago" doc-comment nit; bodyMass companion
+query computed-but-unrendered (drop it); marginal extra publishes (benign).
+
+FAST-FOLLOW QUEUED — **WP-J.2**: MorningBriefEngine (`:213` reads sleep currentValue) has the SAME
+stale-sleep bug — gate it to only cite sleep when provenance night == last night; + drop the
+bodyMass companion query + fix the ageString comment.
+
+Deployed + launched: **databaseSequenceNumber: 7124**.
+
+Latest deployed sequence: **7124**.

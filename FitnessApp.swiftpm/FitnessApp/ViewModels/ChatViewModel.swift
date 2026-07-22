@@ -2008,6 +2008,126 @@ public final class ChatViewModel: ObservableObject {
         let spo2    = cur(.oxygenSaturation)
         func pct(_ v: Double, _ g: Double) -> Int { g > 0 ? Int((v / g) * 100) : 0 }
 
+        // -- Per-metric data provenance (source + reading age) ---------------
+        // Every LIVE CONTEXT metric line below carries a trailing tag built
+        // from these helpers so Astra can never present stale/absent watch
+        // data as current (see the PROVENANCE bullets under GROUNDING &
+        // MEMORY HYGIENE above). All of it is volatile — Date()-derived — so
+        // it's computed only here, in the LIVE CONTEXT half of this function,
+        // never mixed into the cacheable static run above.
+        /// "42m ago" / "5h ago" / "3d ago" — fixed English, no locale
+        /// formatter. Minute/hour thresholds use raw `Date()` deltas
+        /// (TZ-independent); the day count uses a Calendar day difference,
+        /// never a naive seconds/86400 divide, so a sample 25h old reads
+        /// "1d ago" only once it's actually crossed a calendar day.
+        func ageString(_ date: Date) -> String {
+            let now = Date()
+            let seconds = now.timeIntervalSince(date)
+            if seconds < 3600 { return "\(max(1, Int(seconds / 60)))m ago" }
+            if seconds < 48 * 3600 { return "\(Int(seconds / 3600))h ago" }
+            let days = Calendar.current.dateComponents([.day], from: date, to: now).day ?? 2
+            return "\(max(2, days))d ago"
+        }
+
+        /// How old a sample can be before its tag earns the STALE suffix.
+        /// nil = never STALE — vo2Max/bodyMass are inherently infrequent (an
+        /// age tag alone is honest), and heartRate's own 1h fetch window
+        /// already self-limits staleness. Sleep uses its own night-bucket
+        /// rule in `sleepTag()` below instead of a fixed threshold.
+        func stalenessThreshold(for type: HealthMetricType) -> TimeInterval? {
+            switch type {
+            case .hrv, .oxygenSaturation: return 12 * 3600
+            case .restingHeartRate: return 36 * 3600
+            default: return nil
+            }
+        }
+
+        /// Trailing provenance tag for a TODAY'S METRICS line. Absent (no
+        /// current value) → "(no reading in last <window>)", extended with
+        /// the last known sample if HealthKit still has one on file just
+        /// outside the window. Present → "(<source>, <age>[ — STALE])" —
+        /// except restingHeartRate / oxygenSaturation, which are 30-day
+        /// AVERAGES: their tag reads "30-day avg (last sample: <source>,
+        /// <age>[ — STALE])" so the number is never mistaken for that one
+        /// sample's live reading.
+        func provTag(_ type: HealthMetricType) -> String {
+            let summary = hk.metricSummaries[type]
+            let prov = summary?.provenance
+            let windowLabel: String
+            switch type {
+            case .heartRate: windowLabel = "1h"
+            case .hrv: windowLabel = "24h"
+            default: windowLabel = "30d"
+            }
+            guard (summary?.currentValue ?? 0) > 0 else {
+                guard let prov else { return "(no reading in last \(windowLabel))" }
+                return "(no reading in last \(windowLabel); last sample: \(prov.sourceLabel), \(ageString(prov.sampleEnd)))"
+            }
+            guard let prov else { return "" }
+            let isStale = stalenessThreshold(for: type).map { Date().timeIntervalSince(prov.sampleEnd) > $0 } ?? false
+            let staleSuffix = isStale ? " — STALE" : ""
+            switch type {
+            case .restingHeartRate, .oxygenSaturation:
+                return "30-day avg (last sample: \(prov.sourceLabel), \(ageString(prov.sampleEnd))\(staleSuffix))"
+            default:
+                return "(\(prov.sourceLabel), \(ageString(prov.sampleEnd))\(staleSuffix))"
+            }
+        }
+
+        /// Sleep's tag names who recorded the night AND which night — the
+        /// incident this shipped to fix was Astra calling a 2-day-old night
+        /// "last night". Bucket = the calendar day of the winning sample's
+        /// endDate (the morning after — same bucketing `fetchSleep` itself
+        /// uses), compared against today's calendar day.
+        func sleepTag() -> String {
+            guard let prov = hk.metricSummaries[.sleep]?.provenance else {
+                return "(no reading in last 30d)"
+            }
+            let cal = Calendar.current
+            let bucketDay = cal.startOfDay(for: prov.sampleEnd)
+            let todayDay = cal.startOfDay(for: Date())
+            let dayDiff = cal.dateComponents([.day], from: bucketDay, to: todayDay).day ?? 0
+            switch dayDiff {
+            case let d where d <= 0:
+                return "(\(prov.sourceLabel), last night)"
+            case 1:
+                return "(\(prov.sourceLabel), 1 night ago — nothing synced for last night yet)"
+            default:
+                let f = DateFormatter()
+                f.dateFormat = "EEE MM/dd"
+                return "(\(prov.sourceLabel), night of \(f.string(from: prov.sampleEnd)) — STALE, not last night)"
+            }
+        }
+
+        /// Watch-not-worn banner: fires only when we've SEEN watch-class data
+        /// before (`hasWatchClassData`) but the newest wearable HR sample is
+        /// stale by more than 6h — the exact incident this shipped to fix
+        /// (Astra citing a 30-day RHR average and a 2-day-old sleep session
+        /// as if today's watch was on the wrist). Source-agnostic — any
+        /// wearable HR source counts, not literally an Apple Watch. Returns
+        /// "" (fresh) most of the time; the leading "\n" lets the caller
+        /// interpolate it directly after the TODAY'S METRICS heading.
+        func watchGapLine() -> String {
+            guard hk.hasWatchClassData, let last = hk.lastWatchClassHRSample else { return "" }
+            let gapSeconds = Date().timeIntervalSince(last.end)
+            guard gapSeconds > 6 * 3600 else { return "" }
+            let gapHours = Int(gapSeconds / 3600)
+            let cal = Calendar.current
+            let dayLabel: String
+            if cal.isDateInToday(last.end) {
+                dayLabel = "today"
+            } else if cal.isDateInYesterday(last.end) {
+                dayLabel = "yesterday"
+            } else {
+                let df = DateFormatter()
+                df.dateFormat = "EEE MM/dd"
+                dayLabel = df.string(from: last.end)
+            }
+            let tf = DateFormatter()
+            tf.dateFormat = "HH:mm"
+            return "\n⚠ WATCH-CLASS SOURCE GAP: no heart-rate samples from any wearable in the last \(gapHours)h (last: \(last.label), \(dayLabel) \(tf.string(from: last.end))). The watch was likely not worn — or hasn't synced. Treat every metric tagged STALE below as not-current, and expect today's exercise/stand minutes and active calories to under-count."
+        }
+
         // -- On-device prediction snapshot — full structured breakdown -------
         let predictionsBlock = Self.predictionsFullBlock(hk.predictions)
 
@@ -2136,7 +2256,7 @@ public final class ChatViewModel: ObservableObject {
         DATA SEMANTICS
         - "—" or null = HealthKit returned no record. NEVER invent or imply a value.
         - 0 may be a genuine value depending on context: 0 steps at 6 AM is "early morning"; 0 sleep is almost certainly "not synced yet" — use judgement. When in doubt, state the ambiguity.
-        - Watch-class metrics (HR, HRV, RHR, exercise/stand minutes, VO₂max, SpO₂) require a Watch / wearable. If those are all "—" you're iPhone-only — coach around steps / distance / sleep / nutrition.
+        - Watch-class metrics (HR, HRV, RHR, exercise/stand minutes, VO₂max, SpO₂) require a Watch / wearable. If those are all "—" you're iPhone-only — coach around steps / distance / sleep / nutrition. Every LIVE CONTEXT metric line below carries its (source, reading age) tag — see PROVENANCE under GROUNDING.
         - If the user asks about a metric you don't have, say so plainly and explain how they'd enable it.
 
         PERSONAL BASELINES (use these BEFORE universal thresholds)
@@ -2217,6 +2337,11 @@ public final class ChatViewModel: ObservableObject {
         - Memory facts render with the date they were noted. Treat schedule-type facts older than 7 days as possibly stale — re-confirm with the user before building advice on them.
         - When a data tool returns nothing for a period, say plainly that nothing was recorded and ask what happened. NEVER invent causes (device settings, tracking gaps, lifestyle explanations) for missing data.
         - Every claim about the user's recorded data must come from an actual tool result in this conversation or the LIVE CONTEXT numbers below — if you didn't read it, don't claim it.
+        - PROVENANCE: every LIVE CONTEXT metric carries (source, reading age). Read the tag before citing the number — "64 bpm (last sample: Apple Watch, 2d ago — STALE)" is two-day-old data, not today's.
+        - Never present a metric tagged STALE — or any watch-class reading older than ~12h — as current. If you use it at all, name its age ("your last synced RHR, from Tuesday").
+        - If a WATCH-CLASS SOURCE GAP line is present, say plainly the watch wasn't worn (or hasn't synced); do NOT build recovery/readiness claims on stale RHR or HRV, and don't read 0 exercise/stand minutes as inactivity.
+        - On a stale-watch day, coach on what IS fresh — steps, distance, iPhone sleep, logged food and water. That's a full coaching day, not a data outage.
+        - Sleep's tag names who recorded it (Apple Watch / iPhone time-in-bed / Manual) and which night. Never describe an older night as "last night".
 
         SCOPE
         - You see and modify only items the app created — never the user's personal calendar / reminders. Don't claim you can.
@@ -2266,16 +2391,16 @@ public final class ChatViewModel: ObservableObject {
 
         TODAY IS \(Self.todayLine()) — use THIS date (and year!) for every date you emit: training-plan days, reminders, calendar events, backdated logs. Never guess the year from intuition.
 
-        TODAY'S METRICS (live from HealthKit)
-        - Steps: \(Int(steps)) / \(Int(stepsGoal)) (\(pct(steps, stepsGoal))%)
-        - Active calories: \(Int(cals)) / \(Int(calsGoal)) kcal (\(pct(cals, calsGoal))%)
-        - Sleep: \(displayOr(sleepH, "%.1f")) h / \(Int(sleepGoal)) h (\(pct(sleepH, sleepGoal))%)
-        - Distance: \(dist > 0 ? String(format: "%.2f", LocaleUnits.distanceDisplay(fromMiles: dist).value) : "—") / \(String(format: "%.1f", LocaleUnits.distanceDisplay(fromMiles: distGoal).value)) \(LocaleUnits.distanceUnit)
-        - Latest HR: \(displayOr(hrLive, "%.0f")) bpm
-        - Resting HR: \(displayOr(rhr, "%.0f")) bpm
-        - HRV: \(displayOr(hrv, "%.0f")) ms
-        - VO₂ max: \(displayOr(vo2, "%.1f")) ml/kg·min
-        - SpO₂: \(displayOr(spo2, "%.0f"))%
+        TODAY'S METRICS (live from HealthKit — every line carries its source + reading age; trust the tag)\(watchGapLine())
+        - Steps: \(Int(steps)) / \(Int(stepsGoal)) (\(pct(steps, stepsGoal))%) (today)
+        - Active calories: \(Int(cals)) / \(Int(calsGoal)) kcal (\(pct(cals, calsGoal))%) (today)
+        - Sleep: \(displayOr(sleepH, "%.1f")) h / \(Int(sleepGoal)) h (\(pct(sleepH, sleepGoal))%) \(sleepTag())
+        - Distance: \(dist > 0 ? String(format: "%.2f", LocaleUnits.distanceDisplay(fromMiles: dist).value) : "—") / \(String(format: "%.1f", LocaleUnits.distanceDisplay(fromMiles: distGoal).value)) \(LocaleUnits.distanceUnit) (today)
+        - Latest HR: \(displayOr(hrLive, "%.0f"))\(hrLive > 0 ? " bpm" : "") \(provTag(.heartRate))
+        - Resting HR: \(displayOr(rhr, "%.0f"))\(rhr > 0 ? " bpm" : "") \(provTag(.restingHeartRate))
+        - HRV: \(displayOr(hrv, "%.0f"))\(hrv > 0 ? " ms" : "") \(provTag(.hrv))
+        - VO₂ max: \(displayOr(vo2, "%.1f"))\(vo2 > 0 ? " ml/kg·min" : "") \(provTag(.vo2Max))
+        - SpO₂: \(displayOr(spo2, "%.0f"))\(spo2 > 0 ? "%" : "") \(provTag(.oxygenSaturation))
 
         PREDICTIONS (on-device snapshot — same data the user sees on the Home card. You have it INLINE so you do not need to call get_predictions unless you want the raw JSON.)
         \(predictionsBlock)

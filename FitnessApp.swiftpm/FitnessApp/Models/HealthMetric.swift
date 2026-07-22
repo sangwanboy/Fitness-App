@@ -247,6 +247,15 @@ public struct MetricValue: Identifiable, Codable, Equatable {
     }
 }
 
+/// Where a metric's `currentValue` came from + how old the sample is — lets
+/// Astra's system prompt tag every LIVE CONTEXT line with source + reading
+/// age instead of presenting stale/absent watch data as current (see
+/// PROVENANCE in ChatViewModel.buildSystemInstruction).
+public struct MetricProvenance: Equatable, Sendable {
+    public let sourceLabel: String   // "Apple Watch" | "iPhone" | "Manual" | app display name
+    public let sampleEnd: Date       // endDate of the sample that produced currentValue
+}
+
 /// One logged food item — built from HealthKit dietary samples grouped by
 /// `HKMetadataKeyFoodType` + minute-bucketed timestamp. Source-agnostic:
 /// items logged via the app's `log_food` tool, MyFitnessPal, or any other
@@ -283,6 +292,10 @@ public struct MetricSummary: Identifiable, Equatable {
     public var currentValue: Double
     public var goal: Double
     public var history: [MetricValue]
+    /// Source + reading age for `currentValue`. nil for metrics no fetch has
+    /// attached provenance to yet (default keeps `seedEmptySummaries`'s
+    /// memberwise init at HealthKitManager.swift:85-90 compiling untouched).
+    public var provenance: MetricProvenance? = nil
 
     public var percentComplete: Double {
         guard goal > 0 else { return 0 }
