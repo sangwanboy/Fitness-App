@@ -14,6 +14,13 @@ with on-device prediction & sleep engines. Native iOS 26 Liquid Glass UI only.
 
 ## Git & deployment workflow — IMPORTANT
 
+**`git pull origin main` at the start of every session, before any other git operation.**
+Multiple people (Tushar + collaborators) push straight to `main` with no PRs and no branch
+protection — there's already been one manual conflict-resolution push (2026-07-22,
+`28e250b`, verified clean but easily could not have been). Starting a session on a stale
+local `main` risks working from outdated files or, worse, a divergent push later. Pull first,
+every time, before reading files or making changes.
+
 **Commit and push after ANY change to the codebase** — code, config, docs, assets,
 `project.yml`, etc. Don't batch unrelated work; one logical change per commit, pushed.
 

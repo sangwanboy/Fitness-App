@@ -4243,3 +4243,27 @@ Build & Deploy section to get the fix on-device and log the new `databaseSequenc
 
 Latest deployed sequence: **7148** (unchanged — simulator-verified only, device deploy pending
 pairing).
+
+---
+
+## Session 82 addendum — future idea: in-app composite sleep score (not started)
+
+User asked whether the app can just read Apple's own watchOS 26 "Sleep Score" (they confirmed
+seeing it live in Health app: 88/High, sub-scored Duration 50/50 · Bedtime 30/30 · Interruptions
+8/20). **Verified against the actual installed SDK** (`iPhoneOS26.5.sdk` HealthKit headers,
+`HKTypeIdentifiers.h`): no `HKQuantityTypeIdentifierSleepScore` or equivalent exists — the only
+sleep-related identifiers exposed to third-party apps are `HKCategoryTypeIdentifierSleepAnalysis`
+(stage samples, already read by this app), `SleepApneaEvent`, `SleepChanges`,
+`AppleSleepingWristTemperature/BreathingDisturbances`. Apple's Sleep Score is computed entirely
+inside Health.app with zero public API surface — not reachable by this app or any competitor
+(Oura/Whoop hit the same wall).
+
+**USER DECISION: leave as a future idea, not started.** If picked up later: build our own
+composite score from the same visible ingredients (duration, bedtime-consistency, interruption
+count) — SleepPatternAnalyzer.swift already computes `medianRestlessness`/`consistencyScore`/snore
+data that could feed it; the SDK's HK sleep-stage samples give duration + interruption counts even
+on nights not manually tracked in-app. Needs a defensible weighting formula and a graceful
+degraded-confidence path for iPhone-only nights (no Watch stage data). No spec written yet — do
+not start without the user asking first.
+
+Latest deployed sequence: **7148** (unchanged).
