@@ -4267,3 +4267,67 @@ degraded-confidence path for iPhone-only nights (no Watch stage data). No spec w
 not start without the user asking first.
 
 Latest deployed sequence: **7148** (unchanged).
+
+---
+
+## Session 83 — 2026-07-23 (build 1.0.1 (3): App-Store-eligible upload for External Testing)
+
+User wants to hand out a TestFlight **Public Link** to friends/collaborators (chiro, eeshee,
+samridh, sanjay, Akansha — several added as ASC team members this session, see below). Discovered
+the real blocker via the actual `builds` API response, not a guess: build **1.0.1 (2)**
+(`buildAudienceType: INTERNAL_ONLY`) was deliberately uploaded via Xcode Organizer's "TestFlight
+Internal Only" path in Session 81 — that flag is **permanent per-build** and makes a build
+structurally ineligible for External Testing or App Store review, no matter what's clicked in ASC.
+An External Testing group ("Early testers", external, distinct from Internal's "Early Testers")
+already existed with 0 builds/0 testers — its "Add Builds" picker correctly showed "No builds
+available" because build 2 was the only build and is internal-only. Not a bug — verified via the
+raw `betaGroups`/`builds` JSON, not just the UI.
+
+**Fix**: bumped `CURRENT_PROJECT_VERSION` 2 → **3** in `project.yml` (xcodegen still not installed
+on this Mac — hand-patched both Debug/Release entries in `project.pbxproj` directly, same pattern
+as Session 81's TARGETED_DEVICE_FAMILY fix). `xcodebuild archive` succeeded via Bash. Direct-upload
+via `xcodebuild -exportArchive -exportOptionsPlist (destination=upload)` failed: **"Failed to find
+an account with App Store Connect access for team RM42FV53FU"** — this Mac's Xcode has zero Apple
+ID accounts in Settings→Accounts (confirmed both via the xcodebuild error itself and via
+`defaults read`/filesystem probing finding no `IDEAppleIDPrefs` or accounts store at all). A
+plain local export (destination=export) also failed: "No signing certificate 'iOS Distribution'
+found" — same root cause, automatic signing can't fetch/create a distribution cert with no signed-in
+account. **User did the final step themselves**: opened Xcode → Organizer → found the archive built
+here → Distribute App → **App Store Connect** (not Internal Only this time) → Upload — same as
+Session 81's manual flow, which apparently authenticates inline through Organizer's own sign-in
+regardless of the persistent Accounts pane being empty.
+
+**Verified build 3 live via raw API** (`buildAudienceType: APP_STORE_ELIGIBLE`, `processingState:
+VALID`) — confirmed eligible for the "Add Builds" step on the External "Early testers" group (not
+yet attached — next session/step). No Beta App Review submitted yet (user must explicitly confirm
+that step per this file's standing rule — see Session 81 addendum).
+
+**Also this session**: added several people as real ASC team members (Users and Access → New User,
+Developer role) since **TestFlight Internal Testing requires actual App Store Connect team
+membership, not just an email** — a repeatedly-confirmed constraint this session (verified via
+`/access/users` state, not assumption): `eesheepal.singh@indiaaccelerator.co`, `samsri29007@gmail.com`
+(samridh lalaaa), `sanjaysangwandfs@gmail.com` (sanjay sangwan) all show **Pending** (invite sent,
+not yet accepted — several hit a known-flaky Apple `developer.apple.com` "Apple Developer
+Agreement — unable to process your request" error mid-accept, unrelated to region/India, cleared
+for at least one by retrying). `lohiaa892@gmail.com` (Akansha Lohia) is the only one **fully
+accepted** — confirmed via her real user-settings/permissions page — but has NOT yet been added to
+the "Early Testers" Internal group (the actual step that triggers a TestFlight-specific
+invite/redeem code); that's still pending, blocked by the same broken-ASC-modal issue below.
+
+**Recurring environment bug, worth flagging for any future session using the in-app Browser pane
+against App Store Connect**: every ASC "action" modal (Add Testers, Add Person/New User's actual
+submit-confirmation-style dialogs, Resend Invitation, Add Builds) renders as a **completely empty,
+zero-height shell** in this specific automated browser tool — confirmed root cause via console
+(`Failed to execute 'removeChild' on 'Node'` from ASC's own JS) and via direct DOM inspection
+(`innerHTML.length === 0`), reproduced 6+ times across 4 distinct dialogs, survives hard reloads,
+not fixable by retrying. Only the simplest "name + checkbox" modal ("Create New Internal Group")
+ever rendered correctly. **Every ASC action this session that needed one of the broken dialogs had
+to be done by the user directly**, not by the agent. If this recurs, don't burn time retrying —
+hand off to the user immediately.
+
+No app deploy this session (databaseSequenceNumber unchanged) — this was TestFlight
+distribution-only work. Committed the version-bump (`project.yml` + `project.pbxproj`,
+`CURRENT_PROJECT_VERSION` 2→3) as its own commit.
+
+Latest deployed sequence: **7148** (unchanged — device build, separate from the TestFlight
+1.0.1 (3) upload covered above).
