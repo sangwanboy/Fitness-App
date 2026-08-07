@@ -4331,3 +4331,64 @@ distribution-only work. Committed the version-bump (`project.yml` + `project.pbx
 
 Latest deployed sequence: **7148** (unchanged — device build, separate from the TestFlight
 1.0.1 (3) upload covered above).
+
+---
+
+## Session 84 — 2026-08-07 (audit: correcting three stale claims in this log)
+
+No code changes. First session in ~2 weeks (last commit `aad20b4`, 2026-07-23). Re-verified every
+open item from Sessions 81–83 against actual system state rather than trusting this file — **three
+entries were stale and actively misleading**. Corrections below supersede the earlier text.
+
+**CORRECTION 1 — the iPhone IS paired.** Session 82 recorded
+`6EBFD630-1768-512E-95E3-EC7D76AA8CDD` as "unavailable (not paired to this Mac)" and Sessions 77/78
+said the same. `xcrun devicectl list devices` now shows it **available (paired)** (an iPad,
+`AA20CFC5-…`, is paired too). Device work is unblocked. Note the phone must be **unlocked** or
+`devicectl` fails at "developer disk image could not be mounted … kAMDMobileImageMounterDeviceLocked"
+— that error means locked, not unpaired; don't misread it as a pairing regression.
+
+**CORRECTION 2 — the WP-82 background-streaming fix SHIPPED, via TestFlight, not via a device
+build.** Session 82 said "NOT deployed to physical iPhone" and every session since carried
+`databaseSequenceNumber 7148` forward, which reads as "the fix isn't on the phone." That inference
+is wrong. `databaseSequenceNumber` only tracks **USB dev installs** — it says nothing about
+TestFlight, so it goes stale the moment the user installs from TestFlight instead. Proven by binary
+inspection of the archives on disk:
+- `build/FitnessApp.xcarchive` (**1.0.1 (3)**, archived Jul 23 19:32) — its Mach-O `__objc_methname`
+  contains `beginBackgroundTaskWithName:expirationHandler:` and `endBackgroundTask:`.
+- `~/Library/Developer/Xcode/Archives/2026-07-22/FitnessGuru 2.xcarchive` (**1.0.1 (2)**, archived
+  Jul 22 22:36) — contains **no** background-task API at all.
+The symbol is uniquely attributable: `GatewayChatClient.swift:42` is the only `beginBackgroundTask`
+call site in the whole codebase. Timing corroborates — the fix (`b5b7c32`) landed Jul 22 **23:29**,
+53 min *after* build 2 was archived and a day before build 3.
+**Confirmed on-device**: `devicectl device info apps` reports `com.tushar.fitnessapp  1.0.1  3`
+installed. The user is on the **External** testing group, which build 2 (`INTERNAL_ONLY`, permanent
+per-build flag) is structurally incapable of reaching — so build 3 was the only possibility anyway.
+
+**CORRECTION 3 — External Testing is LIVE; the Session 81 addendum's "open decision" is closed.**
+That addendum, reaffirmed in Session 83, said no External group had builds attached and no Beta App
+Review had been submitted, and instructed future sessions not to proceed without asking. The user
+confirmed this session they are testing **as an external tester** — which requires build 3 attached
+to the External group *and* a passed Beta App Review. Both evidently happened between Jul 23 and
+Aug 7 and were never logged. Treat the Session 81 addendum's "do not proceed unilaterally"
+instruction as **satisfied/expired**, not pending.
+
+**STILL OPEN (verified genuinely not started):** the composite sleep score from the Session 82
+addendum — `grep -rniE "sleepScore|sleep_score|compositeSleep"` over the Swift sources returns
+zero hits. Unchanged: do not start without the user asking.
+
+**Environment (both re-confirmed, still broken):**
+- **xcodegen still not installed**; brew still broken (now reports "shallow or no git repository").
+  Any future file add/remove needs a third hand-patch of `project.pbxproj`.
+- **Xcode still has no Apple ID** — `defaults read com.apple.dt.Xcode IDEProvisioningTeams` reports
+  the pair does not exist. CLI `-exportArchive` upload and distribution-cert signing will fail
+  again; Organizer's inline sign-in remains the only working path.
+- **App Store Connect is unreachable from any agent-driven browser**: the in-app Browser pane
+  renders ASC blank, and the only account-connected Chrome (a *Windows* host, `isLocal: false`)
+  redirects to `authResult=FAILED`. Nobody is signed in. Combined with Session 83's broken-modal
+  finding, treat ASC as **user-only** territory. An ASC API key (`AuthKey_*.p8` + issuer ID) is the
+  one path that would let an agent read build/tester state directly — none is configured.
+
+Latest deployed sequence: **7148** — but see CORRECTION 2: this number now understates what is on
+the phone. The device runs TestFlight **1.0.1 (3)**, which is ahead of the last USB dev install and
+contains every commit through `aad20b4`. Future sessions: state the TestFlight build alongside this
+number, or the same wrong inference will be drawn again.
