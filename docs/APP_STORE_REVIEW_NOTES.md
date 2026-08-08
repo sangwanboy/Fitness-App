@@ -1,10 +1,16 @@
-# App Store Review Notes — Fitness Guru
+# App Store Review Notes — Astra AI Coach
 
-App: Fitness Guru (bundle `com.tushar.fitnessapp`, team `RM42FV53FU`)
+App: Astra AI Coach (bundle `com.tushar.fitnessapp`, team `RM42FV53FU`)
 Contact: team@atlasjob.tech
 For: App Review — reviewer-facing notes for this submission. Written to accompany the
 release build; every claim below is sourced from the shipped app source in
 `FitnessApp.swiftpm/FitnessApp/`.
+
+> **Note on names.** Quoted permission strings below say "Fitness Guru" — that is the app's
+> internal/working name and is quoted verbatim as it ships. The Store listing name is
+> **Astra AI Coach**. If the build is re-cut to align these (see the naming-consistency section
+> in `docs/APP_STORE_METADATA.md`), update every quoted string in §1, §2 and §4 in the same pass
+> so these notes stay literally true against the submitted binary.
 
 ---
 
