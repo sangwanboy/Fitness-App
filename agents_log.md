@@ -4392,3 +4392,41 @@ Latest deployed sequence: **7148** — but see CORRECTION 2: this number now und
 the phone. The device runs TestFlight **1.0.1 (3)**, which is ahead of the last USB dev install and
 contains every commit through `aad20b4`. Future sessions: state the TestFlight build alongside this
 number, or the same wrong inference will be drawn again.
+
+---
+
+## Session 85 — 2026-08-08 (release-config on-device verification + App Store submission decision)
+
+**Blocker #2 from `docs/LAUNCH_TO_APP_STORE.md` §0 is now DISCHARGED.** The runbook's definition of
+done was: release config on the physical iPhone → real login → Astra chat with HealthKit-backed
+multi-turn tool calls (thoughtSignature round-trip) against the **production** gateway. Verified via
+a user-supplied on-device screenshot of TestFlight **1.0.1 (3)** (Release config → Azure prod
+gateway, real auth — prod refuses fake dev-auth by design, so a rendered reply proves real SIWA):
+- Full structured reply rendered (VITALS & READINESS / ACTIVITY & MOVEMENT / sleep + nutrition),
+  driven by live HealthKit data (Health Meter 63/100, Recovery 38/100, VO₂ max 41.8, RHR 67,
+  4,908 steps, 7-day avg 10,553).
+- A `Checked your profile — Reviewing memory before an update` tool card rendered, i.e. the tool
+  loop executed and the thoughtSignature round-trip held against prod.
+- Follow-up suggestion chips rendered, which only happens after a turn completes cleanly.
+- No error bubble — consistent with the WP-82 background-task fix (the app had been backgrounded;
+  an Uber Live Activity was in the Dynamic Island). NOTE: the user was not asked to confirm whether
+  backgrounding happened *mid-stream* specifically, so the WP-82 fix is **strongly evidenced but not
+  formally isolated**. The e2e verification above does not depend on that distinction.
+
+**DECISION (user, this session): submit for App Store review NOW; GCP key rotation happens
+separately and is NOT a submission blocker.** Rationale accepted: key `4d33d3bc…`
+(project `vertexi-ai-493516`) never ships in the app — it feeds only the local dev gateway via
+`GCP_SA_JSON_FILE` — so App Review never touches it. This **supersedes** blocker #1 in
+`LAUNCH_TO_APP_STORE.md` §0 and the CLAUDE.md "revisit before any public/App Store release" gate
+*for this submission only*. The rotation remains an open backend hygiene item; it was NOT
+performed and the old key is NOT burned. Do not treat this as permission to rotate unprompted.
+
+Blocker #3 (Apple-side SIWA token revocation on account deletion) remains external/track-only, not
+ship-blocking, per the runbook. Blocker #4 (ASC privacy labels + screenshots + Submit) is
+**user-only** — unchanged and unverifiable from here, see the ASC-unreachable note in Session 84.
+
+Submission candidate is **1.0.1 (3)** — already `APP_STORE_ELIGIBLE`, already passed Beta App
+Review, and identical in code to current `main` (archived Jul 23 19:32, 16 min before `aad20b4`
+committed the version bump; no code commits since). No rebuild or re-upload is required to submit.
+
+No code changes this session. Latest deployed sequence: **7148** (device runs TestFlight 1.0.1 (3)).
