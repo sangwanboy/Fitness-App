@@ -341,13 +341,14 @@ All keys use the standard app container (no app groups, no suite name). Sources 
 
 ### Account & Gateway Profile Sync (WP-L)
 
-Written/read by `GatewayProfileSync` and the Sign in with Apple flow. The
-non-internal values here are the only identity fields synced off-device — to
-the Atlas AI Gateway's `/v1/me` account record (see §12 for the label mapping).
+Written/read by `GatewayProfileSync` and both sign-in flows (Sign in with
+Apple and email/password). The non-internal values here are the only identity
+fields synced off-device — to the Atlas AI Gateway's `/v1/me` account record
+(see §12 for the label mapping).
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `account_email` | String | `""` | Email address from Sign in with Apple (only populated when Apple discloses it — first authorization only — or backfilled from the gateway's `GET /v1/me`). Shown in Settings; `""` renders as "—". |
+| `account_email` | String | `""` | Email address for the signed-in account: submitted directly for email/password accounts, or from Sign in with Apple (only populated when Apple discloses it — first authorization only), or backfilled from the gateway's `GET /v1/me`. Shown in Settings; `""` renders as "—". |
 | `marketing_opt_in` | Bool | `false` | User's opt-in to marketing/product-update emails. Explicit opt-in (defaults off); synced to the gateway as `marketingOptIn` only once the user has touched the toggle. |
 | `marketing_opt_in_touched` | Bool | `false` | Whether the user has changed the marketing toggle on this install. Gates whether local consent is sent to the gateway vs. hydrated from the server — prevents a reinstall's default-`false` from clobbering a server-side opt-in. |
 | `profile_sync_pending` | Bool | `false` | Internal retry flag (not user-facing). Set when a `POST /v1/me/profile` sync fails (e.g. offline, endpoint not yet deployed); a pending sync is retried on the next sign-in or app-foreground. |
@@ -608,22 +609,25 @@ declaration and the App Store Connect privacy label answers in §12.
    (`Services/TokenMeter.swift`, `Views/TokenUsageView.swift`). It contains
    no message text, no health values, and no image data.
 3. **No credential ever ships on-device.** The app authenticates to the
-   gateway with a short-lived bearer token obtained via Sign in with Apple
-   (`GatewayAuth.swift`); the gateway authenticates to Google with the GCP
+   gateway with a short-lived bearer token obtained via the user's gateway
+   session (Sign in with Apple or email/password, `GatewayAuth.swift`); the
+   gateway authenticates to Google with the GCP
    service-account key, which lives only on the gateway host (§10). The app
    binary and its UserDefaults/Keychain contain no Google/Vertex credential
    of any kind.
 
 ### Account data the gateway stores (server-side, outside this app's control)
 
-Per the Sign in with Apple exchange (`POST /v1/auth/apple`) and confirmed by
+Per the Sign in with Apple exchange (`POST /v1/auth/apple`), the email/password
+exchanges (`POST /v1/auth/register`, `POST /v1/auth/login`), and confirmed by
 `GatewayAuth.swift`'s wire types (`AuthResponse`: `userId`, `appId`, token
-pair) and `AppleSignInCoordinator.requestIdentityToken()` requesting
-`request.requestedScopes = []` (no name/email scope — `Views/LoginView.swift`):
+pair), plus `AppleSignInCoordinator.requestSignIn()` requesting
+`request.requestedScopes = [.fullName, .email]` (`Views/LoginView.swift`):
 
 | Field | Notes |
 |---|---|
-| Apple `sub` (stable anonymous identifier) | The only identity signal; this app requests no name/email scope, so in practice no email is collected for Fitness Guru accounts even though the gateway's account schema has room for an optional email (apps that *do* request the scope would populate it). |
+| Apple `sub` (stable anonymous identifier) | The primary identity signal for the account. |
+| Name and Email, when Apple discloses them | Apple discloses `fullName`/`email` only on the first authorization for a given Apple ID (nil on every later one). When present, `persistAppleSignInResult()` saves them locally and `GatewayProfileSync.swift` POSTs them to `v1/me/profile`, which retains them in the account record — see §12 for the resulting privacy-label declaration. |
 | Account/session timestamps | Created-at, last-active. |
 | Usage counters | Token counts, request counts, for fair-use metering — same data described in point 2 above. |
 
@@ -660,10 +664,13 @@ the two must not contradict each other.
 | Health & Fitness | **No** (see reasoning below) | — | — | — |
 | Everything else (contacts, location, financial, browsing history, search history, identifiers beyond User ID, diagnostics, etc.) | No | — | — | — |
 
-**Name and Email Address (added in WP-L).** Both are captured via Sign in with
-Apple — Name only on the first authorization for the Apple ID (Apple discloses
-`fullName`/`email` once, or never if the user declined at that point), and Email
-may be an Apple private-relay address. Both are synced to and retained by the
+**Name and Email Address (added in WP-L).** Name is captured only via Sign in
+with Apple — on the first authorization for the Apple ID (Apple discloses
+`fullName` once, or never if the user declined at that point). Email is
+captured two ways: via the same Sign in with Apple disclosure (where it may be
+an Apple private-relay address), or submitted directly by the user at signup
+for email/password accounts (`POST /v1/auth/register`,
+`Views/LoginView.swift`). Both are synced to and retained by the
 Atlas AI Gateway's per-user account record (`POST /v1/me/profile`), which is why
 they ARE declared as collected (unlike Health data, they are stored server-side —
 see §11 reasoning). "Marketing" is listed as a purpose ONLY for users who

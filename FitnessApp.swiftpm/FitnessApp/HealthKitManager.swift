@@ -1346,7 +1346,7 @@ public final class HealthKitManager: ObservableObject {
     /// there's nothing to pre-empt here.
     private func writeDeniedReason(for sampleType: HKSampleType, label: String) -> String? {
         guard healthStore.authorizationStatus(for: sampleType) == .sharingDenied else { return nil }
-        return "Health access for \(label) is turned off. Enable it in Settings → Health → Data Access & Devices → Fitness Guru → \(label)."
+        return "Health access for \(label) is turned off. Enable it in Settings → Health → Data Access & Devices → Astra → \(label)."
     }
 
     /// Writes a sleep session the user reported conversationally ("I slept
@@ -1467,7 +1467,7 @@ public final class HealthKitManager: ObservableObject {
 
         guard !samples.isEmpty else {
             if !deniedLabels.isEmpty {
-                return .failure(reason: "Health access for \(deniedLabels.joined(separator: ", ")) is turned off. Enable it in Settings → Health → Data Access & Devices → Fitness Guru.")
+                return .failure(reason: "Health access for \(deniedLabels.joined(separator: ", ")) is turned off. Enable it in Settings → Health → Data Access & Devices → Astra.")
             }
             return .failure(reason: "Nothing to log — every macro was zero.")
         }

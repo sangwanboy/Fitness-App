@@ -8,6 +8,8 @@
 	</array>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleDisplayName</key>
+	<string>Astra</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -30,31 +32,31 @@
 		<true/>
 	</dict>
 	<key>NSCalendarsFullAccessUsageDescription</key>
-	<string>Fitness Guru reads, updates, and adds events to your calendar to plan workouts around your day.</string>
+	<string>Astra reads, updates, and adds events to your calendar to plan workouts around your day.</string>
 	<key>NSCalendarsUsageDescription</key>
-	<string>Fitness Guru reads, updates, and adds events to your calendar to plan workouts around your day.</string>
+	<string>Astra reads, updates, and adds events to your calendar to plan workouts around your day.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Fitness Guru opens the camera so you can snap a photo of food or fitness equipment and have the AI coach identify it.</string>
+	<string>Astra opens the camera so you can snap a photo of food or fitness equipment and have the AI coach identify it.</string>
 	<key>NSFocusStatusUsageDescription</key>
-	<string>Fitness Guru reads your Focus state to know when Sleep Focus is on — that lets the app surface sleep tracking at the right moment and align stats to your iOS bedtime schedule.</string>
+	<string>Astra reads your Focus state to know when Sleep Focus is on — that lets the app surface sleep tracking at the right moment and align stats to your iOS bedtime schedule.</string>
 	<key>NSHealthClinicalHealthRecordsShareUsageDescription</key>
-	<string>Fitness Guru can read your clinical records (allergies, conditions, lab results) to give the AI coach a complete picture of your health context.</string>
+	<string>Astra can read your clinical records (allergies, conditions, lab results) to give the AI coach a complete picture of your health context.</string>
 	<key>NSHealthShareUsageDescription</key>
-	<string>Fitness Guru reads your full Apple Health profile — body, vitals, nutrition, sleep, workouts, mobility, mindfulness, and Medical ID — so the AI coach can personalize plans.</string>
+	<string>Astra reads your full Apple Health profile — body, vitals, nutrition, sleep, workouts, mobility, mindfulness, and Medical ID — so the AI coach can personalize plans.</string>
 	<key>NSHealthUpdateUsageDescription</key>
-	<string>Fitness Guru writes workouts, hydration, mindfulness sessions, and body measurements you log in the app back to Apple Health.</string>
+	<string>Astra writes workouts, hydration, mindfulness sessions, and body measurements you log in the app back to Apple Health.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Fitness Guru connects to your development AI server on the local network. Not used in normal operation.</string>
+	<string>Astra connects to your development AI server on the local network. Not used in normal operation.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Fitness Guru listens to the room while you sleep to detect snoring and quantify sleep quality. Audio is analyzed on-device with Apple's Sound Analysis framework and never recorded or uploaded.</string>
+	<string>Astra listens to the room while you sleep to detect snoring and quantify sleep quality. Audio is analyzed on-device with Apple's Sound Analysis framework and never recorded or uploaded.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Fitness Guru reads photos you pick to identify food or fitness gear with the AI coach.</string>
+	<string>Astra reads photos you pick to identify food or fitness gear with the AI coach.</string>
 	<key>NSRemindersFullAccessUsageDescription</key>
-	<string>Fitness Guru reads, completes, and creates reminders for hydration, workouts, supplements, and recovery.</string>
+	<string>Astra reads, completes, and creates reminders for hydration, workouts, supplements, and recovery.</string>
 	<key>NSRemindersUsageDescription</key>
-	<string>Fitness Guru reads, completes, and creates reminders for hydration, workouts, supplements, and recovery.</string>
+	<string>Astra reads, completes, and creates reminders for hydration, workouts, supplements, and recovery.</string>
 	<key>NSUserNotificationsUsageDescription</key>
-	<string>Fitness Guru sends you a nudge when it detects prolonged inactivity, so you can move before sedentary time affects your health score.</string>
+	<string>Astra sends you a nudge when it detects prolonged inactivity, so you can move before sedentary time affects your health score.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>

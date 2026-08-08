@@ -827,7 +827,7 @@ public struct SettingsView: View {
         // Derived from the bundle so this can never drift from the real build.
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
         let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—"
-        return Text("Fitness Guru · \(version) · build \(build)")
+        return Text("Astra · \(version) · build \(build)")
             .font(.system(size: 12, weight: .medium))
             .foregroundColor(isDark ? .white.opacity(0.3) : .black.opacity(0.3))
             .padding(.top, 12)

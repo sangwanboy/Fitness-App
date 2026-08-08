@@ -8,23 +8,23 @@
 
 # Terms of Service
 
-**Fitness Guru**
-Last updated: July 17, 2026
+**Astra: Your AI Coach**
+Last updated: August 8, 2026
 Contact: team@atlasjob.tech
 
-These terms govern your use of Fitness Guru (the "app"). By using the app, you agree to them. If you don't agree, please don't use the app.
+These terms govern your use of Astra (the "app"). By using the app, you agree to them. If you don't agree, please don't use the app.
 
 ## The service
 
-Fitness Guru is a personal fitness-information app. It reads data from Apple Health, your calendar and reminders, your camera, and your microphone (on-device only) to power dashboards, on-device predictions, and an AI coach called Astra, which runs on a backend service we call the Atlas AI Gateway.
+Astra is a personal fitness-information app. It reads data from Apple Health, your calendar and reminders, your camera, and your microphone (on-device only) to power dashboards, on-device predictions, and an AI coach called Astra, which runs on a backend service we call the Atlas AI Gateway.
 
 ## Not medical advice
 
-Fitness Guru and Astra are for general fitness and wellness information only. Nothing in the app is medical advice, diagnosis, or treatment, and the app is not a substitute for a qualified healthcare professional. Always consult a doctor or other qualified provider before acting on anything Astra tells you, especially anything related to a medical condition, medication, symptom, or injury. **If you are having a medical emergency, call your local emergency number (for example, 911 in the US) immediately — do not rely on this app.**
+Astra is for general fitness and wellness information only. Nothing in the app is medical advice, diagnosis, or treatment, and the app is not a substitute for a qualified healthcare professional. Always consult a doctor or other qualified provider before acting on anything Astra tells you, especially anything related to a medical condition, medication, symptom, or injury. **If you are having a medical emergency, call your local emergency number (for example, 911 in the US) immediately — do not rely on this app.**
 
 ## Acceptable use
 
-You agree to use Fitness Guru only for its intended personal, non-commercial purpose, and not to:
+You agree to use Astra only for its intended personal, non-commercial purpose, and not to:
 
 - attempt to circumvent, reverse-engineer, or overload the Atlas AI Gateway or any other part of the service;
 - use the app to generate content that is illegal, abusive, or intended to harm yourself or others;
@@ -34,7 +34,7 @@ We reserve the right to suspend or terminate access for use that violates these 
 
 ## Your account
 
-Your account is created and secured with Sign in with Apple. You're responsible for keeping your device and Apple ID secure. You can delete your account and its server-side data at any time from Settings — see the [Privacy Policy](./PRIVACY_POLICY.md) for exactly what that removes.
+Your account is created and secured with Sign in with Apple, or with an email address and password. If you use Sign in with Apple, you're responsible for keeping your device and Apple ID secure; if you use email and password, you're responsible for keeping your password secure. You can delete your account and its server-side data at any time from Settings — see the [Privacy Policy](./PRIVACY_POLICY.md) for exactly what that removes.
 
 ## Termination
 
@@ -42,7 +42,7 @@ You may stop using the app and delete your account at any time. We may suspend o
 
 ## No warranty; limitation of liability
 
-Fitness Guru is provided "as is," without warranties of any kind, express or implied, including accuracy, fitness for a particular purpose, or uninterrupted availability. AI-generated content, on-device predictions, and estimated nutrition values may be incomplete or wrong — always use your own judgment. To the maximum extent permitted by law, the developer of Fitness Guru is not liable for any indirect, incidental, or consequential damages arising from your use of the app.
+Astra is provided "as is," without warranties of any kind, express or implied, including accuracy, fitness for a particular purpose, or uninterrupted availability. AI-generated content, on-device predictions, and estimated nutrition values may be incomplete or wrong — always use your own judgment. To the maximum extent permitted by law, the developer of Astra is not liable for any indirect, incidental, or consequential damages arising from your use of the app.
 
 ## Changes
 

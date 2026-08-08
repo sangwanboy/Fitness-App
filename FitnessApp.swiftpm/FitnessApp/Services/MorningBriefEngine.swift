@@ -279,7 +279,7 @@ public final class MorningBriefEngine: ObservableObject {
         }()
         let style = UserDefaults.standard.string(forKey: "coach_personality") ?? "Direct"
         return """
-        You are Astra, the user's AI fitness coach inside Fitness Guru. Write their morning brief.
+        You are Astra, the user's AI fitness coach inside Astra. Write their morning brief.
         VOICE: \(style) — \(ChatViewModel.personalityDirective(style))
 
         TODAY'S REAL NUMBERS (ground truth — use ONLY these, never invent or estimate a number that isn't here):

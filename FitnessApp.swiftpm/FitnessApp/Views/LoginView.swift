@@ -121,7 +121,7 @@ public struct LoginView: View {
                     }
 
                     VStack(spacing: 8) {
-                        Text("Fitness Guru")
+                        Text("Astra")
                             .font(.system(size: 38, weight: .bold, design: .rounded))
                             .foregroundColor(isDark ? .white : .black)
                             .tracking(-1.2)

@@ -20,7 +20,7 @@ targets:
       base:
         PRODUCT_NAME: FitnessApp
         MARKETING_VERSION: "1.0.1"
-        CURRENT_PROJECT_VERSION: "3"
+        CURRENT_PROJECT_VERSION: "4"
         PRODUCT_BUNDLE_IDENTIFIER: com.tushar.fitnessapp
         SWIFT_VERSION: "5.0"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
@@ -47,24 +47,25 @@ targets:
         ITSAppUsesNonExemptEncryption: false
         # Version comes from build settings (single source of truth) — keep
         # these as variables so a future xcodegen regen can't reset them.
+        CFBundleDisplayName: "Astra"
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
-        NSHealthShareUsageDescription: "Fitness Guru reads your full Apple Health profile — body, vitals, nutrition, sleep, workouts, mobility, mindfulness, and Medical ID — so the AI coach can personalize plans."
-        NSHealthUpdateUsageDescription: "Fitness Guru writes workouts, hydration, mindfulness sessions, and body measurements you log in the app back to Apple Health."
-        NSHealthClinicalHealthRecordsShareUsageDescription: "Fitness Guru can read your clinical records (allergies, conditions, lab results) to give the AI coach a complete picture of your health context."
-        NSCalendarsFullAccessUsageDescription: "Fitness Guru reads, updates, and adds events to your calendar to plan workouts around your day."
-        NSCalendarsUsageDescription: "Fitness Guru reads, updates, and adds events to your calendar to plan workouts around your day."
-        NSRemindersFullAccessUsageDescription: "Fitness Guru reads, completes, and creates reminders for hydration, workouts, supplements, and recovery."
-        NSRemindersUsageDescription: "Fitness Guru reads, completes, and creates reminders for hydration, workouts, supplements, and recovery."
-        NSCameraUsageDescription: "Fitness Guru opens the camera so you can snap a photo of food or fitness equipment and have the AI coach identify it."
-        NSPhotoLibraryUsageDescription: "Fitness Guru reads photos you pick to identify food or fitness gear with the AI coach."
-        NSUserNotificationsUsageDescription: "Fitness Guru sends you a nudge when it detects prolonged inactivity, so you can move before sedentary time affects your health score."
-        NSMicrophoneUsageDescription: "Fitness Guru listens to the room while you sleep to detect snoring and quantify sleep quality. Audio is analyzed on-device with Apple's Sound Analysis framework and never recorded or uploaded."
-        NSFocusStatusUsageDescription: "Fitness Guru reads your Focus state to know when Sleep Focus is on — that lets the app surface sleep tracking at the right moment and align stats to your iOS bedtime schedule."
+        NSHealthShareUsageDescription: "Astra reads your full Apple Health profile — body, vitals, nutrition, sleep, workouts, mobility, mindfulness, and Medical ID — so the AI coach can personalize plans."
+        NSHealthUpdateUsageDescription: "Astra writes workouts, hydration, mindfulness sessions, and body measurements you log in the app back to Apple Health."
+        NSHealthClinicalHealthRecordsShareUsageDescription: "Astra can read your clinical records (allergies, conditions, lab results) to give the AI coach a complete picture of your health context."
+        NSCalendarsFullAccessUsageDescription: "Astra reads, updates, and adds events to your calendar to plan workouts around your day."
+        NSCalendarsUsageDescription: "Astra reads, updates, and adds events to your calendar to plan workouts around your day."
+        NSRemindersFullAccessUsageDescription: "Astra reads, completes, and creates reminders for hydration, workouts, supplements, and recovery."
+        NSRemindersUsageDescription: "Astra reads, completes, and creates reminders for hydration, workouts, supplements, and recovery."
+        NSCameraUsageDescription: "Astra opens the camera so you can snap a photo of food or fitness equipment and have the AI coach identify it."
+        NSPhotoLibraryUsageDescription: "Astra reads photos you pick to identify food or fitness gear with the AI coach."
+        NSUserNotificationsUsageDescription: "Astra sends you a nudge when it detects prolonged inactivity, so you can move before sedentary time affects your health score."
+        NSMicrophoneUsageDescription: "Astra listens to the room while you sleep to detect snoring and quantify sleep quality. Audio is analyzed on-device with Apple's Sound Analysis framework and never recorded or uploaded."
+        NSFocusStatusUsageDescription: "Astra reads your Focus state to know when Sleep Focus is on — that lets the app surface sleep tracking at the right moment and align stats to your iOS bedtime schedule."
         # Phone → Mac LAN gateway during development (http://<mac-ip>:8787).
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
-        NSLocalNetworkUsageDescription: "Fitness Guru connects to your development AI server on the local network. Not used in normal operation."
+        NSLocalNetworkUsageDescription: "Astra connects to your development AI server on the local network. Not used in normal operation."
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         UIBackgroundModes:

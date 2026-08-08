@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<!--
-	Fitness Guru — App Privacy Manifest.
+	Astra — App Privacy Manifest.
 
 	Scope note: this manifest describes THIS APP TARGET only. It does not
 	cover the Atlas AI Gateway backend, which is a separate server the app
@@ -36,6 +36,21 @@
 	this does NOT count as "collected" and is deliberately left out of the
 	array below. See docs/DATA_AND_PRIVACY.md for the full reasoning and the
 	fallback plan if App Review disagrees.
+
+	Email address IS declared below: users who register with email/password
+	(Views/LoginView.swift, Views/Onboarding/OnboardingScreens.swift) submit
+	an email directly, which Services/Gateway/GatewayAuth.swift sends to the
+	Gateway's v1/auth/register and v1/auth/login and which is retained in
+	the account record (unlike the ephemeral chat/health content above), so
+	it meets the "collected" definition. Same is true for Sign in with
+	Apple's disclosed email, which is stored in the same account record.
+
+	Name IS declared below for the same reason: AppleSignInCoordinator
+	requests `.fullName` (Views/LoginView.swift), and when Apple discloses it
+	(first authorization only), persistAppleSignInResult() saves it locally
+	and Services/Gateway/GatewayProfileSync.swift POSTs it to the Gateway's
+	v1/me/profile, which retains it in the per-user account record — the
+	same off-device-transmitted-and-retained pattern as Email above.
 	-->
 	<key>NSPrivacyCollectedDataTypes</key>
 	<array>
@@ -49,6 +64,32 @@
 			<key>NSPrivacyCollectedDataTypePurposes</key>
 			<array>
 				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeName</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+				<string>NSPrivacyCollectedDataTypePurposeDeveloperAdvertising</string>
+			</array>
+		</dict>
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeEmailAddress</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+				<string>NSPrivacyCollectedDataTypePurposeDeveloperAdvertising</string>
 			</array>
 		</dict>
 		<dict>

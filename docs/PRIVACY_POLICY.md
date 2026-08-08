@@ -8,19 +8,19 @@
 
 # Privacy Policy
 
-**Fitness Guru**
-Last updated: July 21, 2026
+**Astra: Your AI Coach**
+Last updated: August 8, 2026
 Contact: team@atlasjob.tech
 
-Fitness Guru is a personal fitness app built by an independent developer. This policy explains what Fitness Guru reads from your device, what it sends off your device (and why), what it stores, and what it never does.
+Astra is a personal fitness app built by an independent developer. This policy explains what Astra reads from your device, what it sends off your device (and why), what it stores, and what it never does.
 
 ## What the app reads
 
-- **Apple Health (HealthKit)** — Fitness Guru reads your full Health profile: activity, vitals, body measurements, nutrition, sleep, workouts, mobility, and mindfulness data, plus Medical ID details like date of birth, biological sex, and blood type. This powers your dashboard, on-device predictions, and Astra, the in-app AI coach.
+- **Apple Health (HealthKit)** — Astra reads your full Health profile: activity, vitals, body measurements, nutrition, sleep, workouts, mobility, and mindfulness data, plus Medical ID details like date of birth, biological sex, and blood type. This powers your dashboard, on-device predictions, and Astra, the in-app AI coach.
 
-- **Clinical records (optional)** — If you turn on "Health Records" in Settings, Fitness Guru also reads your allergy, condition, medication, lab result, immunization, procedure, and vital sign records from Apple Health Records. This is off by default and only requested if you explicitly enable it. It's used to give Astra clinically relevant context — for example, to flag foods or activities that might conflict with a condition or medication.
+- **Clinical records (optional)** — If you turn on "Health Records" in Settings, Astra also reads your allergy, condition, medication, lab result, immunization, procedure, and vital sign records from Apple Health Records. This is off by default and only requested if you explicitly enable it. It's used to give Astra clinically relevant context — for example, to flag foods or activities that might conflict with a condition or medication.
 
-- **Calendar and Reminders** — Fitness Guru creates and uses one calendar ("Fitness Guru") and one reminder list ("Fitness Guru") to schedule workouts and nudges. It never reads, edits, or deletes events or reminders in your personal calendars or lists.
+- **Calendar and Reminders** — Astra creates and uses one calendar ("Astra") and one reminder list ("Astra") to schedule workouts and nudges. It never reads, edits, or deletes events or reminders in your personal calendars or lists.
 
 - **Camera and Photo Library** — Used only when you choose to take or pick a photo of food or fitness equipment, so Astra can identify it.
 
@@ -42,27 +42,31 @@ The only thing kept after each request is lightweight metering metadata: your ac
 
 ## Sign in with Apple
 
-Fitness Guru uses Sign in with Apple to create and secure your account. On your first sign-in, Apple may share your name and email address with us (you can choose to hide your real email behind Apple's private relay instead) — we ask for these so your account has a name and a way to reach you. We separately ask for your explicit opt-in before using either for marketing communications; that choice defaults to off and you can change it any time in Settings. Your account record on our server stores Apple's private identifier for you, your name and email address (only if Apple disclosed them), your marketing-communications choice, lightweight device metadata (locale, app version), account timestamps, and usage counters (like how many AI tokens you've used). It does not store any Health data. We never sell, rent, or share your name or email with advertisers or data brokers, and we only send marketing communications if you've explicitly opted in.
+Astra uses Sign in with Apple to create and secure your account. On your first sign-in, Apple may share your name and email address with us (you can choose to hide your real email behind Apple's private relay instead) — we ask for these so your account has a name and a way to reach you. We separately ask for your explicit opt-in before using either for marketing communications; that choice defaults to off and you can change it any time in Settings. Your account record on our server stores Apple's private identifier for you, your name and email address (only if Apple disclosed them), your marketing-communications choice, lightweight device metadata (locale, app version), account timestamps, and usage counters (like how many AI tokens you've used). It does not store any Health data. We never sell, rent, or share your name or email with advertisers or data brokers, and we only send marketing communications if you've explicitly opted in.
+
+## Email and password accounts
+
+If you create an account with an email address and password instead of Sign in with Apple, we collect the email address and password you enter. Both are sent to the Atlas AI Gateway to create and authenticate your account; your password is never stored on your device. Your account record on our server stores your email address alongside the same fields described above — your marketing-communications choice, device metadata, account timestamps, and usage counters. We never sell, rent, or share your email with advertisers or data brokers, and we only send marketing communications if you've explicitly opted in.
 
 ## What stays on your device
 
-Your chat history with Astra, your saved preferences and goals, your sleep-tracking summaries, and your streaks and challenges are all stored locally on your device — not on any server. Raw Health samples always remain in Apple Health, governed by Apple's own privacy protections; Fitness Guru only reads processed summaries from it.
+Your chat history with Astra, your saved preferences and goals, your sleep-tracking summaries, and your streaks and challenges are all stored locally on your device — not on any server. Raw Health samples always remain in Apple Health, governed by Apple's own privacy protections; Astra only reads processed summaries from it.
 
 ## Barcode lookups
 
-If you scan a food barcode, Fitness Guru sends the barcode number to Open Food Facts, a public, non-profit food database, to look up the product. No account information, health data, or personal identifier is included in that request.
+If you scan a food barcode, Astra sends the barcode number to Open Food Facts, a public, non-profit food database, to look up the product. No account information, health data, or personal identifier is included in that request.
 
 ## Account deletion
 
-You can delete your account at any time from Settings. This immediately and permanently deletes your account record, sessions, and usage history from our systems — including any name, email address, and marketing preference we stored, and our record of your Sign in with Apple identifier. (You can additionally remove Fitness Guru from your Apple ID's Sign in with Apple list in iOS Settings.) Deleting the app from your device separately removes everything stored locally — chat history, preferences, and cached summaries. Your Apple Health data is unaffected either way; you manage that directly in the Health app.
+You can delete your account at any time from Settings. This immediately and permanently deletes your account record, sessions, and usage history from our systems — including any name, email address, and marketing preference we stored; your password credential, if you created an account with email and password; and our record of your Sign in with Apple identifier, if you signed in with Apple. (You can additionally remove Astra from your Apple ID's Sign in with Apple list in iOS Settings.) Deleting the app from your device separately removes everything stored locally — chat history, preferences, and cached summaries. Your Apple Health data is unaffected either way; you manage that directly in the Health app.
 
 ## No ads, no tracking, no sale of data
 
-Fitness Guru has no advertising, no third-party analytics SDK, and no tracking code of any kind. We do not sell, rent, or share your data with advertisers or data brokers, and we never use your health data for anything other than generating your AI coach's replies and running the app you're using.
+Astra has no advertising, no third-party analytics SDK, and no tracking code of any kind. We do not sell, rent, or share your data with advertisers or data brokers, and we never use your health data for anything other than generating your AI coach's replies and running the app you're using.
 
 ## Not medical advice
 
-Fitness Guru and Astra provide general fitness and wellness information for personal use. They are not a medical device and do not provide medical advice, diagnosis, or treatment, and are not a substitute for professional medical care. Always talk to a qualified healthcare provider about your health, especially before making decisions related to any condition, medication, or symptom Astra discusses with you. If you are experiencing a medical emergency, call your local emergency number immediately.
+Astra provides general fitness and wellness information for personal use. It is not a medical device and does not provide medical advice, diagnosis, or treatment, and is not a substitute for professional medical care. Always talk to a qualified healthcare provider about your health, especially before making decisions related to any condition, medication, or symptom Astra discusses with you. If you are experiencing a medical emergency, call your local emergency number immediately.
 
 ## Changes to this policy
 

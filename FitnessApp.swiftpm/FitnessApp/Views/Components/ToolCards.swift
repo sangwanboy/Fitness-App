@@ -150,7 +150,7 @@ struct ToolCallCard: View {
             MutationConfirmCard(icon: "bell.slash.fill", color: .red,
                                 title: "Delete reminder",
                                 summary: title ?? "Reminder",
-                                detail: "This will remove it from the Fitness Guru list.",
+                                detail: "This will remove it from the Astra list.",
                                 confirmLabel: "Delete",
                                 status: status, accentColor: .red,
                                 onConfirm: onConfirm, onCancel: onCancel)
@@ -158,7 +158,7 @@ struct ToolCallCard: View {
             MutationConfirmCard(icon: "calendar.badge.minus", color: .red,
                                 title: "Delete event",
                                 summary: title ?? "Event",
-                                detail: "This will remove it from the Fitness Guru calendar.",
+                                detail: "This will remove it from the Astra calendar.",
                                 confirmLabel: "Delete",
                                 status: status, accentColor: .red,
                                 onConfirm: onConfirm, onCancel: onCancel)

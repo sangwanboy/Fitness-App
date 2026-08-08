@@ -689,7 +689,7 @@ public final class WeeklyReviewEngine: ObservableObject {
         }
 
         return """
-        You are Astra, the user's AI fitness coach inside Fitness Guru. Write their weekly review.
+        You are Astra, the user's AI fitness coach inside Astra. Write their weekly review.
 
         WEEK REVIEWED: \(rangeLabel) (7 completed days, compared against the 7 days before)
 

@@ -4430,3 +4430,85 @@ Review, and identical in code to current `main` (archived Jul 23 19:32, 16 min b
 committed the version bump; no code commits since). No rebuild or re-upload is required to submit.
 
 No code changes this session. Latest deployed sequence: **7148** (device runs TestFlight 1.0.1 (3)).
+
+---
+
+## Session 86 — 2026-08-08 (build 1.0.1 (4): app rename to Astra + reviewer-facing falsehoods removed)
+
+Orchestrated (fable-design/sonnet-implement/opus-verify per the user's standing preference). Two
+opus verification gates ran; the FIRST returned **DO-NOT-SHIP** and the second found three more
+defects — none of this would have been caught by the compile gate alone.
+
+**THE RENAME.** The app presented **three different names** at once — a live guideline 2.3.7 risk
+found while prepping the submission: Store listing "Astra AI Coach", home-screen icon "FitnessApp"
+(`CFBundleName`/`PRODUCT_NAME`, no `CFBundleDisplayName` was set at all), and every permission
+dialog "Fitness Guru". User chose the full fix and set the Store name to **"Astra: Your AI Coach"**.
+Now: listing "Astra: Your AI Coach" / home-screen **"Astra"** (`CFBundleDisplayName`, new) /
+permission dialogs "Astra" (all 13 `*UsageDescription` strings — note it is 13, not 12; docs long
+said 12 and missed `NSLocalNetworkUsageDescription`). "Fitness Guru" survives ONLY as the internal
+project/repo name. `CURRENT_PROJECT_VERSION` 3 → **4** (xcodegen still not installed — pbxproj
+hand-patched at both Debug/Release entries, same as Sessions 81/83; `project.yml` kept in sync).
+
+**THE REAL FIND — reviewer-facing statements that were false.** `docs/APP_STORE_REVIEW_NOTES.md`
+gets pasted verbatim into App Store Connect. It claimed:
+- *"Sign in with Apple is the app's sole account-creation and sign-in method… no email/password
+  path"* — **FALSE.** The app ships a full email/password flow: `Views/LoginView.swift:184-238`
+  (Sign In / Create Account picker, email + password fields, forgot-password), mirrored at
+  `Views/Onboarding/OnboardingScreens.swift:177-280`, hitting `v1/auth/register` / `v1/auth/login` /
+  `v1/auth/reset-password` (`Services/Gateway/GatewayAuth.swift:147-179`). User confirmed this is
+  intentional and that all credentials must go to the gateway — see the memory note.
+- *"the production Azure gateway deployment is still pending… `GatewayConfig.baseURL` returns `nil`
+  outside DEBUG"* — **FALSE.** There is no DEBUG gate; `GatewayConfig.swift:33` always resolves to
+  the live prod URL. Telling a reviewer "you cannot log in yet" would have sunk the review.
+- A fabricated error string, a snore-toggle path pointing at Settings (the toggle is on the Home
+  sleep card, `SleepTrackingCard.swift:62,:72` — `SettingsView.swift` has zero "snore" hits), a §4
+  legal quote that no longer matched the app, and **~15 stale `File.swift:line` citations**. All
+  verified and corrected; one citation shifted mid-session because a concurrent agent inserted
+  lines, and was re-checked at the end.
+
+**FALSE PRIVACY CLAIMS SHOWN TO USERS (would also have been read by review).**
+`OnboardingScreens.swift:325` said *"Your account is created through Apple — we never see your
+email"* — rendered directly beneath the email+password form. The Privacy Policy (in-app
+`LegalTexts.swift` AND the published `docs/privacy.html` linked from ASC) described Apple as the
+only account mechanism and never disclosed that email/password accounts store an email and a
+password credential. Fixed additively — a new `EMAIL AND PASSWORD ACCOUNTS` section plus an
+extended deletion clause, applied identically to `LegalTexts.swift`, `docs/PRIVACY_POLICY.md` and
+`docs/privacy.html`; the terms trio got the matching account-creation fix. Parity re-verified
+mechanically at the end (privacy 1159/1159 words, terms 489/489). Effective dates bumped to
+2026-08-08 in all six renderings, as both documents promise on material change.
+
+**PRIVACY MANIFEST — was under-declaring collected data.** `PrivacyInfo.xcprivacy` declared only
+UserID + OtherUsageData. Traced from source and corrected to **UserID, Name, EmailAddress,
+OtherUsageData**:
+- *Email* — collected directly at registration, not just via Apple disclosure.
+- *Name* — `LoginView.swift:443` requests `.fullName`; `persistAppleSignInResult()` writes
+  `athlete_name` to UserDefaults; `GatewayProfileSync.swift:55-58` POSTs it to `v1/me/profile`. It
+  is transmitted AND retained, so it is "collected" by Apple's definition.
+- Both gained the **DeveloperAdvertising** purpose alongside AppFunctionality — there is a real
+  marketing opt-in (`LoginView.swift:244-252`, POSTed at `GatewayProfileSync.swift:64-67`) and ASC
+  is told "App Functionality + Marketing". Apple cross-checks the manifest against the ASC answers;
+  this mismatch ships in the bundle and would have been unfixable post-archive.
+`docs/DATA_AND_PRIVACY.md` §11/§12 (the stated source of truth for the ASC questionnaire) also still
+described an Apple-only app; corrected.
+
+**USER-VISIBLE DUPLICATION (caught by the user on-device, after the first archive).** The launch
+screen showed wordmark "Astra" over the tagline "POWERED BY ASTRA" — the tagline had always said
+that, and only stopped making sense once the wordmark stopped saying "Fitness Guru".
+`AppLoadingScreen.swift:129` → **"Your AI Health Coach"**. Swept every other wordmark/tagline pair;
+no other rename-created duplication. Left alone deliberately: `MeetAstraScreen`
+(`OnboardingScreens.swift:1207-1210`) says "Astra" twice, but it predates the rename and reads as
+normal prose — flagged for a human call, not changed.
+
+**VERIFIED SAFE (checked twice, both opus passes):** no persisted key, identifier or compared value
+was renamed. The riskiest edit was `EventKitManager.appCalendarTitle` "Fitness Guru" → "Astra"; both
+`ensure*` methods look up by the stored `calendarIdentifier` (`:100`, `:120`), never by title, so
+existing users keep their calendar. Residual (not fixed): existing installs keep a calendar titled
+"Fitness Guru" while the app now calls it "Astra".
+
+**SHIPPED.** Device gate `BUILD SUCCEEDED` → installed → launched. Archive
+`build/FitnessApp-1.0.1-4.xcarchive` `ARCHIVE SUCCEEDED`, verified from the built product:
+`CFBundleDisplayName=Astra`, 1.0.1 (4), new tagline present, all four privacy types declared.
+**Upload is user-only** — this Mac's Xcode still has no Apple ID (`IDEProvisioningTeams` absent), so
+CLI `-exportArchive` cannot authenticate; Organizer → Distribute App → App Store Connect.
+
+Deployed + launched: **databaseSequenceNumber: 9172** (9164 was the pre-tagline-fix install).

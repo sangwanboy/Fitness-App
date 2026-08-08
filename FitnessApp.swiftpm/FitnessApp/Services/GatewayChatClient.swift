@@ -226,7 +226,7 @@ public actor GatewayChatClient {
                 ],
                 [
                     "name": "list_reminders",
-                    "description": "List reminders the app has created in its own 'Fitness Guru' reminder list. Auto-executes and feeds the items (id, title, due_at, completed) back via functionResponse so you can pick one to update/delete by id. Use this BEFORE update_reminder or delete_reminder.",
+                    "description": "List reminders the app has created in its own 'Astra' reminder list. Auto-executes and feeds the items (id, title, due_at, completed) back via functionResponse so you can pick one to update/delete by id. Use this BEFORE update_reminder or delete_reminder.",
                     "parameters": [
                         "type": "object",
                         "properties": [
@@ -236,7 +236,7 @@ public actor GatewayChatClient {
                 ],
                 [
                     "name": "list_calendar_events",
-                    "description": "List upcoming events in the app's own 'Fitness Guru' calendar over the next N days. Auto-executes and feeds (id, title, starts_at, ends_at, notes) back via functionResponse. Use BEFORE update_calendar_event or delete_calendar_event.",
+                    "description": "List upcoming events in the app's own 'Astra' calendar over the next N days. Auto-executes and feeds (id, title, starts_at, ends_at, notes) back via functionResponse. Use BEFORE update_calendar_event or delete_calendar_event.",
                     "parameters": [
                         "type": "object",
                         "properties": [

@@ -77,7 +77,7 @@ public final class EventKitManager: ObservableObject {
 
     private static let appEventCalendarIDKey   = "app_event_calendar_id"
     private static let appReminderListIDKey    = "app_reminder_list_id"
-    private static let appCalendarTitle        = "Fitness Guru"
+    private static let appCalendarTitle        = "Astra"
 
     /// iCloud > local > default — same source the user already syncs to so the
     /// calendar appears in their normal Apple Calendar lineup.

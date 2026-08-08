@@ -99,7 +99,7 @@ struct WelcomeScreen: View {
             Spacer().frame(height: 36)
 
             OnboardingTitle(
-                title: "Welcome to\nFitness Guru",
+                title: "Welcome to\nAstra",
                 subtitle: "Your AI fitness coach. Personalized recovery, workouts, and nutrition guidance — powered by your real Apple Health data."
             )
 
@@ -320,9 +320,10 @@ struct SignInScreen: View {
                 .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 14))
 
                 // Sign-up copy (guideline 5.1.1(i)) — what the account is for,
-                // that Apple never shares an email, and the never-stored
-                // promise for chat/health context sent per-request.
-                Text("Your account is created through Apple — we never see your email. Chat messages and health context are sent to our AI gateway only to generate that one reply, and are never stored on our servers.")
+                // accurate for BOTH auth paths (Apple can hide the email;
+                // email/password is stored on the gateway account), and the
+                // never-stored promise for chat/health context sent per-request.
+                Text("With Apple, your email is Apple's to share or hide. With email sign-up, the email and password you give us are sent to our gateway to create your account. Chat messages and health context are sent to our AI gateway only to generate that one reply, and are never stored on our servers.")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(.white.opacity(0.45))
                     .multilineTextAlignment(.center)

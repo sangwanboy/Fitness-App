@@ -132,7 +132,7 @@ public final class MealIdeasEngine: ObservableObject {
             : "\nTODAY'S REAL NUMBERS (ground truth — use ONLY these, never invent numbers not listed):\n\(numberLines.map { "- \($0)" }.joined(separator: "\n"))\n"
 
         return """
-        You are Astra, the user's fitness coach inside the Fitness Guru app. Suggest meals with full recipes.
+        You are Astra, the user's fitness coach inside the Astra app. Suggest meals with full recipes.
 
         \(todayLine)
         \(profileBlock)\(numbersBlock)

@@ -113,7 +113,7 @@ public struct AppLoadingScreen: View {
                 .frame(height: 240)
 
                 VStack(spacing: 10) {
-                    Text("Fitness Guru")
+                    Text("Astra")
                         .font(.system(size: 32, weight: .bold, design: .rounded))
                         .foregroundStyle(
                             LinearGradient(
@@ -126,7 +126,7 @@ public struct AppLoadingScreen: View {
                         )
                         .opacity(titleOpacity)
 
-                    Text("Powered by Astra")
+                    Text("Your AI Health Coach")
                         .font(.system(size: 11, weight: .semibold, design: .rounded))
                         .tracking(2.5)
                         .textCase(.uppercase)
